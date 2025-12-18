@@ -1,0 +1,69 @@
+{
+	"name": "mehulgohil/preview",
+	"description": "PreviewShare lets you securely share preview links for draft, pending, or scheduled content without publishing it publicly.",
+	"authors": [
+		{
+			"name": "Mehul Gohil",
+			"email": "hello@mehulgohil.com"
+		}
+	],
+	"require": {
+		"composer/installers": "*",
+		"freemius/wordpress-sdk": "^2.13"
+	},
+	"require-dev": {
+		"dealerdirect/phpcodesniffer-composer-installer": "^0.7.1",
+		"phpcompatibility/phpcompatibility-wp": "*",
+		"wp-coding-standards/wpcs": "3.3",
+		"phpstan/phpstan": "^2.0",
+		"phpstan/extension-installer": "^1.4",
+		"szepeviktor/phpstan-wordpress": "^2.0"
+	},
+	"scripts": {
+		"check-cs": [
+			"@php ./vendor/bin/phpcs -s"
+		],
+		"fix-cs": [
+			"PHP_CS_FIXER_IGNORE_ENV=1",
+			"@php ./vendor/bin/phpcbf",
+			"@php ./vendor/bin/php-cs-fixer fix . --allow-risky=yes"
+		],
+		"lint": [
+			"@php ./vendor/php-parallel-lint/php-parallel-lint/parallel-lint . -e php --show-deprecated --exclude vendor --exclude node_modules --exclude .git"
+		],
+		"lint-blueprint": [
+			"@php -r \"exit( intval( is_null( json_decode( file_get_contents( './.wordpress-org/blueprints/blueprint.json' ) ) ) ) );\""
+		],
+		"test": [
+			"@php ./vendor/phpunit/phpunit/phpunit --dont-report-useless-tests"
+		],
+		"phpstan": [
+			"@php ./vendor/bin/phpstan analyse --memory-limit=2048M"
+		],
+		"post-install-cmd": [
+			"\"vendor/bin/phpcs\" --config-set installed_paths vendor/wp-coding-standards/wpcs || true",
+			"@install-codestandards"
+		],
+		"post-update-cmd": [
+			"\"vendor/bin/phpcs\" --config-set installed_paths vendor/wp-coding-standards/wpcs || true"
+		],
+		"install-codestandards": [
+			"Dealerdirect\\Composer\\Plugin\\Installers\\PHPCodeSniffer\\Plugin::run"
+		]
+	},
+	"autoload": {
+		"psr-4": {
+			"PreviewShare\\": "src/"
+		}
+	},
+	"config": {
+		"allow-plugins": {
+			"composer/installers": true,
+			"dealerdirect/phpcodesniffer-composer-installer": true,
+			"phpstan/extension-installer": true
+		}
+	}
+	,
+	"minimum-stability": "stable",
+	"prefer-stable": true
+}
