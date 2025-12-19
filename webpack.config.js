@@ -1,11 +1,10 @@
 const path = require('path');
 const defaultConfig = require( '@wordpress/scripts/config/webpack.config' );
-const CopyWebpackPlugin = require( 'copy-webpack-plugin' );
+// const CopyWebpackPlugin = require( 'copy-webpack-plugin' );
 const ImageminPlugin = require( 'imagemin-webpack-plugin' ).default;
-const { CleanWebpackPlugin } = require( 'clean-webpack-plugin' );
-const MiniCSSExtractPlugin = require( 'mini-css-extract-plugin' );
+// const { CleanWebpackPlugin } = require( 'clean-webpack-plugin' );
+// const MiniCSSExtractPlugin = require( 'mini-css-extract-plugin' );
 const wpPot = require( 'wp-pot' );
-
 
 const inProduction = ( 'production' === process.env.NODE_ENV );
 const mode = inProduction ? 'production' : 'development';
@@ -15,33 +14,19 @@ const config = {
 	mode,
 	entry: {
 		...defaultConfig.entry,
-		"previewshare": [ './assets/src/js/frontend/main.js', './assets/src/css/frontend/main.css'],
-		"previewshare-admin": [ './assets/src/css/admin/admin.css', './assets/src/js/admin/main.js'],
+		"previewshare": [ './assets/src/js/frontend/main.js', './assets/src/css/frontend/main.css' ],
+		"previewshare-admin": [ './assets/src/js/admin/main.js', './assets/src/css/admin/main.css' ],
 	},
 	output: {
 		...defaultConfig.output,
 		path: path.join(__dirname, 'assets/dist/'),
 		filename: 'js/[name].min.js',
 	},
-	plugins: [
-		// Removes the "dist" folder before building.
-		new CleanWebpackPlugin({
-			cleanOnceBeforeBuildPatterns: [ 'assets/dist' ]
-		}),
-
-		new MiniCSSExtractPlugin( {
-			filename: 'css/[name].css',
-		} ),
-
-		new CopyWebpackPlugin( {
-			patterns: [
-				{
-					from: 'assets/src/images',
-					to: 'images',
-				},
-			],
-		} ),
-	],
+	module: {
+		...defaultConfig.module,
+		rules: [ ...defaultConfig.module.rules ],
+	},
+	plugins: [ ...defaultConfig.plugins ],
 };
 
 if ( inProduction ) {
@@ -51,13 +36,13 @@ if ( inProduction ) {
 
 	// POT file.
 	wpPot( {
-		package: 'Perform',
-		domain: 'perform',
-		destFile: 'languages/perform.pot',
+		package: 'PreviewShare',
+		domain: 'previewshare',
+		destFile: 'languages/previewshare.pot',
 		relativeTo: './',
 		src: [ './**/*.php', '!./includes/libraries/**/*', '!./vendor/**/*' ],
-		bugReport: 'https://github.com/performwp/perform/issues/new',
-		team: 'PerformWP <hello@performwp.com>',
+		bugReport: 'https://github.com/mehul0810/previewshare/issues/new',
+		team: 'Mehul Gohil <hello@mehulgohil.com>',
 	} );
 }
 

@@ -1,23 +1,53 @@
-# Directories
-/wp-org-assets export-ignore
-/.github export-ignore
-/tests export-ignore
-/node_modules export-ignore
+/.git
+.gitignore
+.gitattributes
 
-# Files
-/.gitattributes export-ignore
-/.babelrc export-ignore
-/.editorconfig export-ignore
-/.eslintrc export-ignore
-/.eslintignore export-ignore
-/postcss.config.js export-ignore
-/.gitignore export-ignore
-/webpack.config.js export-ignore
-/deploy.sh export-ignore
-/CHANGELOG.txt export-ignore
-/composer.* export-ignore
-/package.json export-ignore
-/package-lock.json export-ignore
-/phpcs.ruleset.xml export-ignore
-/phpunit.* export-ignore
-/README.md export-ignore
+/.idea
+/.github
+/.storybook
+
+/tests
+/node_modules
+/assets/src
+/vendor/bin
+/vendor/composer/installers
+/wp-org-assets
+
+.scrutinizer.yml
+.travis.yml
+.editorconfig
+.babelrc
+.jscrsrc
+.jshintrc
+.eslintignore
+.eslintrc
+.eslintrc.json
+.prettierrc.json
+.prettierignore
+.stylelintrc.json
+.huskyrc.json
+.lintstagedrc.json
+.distignore
+.stylelintignore
+
+sample-data/wordpress.sql
+sample-data/sample-data.numbers
+bower.json
+composer.json
+composer.lock
+package.json
+package-lock.json
+phpunit.xml
+phpunit.xml.dist
+CHANGELOG.md
+README.md
+readme.md
+phpcs.ruleset.xml
+phpcs.xml.dist
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+contributing.md
+postcss.config.js
+webpack.config.js
+docker-compose.yml
+wp-textdomain.js
