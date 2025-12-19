@@ -11,6 +11,9 @@
 
 namespace PreviewShare\Admin;
 
+use PreviewShare\Services\CustomTableStorage;
+use PreviewShare\Services\TokenService;
+
 // Bailout, if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -28,13 +31,29 @@ class Actions {
 	 *
 	 * @since 1.0.0
 	 */
-	public function __construct() {
+	/**
+	 * Storage driver instance.
+	 *
+	 * @var CustomTableStorage
+	 */
+	private $storage;
+
+	/**
+	 * Constructor.
+	 *
+	* @param CustomTableStorage|null $storage Optional storage driver, useful for testing.
+	 */
+    public function __construct( CustomTableStorage $storage = null ) {
+		$this->storage = $storage ?: new CustomTableStorage();
+
 		add_action( 'enqueue_block_editor_assets', [ $this, 'enqueue_block_editor_assets' ] );
 		add_action( 'rest_api_init', [ $this, 'register_rest_routes' ] );
 		add_action( 'init', [ $this, 'add_rewrite_rules' ] );
 		add_action( 'init', [ $this, 'register_meta_fields' ] );
 		add_action( 'init', [ $this, 'maybe_flush_rewrite_rules' ] );
-		add_action( 'template_redirect', [ $this, 'handle_preview_request' ] );
+
+		// Use pre_get_posts to safely alter the main query for preview URLs.
+		add_action( 'pre_get_posts', [ $this, 'maybe_handle_preview_request' ], 1 );
 	}
 
 	/**
@@ -55,7 +74,7 @@ class Actions {
 			'previewshare-editor',
 			'previewshare_rest',
 			[
-				'api_url' => rest_url( 'previewshare/v1/generate-url' ),
+				'api_url' => rest_url( 'previewshare/v1/v2/generate' ),
 				'home_url' => home_url(),
 				'nonce'   => wp_create_nonce( 'wp_rest' ),
 			]
@@ -158,21 +177,15 @@ class Actions {
 			return new \WP_Error( 'invalid_post_status', 'Post must be published, draft, pending, or scheduled to generate preview links', [ 'status' => 400 ] );
 		}
 
-		// Check if token already exists
-		$existing_token = get_post_meta( $post_id, '_previewshare_token', true );
+		// Generate new unique token and store in custom table
+		$token_service = new TokenService();
+		// Loop until we get a unique token (very unlikely to loop more than once)
+		do {
+			$token = $token_service->generate();
+		} while ( $this->token_exists( $token ) );
 
-		if ( $existing_token ) {
-			// Use existing token
-			$token = $existing_token;
-		} else {
-			// Generate new unique token
-			$token = $this->generate_unique_token();
-
-			// Store token with post meta
-			update_post_meta( $post_id, '_previewshare_token', $token );
-			update_post_meta( $post_id, '_previewshare_created', time() );
-			update_post_meta( $post_id, '_previewshare_user_id', get_current_user_id() );
-		}
+		// Persist via storage driver
+		$this->storage->store_token( $post_id, $token );
 
 		// Generate pretty URL
 		$preview_url = home_url() . '/preview/' . $token;
@@ -205,11 +218,9 @@ class Actions {
 	 * @return bool
 	 */
 	private function token_exists( $token ) {
-		global $wpdb;
-		return $wpdb->get_var( $wpdb->prepare(
-			"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_previewshare_token' AND meta_value = %s LIMIT 1",
-			$token
-		) ) !== null;
+		// Use storage driver to check existence by attempting lookup
+		$post_id = $this->storage->get_post_id_by_token( $token );
+		return ( $post_id !== false );
 	}
 
 	/**
@@ -234,25 +245,31 @@ class Actions {
 	}
 
 	/**
-	 * Handle preview URL requests.
+	 * Intercept the main query and modify it when a preview token is present.
+	 * Uses `pre_get_posts` so WordPress can continue normal template resolution.
 	 *
 	 * @since 1.0.0
+	 * @param \WP_Query $query Query instance.
+	 * @return void
 	 */
-	public function handle_preview_request() {
+	public function maybe_handle_preview_request( \WP_Query $query ) {
+		if ( is_admin() || ! $query->is_main_query() ) {
+			return;
+		}
+
 		$token = get_query_var( 'previewshare_token' );
 		if ( ! $token ) {
 			return;
 		}
 
-		// Find post by token
-		global $wpdb;
-		$post_id = $wpdb->get_var( $wpdb->prepare(
-			"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_previewshare_token' AND meta_value = %s LIMIT 1",
-			$token
-		) );
-
+		$post_id = $this->storage->get_post_id_by_token( $token );
 		if ( ! $post_id ) {
 			wp_die( 'Preview link is invalid or has expired.' );
+		}
+
+		$meta = $this->storage->get_token_meta( $post_id );
+		if ( $meta && ( time() - $meta['created'] ) > ( 30 * DAY_IN_SECONDS ) ) {
+			wp_die( 'Preview link has expired.' );
 		}
 
 		$post = get_post( $post_id );
@@ -260,48 +277,52 @@ class Actions {
 			wp_die( 'Preview link is invalid or has expired.' );
 		}
 
-		// Check if preview has expired (30 days)
-		$created = get_post_meta( $post_id, '_previewshare_created', true );
-		if ( $created && ( time() - $created ) > ( 30 * DAY_IN_SECONDS ) ) {
-			wp_die( 'Preview link has expired.' );
-		}
+		// Safely set the query so template hierarchy will pick the correct template.
+		$query->set( 'p', $post_id );
+		$query->set( 'post_type', $post->post_type );
+		$query->set( 'posts_per_page', 1 );
+		// Ensure non-published statuses (draft/pending/future/private) are included for preview links.
+		$query->set( 'post_status', [ 'publish', 'future', 'draft', 'pending', 'private' ] );
+		// Avoid sticky posts behavior and other list modifiers.
+		$query->set( 'ignore_sticky_posts', true );
 
-		// Allow access to posts with valid tokens, regardless of status
-		// This enables previewing draft/pending/future posts
+		// Pre-populate some query flags and objects so template code sees the right context.
+		$query->is_home = false;
+		$query->is_archive = false;
+		$query->is_search = false;
+		$query->is_singular = true;
 
-		// Set up the main query to show the post
-		global $wp_query;
-		$wp_query = new \WP_Query( [
-			'p' => $post_id,
-			'post_type' => $post->post_type,
-			'posts_per_page' => 1,
-		] );
-
-		// Set query flags for template hierarchy
-		$wp_query->is_single = true;
-		$wp_query->is_singular = true;
+		// Set some flags that template logic may check.
 		if ( $post->post_type === 'page' ) {
-			$wp_query->is_page = true;
+			$query->is_page = true;
+			$query->is_single = false;
 		} else {
-			$wp_query->is_single = true;
+			$query->is_single = true;
+			$query->is_page = false;
 		}
-		$wp_query->query_vars['p'] = $post_id;
-		$wp_query->query_vars['post_type'] = $post->post_type;
 
-		// Populate the main query object so template functions have expected data.
-		$wp_query->posts = array( $post );
-		$wp_query->post = $post;
-		$wp_query->found_posts = 1;
-		$wp_query->post_count = 1;
-		$wp_query->max_num_pages = 1;
-		$wp_query->queried_object = $post;
+		$query->queried_object = $post;
+		$query->queried_object_id = $post_id;
+		$query->found_posts = 1;
+		$query->post_count = 1;
 
-		// Set global post and prepare it for template functions
-		global $post;
-		$post = get_post( $post_id );
-		setup_postdata( $post );
+		// Prevent canonical redirects from interfering with the preview URL.
+		add_filter( 'redirect_canonical', [ $this, 'disable_canonical_redirect_for_preview' ], 10, 2 );
+	}
 
-		// WordPress will now load the appropriate template and handle the loop
-		return;
+	/**
+	 * Disable canonical redirects when serving preview URLs.
+	 *
+	 * @since 1.0.0
+	 * @param string|false $redirect_url Redirect URL.
+	 * @param string       $requested_url Requested URL.
+	 * @return string|false
+	 */
+	public function disable_canonical_redirect_for_preview( $redirect_url, $requested_url ) {
+		if ( get_query_var( 'previewshare_token' ) ) {
+			return false;
+		}
+
+		return $redirect_url;
 	}
 }

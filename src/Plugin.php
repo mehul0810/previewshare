@@ -52,13 +52,27 @@ final class Plugin {
 		// Load Freemius SDK.
 		$this->load_freemius();
 
+		// Load procedural helpers.
+		require_once __DIR__ . '/functions.php';
+
+		// Instantiate shared services.
+		$token_service = new Services\TokenService();
+		$storage = new Services\CustomTableStorage();
+
+		// Register services in container for global access if needed.
+		Container::set( 'token_service', $token_service );
+		Container::set( 'storage', $storage );
+
 		// Load Admin Files.
-		new Admin\Actions();
+		new Admin\Actions( $storage );
 		new Admin\Filters();
 
 		// Load Frontend Files.
 		new Includes\Actions();
 		new Includes\Filters();
+
+		// Register REST controllers that use services (modular approach).
+		new REST\PreviewController( $token_service, $storage );
 	}
 
 	/**
@@ -85,7 +99,8 @@ final class Plugin {
 	 * @return void
 	 */
 	public function activate( $network_wide = false ) {
-		// Flush rewrite rules to register preview URLs
+		// Create custom table for tokens and flush rewrite rules to register preview URLs
+		\PreviewShare\DB\Migrations::create_table();
 		Admin\Actions::flush_rewrite_rules();
 	}
 
