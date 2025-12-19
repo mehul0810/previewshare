@@ -1,7 +1,7 @@
 <?php
 /**
  * PreviewShare Plugin Controller.
- * 
+ *
  * @since      1.0.0
  * @package    WordPress
  * @subpackage PreviewShare
@@ -84,7 +84,10 @@ final class Plugin {
 	 *
 	 * @return void
 	 */
-	public function activate( $network_wide = false ) {}
+	public function activate( $network_wide = false ) {
+		// Flush rewrite rules to register preview URLs
+		Admin\Actions::flush_rewrite_rules();
+	}
 
 	/**
 	 * Handles deactivation procedures.
