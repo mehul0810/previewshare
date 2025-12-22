@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  php:
+    name: PHP checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: mbstring
+      - name: Get Composer Cache
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+      - name: Install Composer deps
+        run: composer install --no-progress --no-suggest --prefer-dist
+      - name: Run PHPCS (WPCS)
+        run: vendor/bin/phpcs --standard=phpcs.xml.dist src || true
+      - name: Run PHPStan
+        run: vendor/bin/phpstan analyse -c phpstan.neon || true
+
+  js:
+    name: JS build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ${{ github.workspace }}/wp-content/plugins/previewshare
+      - name: Build assets
+        run: npm run build
+        working-directory: ${{ github.workspace }}/wp-content/plugins/previewshare

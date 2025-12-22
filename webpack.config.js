@@ -1,9 +1,12 @@
-const path = require('path');
+const path = require( 'path' );
+
+// Reuse the default @wordpress/scripts webpack config and extend it.
+// Keep WP Scripts behaviors (Babel, externals, optimizations) while
+// adding our custom entries (frontend/admin/settings) and an output
+// layout that writes to `assets/dist/js/[name].min.js` so existing
+// enqueue paths continue to work.
 const defaultConfig = require( '@wordpress/scripts/config/webpack.config' );
-// const CopyWebpackPlugin = require( 'copy-webpack-plugin' );
 const ImageminPlugin = require( 'imagemin-webpack-plugin' ).default;
-// const { CleanWebpackPlugin } = require( 'clean-webpack-plugin' );
-// const MiniCSSExtractPlugin = require( 'mini-css-extract-plugin' );
 const wpPot = require( 'wp-pot' );
 
 const inProduction = ( 'production' === process.env.NODE_ENV );
@@ -14,12 +17,14 @@ const config = {
 	mode,
 	entry: {
 		...defaultConfig.entry,
-		"previewshare": [ './assets/src/js/frontend/main.js', './assets/src/css/frontend/main.css' ],
-		"previewshare-admin": [ './assets/src/js/admin/main.js', './assets/src/css/admin/main.css' ],
+		previewshare: [ './assets/src/js/frontend/main.js', './assets/src/css/frontend/main.css' ],
+		'previewshare-admin': [ './assets/src/js/admin/main.js', './assets/src/css/admin/main.css' ],
+		// Settings React app we added - builds to assets/dist/js/previewshare-settings.min.js
+		'previewshare-settings': [ './assets/src/js/settings.js' ],
 	},
 	output: {
 		...defaultConfig.output,
-		path: path.join(__dirname, 'assets/dist/'),
+		path: path.join( __dirname, 'assets/dist/' ),
 		filename: 'js/[name].min.js',
 	},
 	module: {
@@ -31,10 +36,9 @@ const config = {
 
 if ( inProduction ) {
 	// Minify images.
-	// Must go after CopyWebpackPlugin above: https://github.com/Klathmon/imagemin-webpack-plugin#example-usage
 	config.plugins.push( new ImageminPlugin( { test: /\.(jpe?g|png|gif|svg)$/i } ) );
 
-	// POT file.
+	// POT file generation for translations.
 	wpPot( {
 		package: 'PreviewShare',
 		domain: 'previewshare',

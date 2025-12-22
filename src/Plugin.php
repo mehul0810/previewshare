@@ -66,6 +66,22 @@ final class Plugin {
 		// Load Admin Files.
 		new Admin\Actions( $storage );
 		new Admin\Filters();
+		// Settings page (React app)
+		new Admin\Settings();
+
+		// Flush token object cache when a post changes so preview tokens remain consistent.
+		add_action( 'save_post', function( $post_id ) use ( $storage ) {
+			// Only flush if this is not an autosave and not a revision.
+			if ( wp_is_post_autosave( $post_id ) || wp_is_post_revision( $post_id ) ) {
+				return;
+			}
+
+			$storage->flush_post_cache( (int) $post_id );
+		} );
+
+		add_action( 'deleted_post', function( $post_id ) use ( $storage ) {
+			$storage->flush_post_cache( (int) $post_id );
+		} );
 
 		// Load Frontend Files.
 		new Includes\Actions();

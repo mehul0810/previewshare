@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<ruleset name="PreviewShare WPCS">
+    <description>WordPress Coding Standards for PreviewShare plugin.</description>
+
+    <!-- Use WPCS ruleset provided by vendor -->
+    <rule ref="vendor/wp-coding-standards/wpcs/ruleset.xml" />
+
+    <!-- Exclude vendor and build directories -->
+    <file>src</file>
+    <exclude-pattern>vendor/*</exclude-pattern>
+    <exclude-pattern>node_modules/*</exclude-pattern>
+</ruleset>

@@ -74,7 +74,8 @@ class Actions {
 			'previewshare-editor',
 			'previewshare_rest',
 			[
-				'api_url' => rest_url( 'previewshare/v1/v2/generate' ),
+				'rest_base' => rest_url( 'previewshare/v1' ),
+				'generate_url' => rest_url( 'previewshare/v1/generate-url' ),
 				'home_url' => home_url(),
 				'nonce'   => wp_create_nonce( 'wp_rest' ),
 			]
@@ -98,6 +99,21 @@ class Actions {
 					'single'       => true,
 					'type'         => 'boolean',
 					'default'      => false,
+					'auth_callback' => function() {
+						return current_user_can( 'edit_posts' );
+					},
+				]
+			);
+
+			// Per-post TTL (hours) to override global default. 0 = no expiry.
+			register_post_meta(
+				$post_type,
+				'_previewshare_ttl_hours',
+				[
+					'show_in_rest' => true,
+					'single'       => true,
+					'type'         => 'integer',
+					'default'      => null,
 					'auth_callback' => function() {
 						return current_user_can( 'edit_posts' );
 					},
