@@ -57,7 +57,7 @@ final class Plugin {
 
 		// Instantiate shared services.
 		$token_service = new Services\TokenService();
-		$storage = new Services\CustomTableStorage();
+		$storage = new Services\PostMetaStorage();
 
 		// Register services in container for global access if needed.
 		Container::set( 'token_service', $token_service );
@@ -115,8 +115,7 @@ final class Plugin {
 	 * @return void
 	 */
 	public function activate( $network_wide = false ) {
-		// Create custom table for tokens and flush rewrite rules to register preview URLs
-		\PreviewShare\DB\Migrations::create_table();
+		// Flush rewrite rules to register preview URLs
 		Admin\Actions::flush_rewrite_rules();
 	}
 

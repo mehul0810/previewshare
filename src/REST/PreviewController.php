@@ -8,7 +8,7 @@
 namespace PreviewShare\REST;
 
 use PreviewShare\Services\TokenService;
-use PreviewShare\Services\CustomTableStorage;
+use PreviewShare\Services\PostMetaStorage;
 
 // Abort if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -30,7 +30,7 @@ class PreviewController {
     /**
      * Storage instance.
      *
-     * @var CustomTableStorage
+     * @var PostMetaStorage
      */
     private $storage;
 
@@ -38,9 +38,9 @@ class PreviewController {
      * Constructor.
      *
      * @param TokenService         $token_service Token helper.
-     * @param CustomTableStorage   $storage Storage driver.
+     * @param PostMetaStorage      $storage Storage driver.
      */
-    public function __construct( TokenService $token_service, CustomTableStorage $storage ) {
+    public function __construct( TokenService $token_service, PostMetaStorage $storage ) {
         $this->token_service = $token_service;
         $this->storage       = $storage;
 

@@ -11,7 +11,7 @@
 
 namespace PreviewShare\Admin;
 
-use PreviewShare\Services\CustomTableStorage;
+use PreviewShare\Services\PostMetaStorage;
 use PreviewShare\Services\TokenService;
 
 // Bailout, if accessed directly.
@@ -34,17 +34,17 @@ class Actions {
 	/**
 	 * Storage driver instance.
 	 *
-	 * @var CustomTableStorage
+	 * @var PostMetaStorage
 	 */
 	private $storage;
 
 	/**
 	 * Constructor.
 	 *
-	* @param CustomTableStorage|null $storage Optional storage driver, useful for testing.
+	* @param PostMetaStorage|null $storage Optional storage driver, useful for testing.
 	 */
-    public function __construct( CustomTableStorage $storage = null ) {
-		$this->storage = $storage ?: new CustomTableStorage();
+	public function __construct( PostMetaStorage $storage = null ) {
+		$this->storage = $storage ?: new PostMetaStorage();
 
 		add_action( 'enqueue_block_editor_assets', [ $this, 'enqueue_block_editor_assets' ] );
 		add_action( 'rest_api_init', [ $this, 'register_rest_routes' ] );
