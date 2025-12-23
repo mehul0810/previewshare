@@ -153,6 +153,22 @@ class Actions {
 				],
 			],
 		] );
+
+		// Return token meta for a post (used by editor UI to show expired state).
+		register_rest_route( 'previewshare/v1', '/post-meta', [
+			'methods'             => 'GET',
+			'callback'            => [ $this, 'get_post_token_meta' ],
+			'permission_callback' => function( $request ) {
+				$post_id = isset( $request['post_id'] ) ? absint( $request['post_id'] ) : 0;
+				if ( $post_id ) {
+					return current_user_can( 'edit_post', $post_id );
+				}
+				return current_user_can( 'edit_posts' );
+			},
+			'args'                => [
+				'post_id' => [ 'required' => true, 'validate_callback' => function( $v ) { return is_numeric( $v ) && $v > 0; } ],
+			],
+		] );
 	}
 
 	/**
@@ -324,6 +340,26 @@ class Actions {
 
 		// Prevent canonical redirects from interfering with the preview URL.
 		add_filter( 'redirect_canonical', [ $this, 'disable_canonical_redirect_for_preview' ], 10, 2 );
+	}
+
+	/**
+	 * REST handler: return token meta for a given post_id.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function get_post_token_meta( $request ) {
+		$post_id = absint( $request->get_param( 'post_id' ) );
+		if ( ! $post_id || ! get_post( $post_id ) ) {
+			return new \WP_Error( 'invalid_post', 'Invalid post ID', [ 'status' => 400 ] );
+		}
+
+		$meta = $this->storage->get_token_meta( $post_id );
+
+		// Also indicate whether the post currently has an indexed token.
+		$has_token = (bool) get_post_meta( $post_id, '_previewshare_token_hash', true );
+
+		return new \WP_REST_Response( [ 'has_token' => $has_token, 'meta' => $meta ], 200 );
 	}
 
 	/**

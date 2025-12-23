@@ -2,8 +2,8 @@
 <ruleset name="PreviewShare WPCS">
     <description>WordPress Coding Standards for PreviewShare plugin.</description>
 
-    <!-- Use WPCS ruleset provided by vendor -->
-    <rule ref="vendor/wp-coding-standards/wpcs/ruleset.xml" />
+    <!-- Use the installed WordPress Coding Standards to avoid vendor path issues -->
+    <rule ref="WordPress" />
 
     <!-- Exclude vendor and build directories -->
     <file>src</file>

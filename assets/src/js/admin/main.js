@@ -14,6 +14,8 @@ import { copy as copyIcon } from '@wordpress/icons';
 
 const PreviewSharePanel = () => {
 	const [previewUrl, setPreviewUrl] = useState('');
+	const [previewUrl, setPreviewUrl] = useState('');
+	const [tokenMeta, setTokenMeta] = useState(null);
 	const [isGenerating, setIsGenerating] = useState(false);
 
 	// Auto-generate a preview URL when the panel loads and preview sharing is enabled.
@@ -24,6 +26,33 @@ const PreviewSharePanel = () => {
 		}
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [ isEnabled ] );
+
+	// Fetch token meta (expired/revoked) for the current post so we can show
+	// a message in the panel when the token is expired.
+	useEffect( () => {
+		const fetchMeta = async () => {
+			if ( ! postId ) {
+				setTokenMeta(null);
+				return;
+			}
+
+			try {
+				const path = `/previewshare/v1/post-meta?post_id=${postId}`;
+				const options = { path };
+				if ( window.previewshare_rest && window.previewshare_rest.nonce ) {
+					options.headers = { 'X-WP-Nonce': window.previewshare_rest.nonce };
+				}
+
+				const res = await wp.apiFetch( options );
+				setTokenMeta( res );
+			} catch (err) {
+				console.error('Failed to fetch preview token meta', err);
+				setTokenMeta(null);
+			}
+		};
+
+		fetchMeta();
+	}, [ postId, isEnabled ] );
 	const { postId, metaValue, isEnabled, ttlHours } = useSelect((select) => {
 		const postId = select('core/editor').getCurrentPostId();
 		const postType = select('core/editor').getCurrentPostType();
@@ -178,6 +207,11 @@ const PreviewSharePanel = () => {
 							style={{ flex: 1 }}
 						/>
 					</div>
+					{ tokenMeta && tokenMeta.meta && tokenMeta.meta.expired && (
+						<div style={{ marginTop: '8px', color: '#b00020' }}>
+							{ __( 'The current preview token has expired. Generate a new token to re-enable public preview.', 'previewshare' ) }
+						</div>
+					) }
 				</div>
 			)}
 		</PluginDocumentSettingPanel>

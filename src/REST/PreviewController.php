@@ -203,7 +203,7 @@ class PreviewController {
      */
     public function get_settings() {
         $settings = [
-            'default_ttl_hours' => (int) get_option( 'previewshare_default_ttl_hours', 24 ),
+            'default_ttl_hours' => (int) get_option( 'previewshare_default_ttl_hours', 6 ),
             'enable_logging'    => (bool) get_option( 'previewshare_enable_logging', false ),
             'enable_caching'    => (bool) get_option( 'previewshare_enable_caching', true ),
         ];
@@ -240,7 +240,7 @@ class PreviewController {
 
         // Return the current settings so the client can refresh its state.
         $settings = [
-            'default_ttl_hours' => (int) get_option( 'previewshare_default_ttl_hours', 24 ),
+            'default_ttl_hours' => (int) get_option( 'previewshare_default_ttl_hours', 6 ),
             'enable_logging'    => (bool) get_option( 'previewshare_enable_logging', false ),
             'enable_caching'    => (bool) get_option( 'previewshare_enable_caching', true ),
         ];
@@ -282,7 +282,7 @@ class PreviewController {
         }
 
         $ttl = $request->get_param( 'ttl_hours' );
-        $ttl = is_null( $ttl ) ? (int) get_option( 'previewshare_default_ttl_hours', 24 ) : absint( $ttl );
+        $ttl = is_null( $ttl ) ? (int) get_option( 'previewshare_default_ttl_hours', 6 ) : absint( $ttl );
 
         $token = $this->token_service->generate();
         $this->storage->store_token( $post_id, $token, $ttl );
