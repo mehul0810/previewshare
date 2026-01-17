@@ -207,9 +207,11 @@ if ( $transient === false ) {
 #### 3.1.1 Duplicate Variable Declaration (BUG)
 **Location**: `assets/src/js/admin/main.js:16-17`
 
+**Issue Found in Codebase**:
 ```javascript
+// Current code has duplicate declaration:
 const [previewUrl, setPreviewUrl] = useState('');
-const [previewUrl, setPreviewUrl] = useState('');  // DUPLICATE!
+const [previewUrl, setPreviewUrl] = useState('');  // DUPLICATE LINE - REMOVE THIS
 ```
 
 **Impact**: Second declaration overwrites the first, but both are identical so no functional impact.
@@ -245,16 +247,28 @@ private function generate_unique_token() {
 - Remove empty classes or add a comment explaining they're placeholders for future features
 - Consider using autoloading filters to only load classes when needed
 
-#### 3.1.4 Inconsistent Default TTL
-**Issue**: Default TTL values differ between code and documentation:
+#### 3.1.4 Inconsistent Default TTL (MAINTENANCE ISSUE)
+**Issue**: Default TTL values differ between code and documentation - this creates confusion and potential bugs:
 
+**Current Inconsistent Values**:
 - `readme.txt` suggests 6 hours as default
 - `PreviewController.php:206` uses 6 hours: `get_option( 'previewshare_default_ttl_hours', 6 )`
 - `PreviewController.php:285` also uses 6 hours
 - `functions.php:48` uses 24 hours: `get_option( 'previewshare_default_ttl_hours', 24 )`
 - `settings.js:35` displays 24 hours as placeholder
 
-**Recommendation**: Standardize on a single default value (recommend 24 hours for better UX) and update all references.
+**Impact**: Inconsistent user experience, confusing documentation, potential unexpected token expiration.
+
+**Recommendation**: Standardize on a single default value (recommend 24 hours for better UX) and update all references to use a constant:
+```php
+// config/constants.php
+if ( ! defined( 'PREVIEWSHARE_DEFAULT_TTL_HOURS' ) ) {
+    define( 'PREVIEWSHARE_DEFAULT_TTL_HOURS', 24 );
+}
+
+// Then use consistently:
+$default_ttl = get_option( 'previewshare_default_ttl_hours', PREVIEWSHARE_DEFAULT_TTL_HOURS );
+```
 
 #### 3.1.5 Missing Error Handling
 **Location**: Multiple REST API callbacks
