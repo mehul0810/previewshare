@@ -5,13 +5,18 @@
 /.idea
 /.github
 /.storybook
+/.cache
 
 /tests
+/scripts
 /node_modules
 /assets/src
 /vendor/bin
 /vendor/composer/installers
 /wp-org-assets
+/coverage
+/build
+/artifacts
 
 .scrutinizer.yml
 .travis.yml
@@ -29,6 +34,7 @@
 .lintstagedrc.json
 .distignore
 .stylelintignore
+AGENTS.md
 
 sample-data/wordpress.sql
 sample-data/sample-data.numbers
@@ -54,3 +60,16 @@ postcss.config.js
 webpack.config.js
 docker-compose.yml
 wp-textdomain.js
+previewshare.zip
+*.zip
+vendor/**/.git
+vendor/**/.gitignore
+vendor/**/.github
+vendor/**/composer.json
+vendor/**/composer.lock
+vendor/**/README*
+vendor/**/CHANGELOG*
+vendor/**/docs
+vendor/**/test
+vendor/**/tests
+vendor/**/phpunit.xml*

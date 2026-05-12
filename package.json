@@ -30,7 +30,8 @@
   "scripts": {
     "start": "wp-scripts start --mode development",
     "build": "wp-scripts build --mode production",
-    "plugin-zip": "composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress && wp-scripts plugin-zip",
+    "plugin-zip": "npm run build && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress && bash scripts/build-release-zip.sh",
+    "validate:zip": "bash scripts/validate-release-zip.sh",
     "format": "wp-scripts format",
     "lint:css": "wp-scripts lint-style \"assets/src/css/**/*.css\"",
     "lint:js": "wp-scripts lint-js assets/src/js webpack.config.js wp-textdomain.js"

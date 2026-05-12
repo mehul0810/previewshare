@@ -1,0 +1,184 @@
+name: Release Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: Build a prerelease or release artifact.
+        required: true
+        type: choice
+        options:
+          - prerelease
+          - release
+      tag:
+        description: Optional tag to create or update a GitHub Release, for example v1.0.0 or v1.0.0-rc.1.
+        required: false
+        type: string
+      create_github_release:
+        description: Attach the artifact to a GitHub Release when a tag is provided.
+        required: true
+        default: true
+        type: boolean
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  PLUGIN_SLUG: previewshare
+
+jobs:
+  build:
+    name: Build production artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve release context
+        id: release
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_RELEASE_TYPE: ${{ inputs.release_type }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_CREATE_GITHUB_RELEASE: ${{ inputs.create_github_release }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            RELEASE_TYPE="${INPUT_RELEASE_TYPE}"
+            TAG="${INPUT_TAG}"
+            CREATE_GITHUB_RELEASE="${INPUT_CREATE_GITHUB_RELEASE}"
+          else
+            TAG="${REF_NAME}"
+            CREATE_GITHUB_RELEASE="true"
+
+            if [[ "${TAG}" == *-* ]]; then
+              RELEASE_TYPE="prerelease"
+            else
+              RELEASE_TYPE="release"
+            fi
+          fi
+
+          if [[ "${RELEASE_TYPE}" != "prerelease" && "${RELEASE_TYPE}" != "release" ]]; then
+            echo "release_type must be prerelease or release." >&2
+            exit 1
+          fi
+
+          if [[ -n "${TAG}" && ! "${TAG}" =~ ^v?[0-9]+[.][0-9]+[.][0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Tag must look like v1.0.0 or v1.0.0-rc.1." >&2
+            exit 1
+          fi
+
+          if [[ "${RELEASE_TYPE}" == "release" && "${TAG}" == *-* ]]; then
+            echo "Release tags cannot contain a prerelease suffix." >&2
+            exit 1
+          fi
+
+          if [[ "${RELEASE_TYPE}" == "prerelease" && -n "${TAG}" && "${TAG}" != *-* ]]; then
+            echo "Prerelease tags must contain a prerelease suffix, for example v1.0.0-rc.1." >&2
+            exit 1
+          fi
+
+          TAG_LABEL="${TAG:-${GITHUB_SHA::7}}"
+          ZIP_FILE="${PLUGIN_SLUG}-${TAG_LABEL}.zip"
+
+          echo "release_type=${RELEASE_TYPE}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "create_github_release=${CREATE_GITHUB_RELEASE}" >> "${GITHUB_OUTPUT}"
+          echo "zip_file=${ZIP_FILE}" >> "${GITHUB_OUTPUT}"
+          echo "artifact_name=${PLUGIN_SLUG}-${RELEASE_TYPE}-${TAG_LABEL}" >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag version
+        if: steps.release.outputs.tag != ''
+        shell: bash
+        env:
+          RELEASE_TYPE: ${{ steps.release.outputs.release_type }}
+          TAG_NAME: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          PLUGIN_VERSION="$(awk -F: '/^[[:space:]]*\\* Version:/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit }' previewshare.php)"
+          STABLE_TAG="$(awk -F: '/^Stable tag:/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit }' readme.txt)"
+          TAG_VERSION="${TAG_NAME#v}"
+          TAG_BASE="${TAG_VERSION%%-*}"
+
+          if [[ "${PLUGIN_VERSION}" != "${TAG_VERSION}" && "${PLUGIN_VERSION}" != "${TAG_BASE}" ]]; then
+            echo "Plugin header version (${PLUGIN_VERSION}) must match tag (${TAG_VERSION}) or prerelease base (${TAG_BASE})." >&2
+            exit 1
+          fi
+
+          if [[ "${RELEASE_TYPE}" == "release" && "${STABLE_TAG}" != "${TAG_VERSION}" ]]; then
+            echo "readme.txt Stable tag (${STABLE_TAG}) must match release tag (${TAG_VERSION})." >&2
+            exit 1
+          fi
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: mbstring
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install Composer dependencies
+        run: composer install --no-progress --prefer-dist
+
+      - name: Validate Composer metadata
+        run: composer validate --no-check-publish --no-interaction
+
+      - name: Run PHP syntax checks
+        run: find . -path ./vendor -prune -o -path ./node_modules -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Run PHPStan
+        run: vendor/bin/phpstan analyse -c phpstan.neon
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Build production zip
+        run: npm run plugin-zip
+
+      - name: Validate production zip
+        run: npm run validate:zip
+
+      - name: Rename artifact
+        run: mv previewshare.zip "${{ steps.release.outputs.zip_file }}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.release.outputs.artifact_name }}
+          path: ${{ steps.release.outputs.zip_file }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: steps.release.outputs.tag != '' && steps.release.outputs.create_github_release == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TYPE: ${{ steps.release.outputs.release_type }}
+          TAG_NAME: ${{ steps.release.outputs.tag }}
+          ZIP_FILE: ${{ steps.release.outputs.zip_file }}
+        run: |
+          set -euo pipefail
+
+          NOTES="Production-ready PreviewShare ${RELEASE_TYPE} artifact."
+
+          if gh release view "${TAG_NAME}" > /dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" "${ZIP_FILE}" --clobber
+          elif [[ "${RELEASE_TYPE}" == "prerelease" ]]; then
+            gh release create "${TAG_NAME}" "${ZIP_FILE}" --target "${GITHUB_SHA}" --title "${TAG_NAME}" --notes "${NOTES}" --prerelease
+          else
+            gh release create "${TAG_NAME}" "${ZIP_FILE}" --target "${GITHUB_SHA}" --title "${TAG_NAME}" --notes "${NOTES}"
+          fi

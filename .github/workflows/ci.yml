@@ -62,7 +62,7 @@ jobs:
           node-version: '20'
       - name: Install JS dependencies
         run: npm ci
-      - name: Build assets
-        run: npm run build
       - name: Build plugin zip
         run: npm run plugin-zip
+      - name: Validate plugin zip
+        run: npm run validate:zip
