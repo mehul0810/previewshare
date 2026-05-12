@@ -81,7 +81,19 @@ class PreviewController {
         register_rest_route( 'previewshare/v1', '/v2/revoke', [
             'methods'             => 'POST',
             'callback'            => [ $this, 'revoke' ],
-            'permission_callback' => [ $this, 'permission_generate' ],
+            'permission_callback' => [ $this, 'permission_revoke' ],
+            'args'                => [
+                'post_id' => [
+                    'required'          => false,
+                    'validate_callback' => function( $value ) {
+                        return is_numeric( $value ) && $value > 0;
+                    },
+                ],
+                'token' => [
+                    'required' => false,
+                    'type'     => 'string',
+                ],
+            ],
         ] );
 
         // List tokens (admin)
@@ -147,7 +159,7 @@ class PreviewController {
      * @return \WP_REST_Response
      */
     public function list_tokens( $request ) {
-        $per_page = absint( $request->get_param( 'per_page' ) ) ?: 50;
+        $per_page = min( 100, absint( $request->get_param( 'per_page' ) ) ?: 50 );
         $page     = absint( $request->get_param( 'page' ) ) ?: 1;
         // Pull rows from custom table only (no legacy postmeta handling).
         $rows = $this->storage->list_tokens( $per_page, $page );
@@ -203,7 +215,7 @@ class PreviewController {
      */
     public function get_settings() {
         $settings = [
-            'default_ttl_hours' => (int) get_option( 'previewshare_default_ttl_hours', 6 ),
+            'default_ttl_hours' => $this->get_default_ttl_hours(),
             'enable_logging'    => (bool) get_option( 'previewshare_enable_logging', false ),
             'enable_caching'    => (bool) get_option( 'previewshare_enable_caching', true ),
         ];
@@ -225,22 +237,22 @@ class PreviewController {
         // Sanitize and persist only the provided keys.
         if ( null !== $ttl ) {
             $sanitized_ttl = absint( $ttl );
-            update_option( 'previewshare_default_ttl_hours', $sanitized_ttl );
+            update_option( 'previewshare_default_ttl_hours', $sanitized_ttl, false );
         }
 
         if ( null !== $log ) {
             $sanitized_log = filter_var( $log, FILTER_VALIDATE_BOOLEAN );
-            update_option( 'previewshare_enable_logging', (bool) $sanitized_log );
+            update_option( 'previewshare_enable_logging', (bool) $sanitized_log, false );
         }
 
         if ( null !== $cache ) {
             $sanitized_cache = filter_var( $cache, FILTER_VALIDATE_BOOLEAN );
-            update_option( 'previewshare_enable_caching', (bool) $sanitized_cache );
+            update_option( 'previewshare_enable_caching', (bool) $sanitized_cache, false );
         }
 
         // Return the current settings so the client can refresh its state.
         $settings = [
-            'default_ttl_hours' => (int) get_option( 'previewshare_default_ttl_hours', 6 ),
+            'default_ttl_hours' => $this->get_default_ttl_hours(),
             'enable_logging'    => (bool) get_option( 'previewshare_enable_logging', false ),
             'enable_caching'    => (bool) get_option( 'previewshare_enable_caching', true ),
         ];
@@ -265,7 +277,23 @@ class PreviewController {
             return current_user_can( 'edit_post', $post_id );
         }
 
-        return current_user_can( 'edit_posts' );
+        return false;
+    }
+
+    /**
+     * Permissions callback for revocation.
+     *
+     * @param \WP_REST_Request $request Request.
+     * @return bool
+     */
+    public function permission_revoke( $request ): bool {
+        $post_id = isset( $request['post_id'] ) ? absint( $request['post_id'] ) : 0;
+
+        if ( $post_id ) {
+            return current_user_can( 'edit_post', $post_id );
+        }
+
+        return current_user_can( 'manage_options' );
     }
 
     /**
@@ -281,11 +309,25 @@ class PreviewController {
             return new \WP_Error( 'invalid_post', 'Invalid post ID', [ 'status' => 400 ] );
         }
 
+        $post = get_post( $post_id );
+        if ( ! $post || ! $this->is_previewable_post_status( $post->post_status ) ) {
+            return new \WP_Error( 'invalid_post_status', 'Post must be published, draft, pending, or scheduled to generate preview links', [ 'status' => 400 ] );
+        }
+
         $ttl = $request->get_param( 'ttl_hours' );
-        $ttl = is_null( $ttl ) ? (int) get_option( 'previewshare_default_ttl_hours', 6 ) : absint( $ttl );
+        $ttl = is_null( $ttl ) ? $this->get_post_or_default_ttl_hours( $post_id ) : absint( $ttl );
 
         $token = $this->token_service->generate();
-        $this->storage->store_token( $post_id, $token, $ttl );
+        $stored = $this->storage->store_token( $post_id, $token, $ttl );
+
+        if ( ! $stored ) {
+            return new \WP_Error( 'token_storage_failed', 'Preview token could not be stored', [ 'status' => 500 ] );
+        }
+
+        update_post_meta( $post_id, '_previewshare_enabled', true );
+        if ( null !== $request->get_param( 'ttl_hours' ) ) {
+            update_post_meta( $post_id, '_previewshare_ttl_hours', $ttl );
+        }
 
         $preview_url = home_url( '/preview/' . $token );
 
@@ -299,6 +341,13 @@ class PreviewController {
      * @return \WP_REST_Response
      */
     public function revoke( $request ) {
+        $post_id = absint( $request->get_param( 'post_id' ) );
+        if ( $post_id ) {
+            $revoked = $this->storage->revoke_token_for_post( $post_id );
+
+            return new \WP_REST_Response( [ 'revoked' => (bool) $revoked ], 200 );
+        }
+
         $token = $request->get_param( 'token' );
 
         if ( empty( $token ) ) {
@@ -309,5 +358,40 @@ class PreviewController {
         $revoked = $this->storage->revoke_token( $token );
 
         return new \WP_REST_Response( [ 'revoked' => (bool) $revoked ], 200 );
+    }
+
+    /**
+     * Get the global default TTL in hours.
+     *
+     * @return int
+     */
+    private function get_default_ttl_hours(): int {
+        return (int) get_option( 'previewshare_default_ttl_hours', 6 );
+    }
+
+    /**
+     * Get the per-post TTL override, falling back to the global default.
+     *
+     * @param int $post_id Post ID.
+     * @return int
+     */
+    private function get_post_or_default_ttl_hours( int $post_id ): int {
+        $post_ttl = get_post_meta( $post_id, '_previewshare_ttl_hours', true );
+
+        if ( '' !== $post_ttl && null !== $post_ttl ) {
+            return absint( $post_ttl );
+        }
+
+        return $this->get_default_ttl_hours();
+    }
+
+    /**
+     * Check whether a post status can be exposed through a preview token.
+     *
+     * @param string $status Post status.
+     * @return bool
+     */
+    private function is_previewable_post_status( string $status ): bool {
+        return in_array( $status, [ 'publish', 'draft', 'pending', 'future' ], true );
     }
 }

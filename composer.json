@@ -1,6 +1,7 @@
 {
 	"name": "mehulgohil/preview",
 	"description": "PreviewShare lets you securely share preview links for draft, pending, or scheduled content without publishing it publicly.",
+	"license": "GPL-3.0-or-later",
 	"authors": [
 		{
 			"name": "Mehul Gohil",
@@ -8,10 +9,10 @@
 		}
 	],
 	"require": {
-		"composer/installers": "*",
 		"freemius/wordpress-sdk": "^2.13"
 	},
 	"require-dev": {
+		"composer/installers": "^2.3",
 		"dealerdirect/phpcodesniffer-composer-installer": "^0.7.1",
 		"phpcompatibility/phpcompatibility-wp": "*",
 		"wp-coding-standards/wpcs": "3.3",
@@ -39,16 +40,6 @@
 		],
 		"phpstan": [
 			"@php ./vendor/bin/phpstan analyse --memory-limit=2048M"
-		],
-		"post-install-cmd": [
-			"\"vendor/bin/phpcs\" --config-set installed_paths vendor/wp-coding-standards/wpcs || true",
-			"@install-codestandards"
-		],
-		"post-update-cmd": [
-			"\"vendor/bin/phpcs\" --config-set installed_paths vendor/wp-coding-standards/wpcs || true"
-		],
-		"install-codestandards": [
-			"Dealerdirect\\Composer\\Plugin\\Installers\\PHPCodeSniffer\\Plugin::run"
 		]
 	},
 	"autoload": {

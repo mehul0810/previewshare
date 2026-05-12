@@ -39,6 +39,9 @@ package.json
 package-lock.json
 phpunit.xml
 phpunit.xml.dist
+phpstan.neon
+phpstan.neon.dist
+phpstan-baseline.neon
 CHANGELOG.md
 README.md
 readme.md

@@ -32,7 +32,7 @@
 		const [ page, setPage ] = useState( 1 );
 		const [ perPage ] = useState( 50 );
 
-		const [ settings, setSettings ] = useState( { default_ttl_hours: 24, enable_logging: false, enable_caching: true } );
+		const [ settings, setSettings ] = useState( { default_ttl_hours: 6, enable_logging: false, enable_caching: true } );
 		const [ settingsLoading, setSettingsLoading ] = useState( true );
 		const [ savingSettings, setSavingSettings ] = useState( false );
 

@@ -115,7 +115,14 @@ class PostMetaStorage {
         // Check object cache first.
         $cached = wp_cache_get( $hash, 'previewshare_tokens' );
         if ( $cached !== false ) {
-            return (int) $cached;
+            $post_id = (int) $cached;
+
+            if ( $this->is_token_hash_valid_for_post( $post_id, $hash ) ) {
+                return $post_id;
+            }
+
+            wp_cache_delete( $hash, 'previewshare_tokens' );
+            return false;
         }
 
         // Query posts that have the reverse-lookup meta key for this hash.
@@ -135,22 +142,7 @@ class PostMetaStorage {
 
         $post_id = (int) $posts[0];
 
-        // Fetch detail meta and validate not revoked.
-        $detail = get_post_meta( $post_id, '_previewshare_token:' . $hash, true );
-
-        if ( empty( $detail ) || ! is_array( $detail ) ) {
-            return false;
-        }
-
-        if ( ! empty( $detail['revoked'] ) ) {
-            return false;
-        }
-
-        // Check transient to determine if token is still valid. Transients
-        // expire automatically after their TTL without needing cron.
-        $transient_key = 'previewshare_token_tr:' . $hash;
-        $transient = get_transient( $transient_key );
-        if ( $transient === false ) {
+        if ( ! $this->is_token_hash_valid_for_post( $post_id, $hash ) ) {
             return false;
         }
 
@@ -175,9 +167,9 @@ class PostMetaStorage {
             return null;
         }
 
-        $detail = get_post_meta( $post_id, '_previewshare_token:' . $hash, true );
+        $detail = $this->get_token_detail( $post_id, $hash );
 
-        if ( empty( $detail ) || ! is_array( $detail ) ) {
+        if ( empty( $detail ) ) {
             return null;
         }
 
@@ -194,7 +186,9 @@ class PostMetaStorage {
         // If the token is expired, ensure the post's "enable public preview"
         // meta is switched off so the editor toggle reflects the disabled
         // state. This makes re-enabling generate a fresh token.
-        if ( $expired ) {
+        if ( $expired || $revoked ) {
+            wp_cache_delete( $hash, 'previewshare_tokens' );
+
             $enabled_meta = get_post_meta( $post_id, '_previewshare_enabled', true );
             if ( $enabled_meta ) {
                 update_post_meta( $post_id, '_previewshare_enabled', false );
@@ -331,23 +325,7 @@ class PostMetaStorage {
 
         $post_id = (int) $posts[0];
 
-        $detail_key = '_previewshare_token:' . $hash;
-        $detail = get_post_meta( $post_id, $detail_key, true );
-
-        if ( empty( $detail ) || ! is_array( $detail ) ) {
-            return false;
-        }
-
-        $detail['revoked'] = 1;
-        $updated = update_post_meta( $post_id, $detail_key, $detail );
-
-        // Invalidate cache, delete transient (so token immediately stops
-        // validating) and remove reverse lookup meta.
-        wp_cache_delete( $hash, 'previewshare_tokens' );
-        delete_transient( 'previewshare_token_tr:' . $hash );
-        delete_post_meta( $post_id, '_previewshare_token_rev:' . $hash );
-
-        return (bool) $updated;
+        return $this->revoke_token_for_post( $post_id );
     }
 
     /**
@@ -364,20 +342,33 @@ class PostMetaStorage {
             return false;
         }
 
+        return $this->revoke_token_for_post( $post_id );
+    }
+
+    /**
+     * Revoke the current token for a post.
+     *
+     * @param int $post_id Post ID.
+     * @return bool True when a token was revoked.
+     */
+    public function revoke_token_for_post( int $post_id ): bool {
         $hash = get_post_meta( $post_id, '_previewshare_token_hash', true );
         if ( ! $hash ) {
+            update_post_meta( $post_id, '_previewshare_enabled', false );
             return false;
         }
 
         $detail_key = '_previewshare_token:' . $hash;
-        $detail = get_post_meta( $post_id, $detail_key, true );
+        $detail = $this->get_token_detail( $post_id, $hash );
 
-        if ( empty( $detail ) || ! is_array( $detail ) ) {
+        if ( empty( $detail ) ) {
+            update_post_meta( $post_id, '_previewshare_enabled', false );
             return false;
         }
 
         $detail['revoked'] = 1;
         $updated = update_post_meta( $post_id, $detail_key, $detail );
+        update_post_meta( $post_id, '_previewshare_enabled', false );
 
         // Remove transient so token is immediately invalidated, remove
         // reverse lookup and invalidate cache.
@@ -386,5 +377,40 @@ class PostMetaStorage {
         wp_cache_delete( $hash, 'previewshare_tokens' );
 
         return (bool) $updated;
+    }
+
+    /**
+     * Fetch token detail meta for a post/hash pair.
+     *
+     * @param int    $post_id Post ID.
+     * @param string $hash Token hash.
+     * @return array|null Token detail or null when missing/invalid.
+     */
+    private function get_token_detail( int $post_id, string $hash ): ?array {
+        $detail = get_post_meta( $post_id, '_previewshare_token:' . $hash, true );
+
+        return is_array( $detail ) ? $detail : null;
+    }
+
+    /**
+     * Check whether a stored token hash is currently usable.
+     *
+     * @param int    $post_id Post ID.
+     * @param string $hash Token hash.
+     * @return bool True when the token exists, is not revoked, and has not expired.
+     */
+    private function is_token_hash_valid_for_post( int $post_id, string $hash ): bool {
+        $detail = $this->get_token_detail( $post_id, $hash );
+
+        if ( empty( $detail ) || ! empty( $detail['revoked'] ) ) {
+            return false;
+        }
+
+        $expires = ! empty( $detail['expires_at'] ) ? (int) $detail['expires_at'] : null;
+        if ( null !== $expires && $expires <= time() ) {
+            return false;
+        }
+
+        return get_transient( 'previewshare_token_tr:' . $hash ) !== false;
     }
 }

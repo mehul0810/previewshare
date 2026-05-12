@@ -7,52 +7,15 @@
 import { registerPlugin } from '@wordpress/plugins';
 import { PluginDocumentSettingPanel } from '@wordpress/editor';
 import { __ } from '@wordpress/i18n';
-import { useState, useRef, useEffect } from '@wordpress/element';
+import { useState, useEffect } from '@wordpress/element';
 import { useSelect, useDispatch } from '@wordpress/data';
-import { ToggleControl, Button, TextControl, IconButton } from '@wordpress/components';
+import { ToggleControl, TextControl, IconButton } from '@wordpress/components';
 import { copy as copyIcon } from '@wordpress/icons';
 
 const PreviewSharePanel = () => {
 	const [previewUrl, setPreviewUrl] = useState('');
-	const [previewUrl, setPreviewUrl] = useState('');
 	const [tokenMeta, setTokenMeta] = useState(null);
 	const [isGenerating, setIsGenerating] = useState(false);
-
-	// Auto-generate a preview URL when the panel loads and preview sharing is enabled.
-	// This ensures a pretty token URL is shown after a page refresh.
-	useEffect( () => {
-		if ( isEnabled && ! previewUrl ) {
-			generatePreviewUrl();
-		}
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [ isEnabled ] );
-
-	// Fetch token meta (expired/revoked) for the current post so we can show
-	// a message in the panel when the token is expired.
-	useEffect( () => {
-		const fetchMeta = async () => {
-			if ( ! postId ) {
-				setTokenMeta(null);
-				return;
-			}
-
-			try {
-				const path = `/previewshare/v1/post-meta?post_id=${postId}`;
-				const options = { path };
-				if ( window.previewshare_rest && window.previewshare_rest.nonce ) {
-					options.headers = { 'X-WP-Nonce': window.previewshare_rest.nonce };
-				}
-
-				const res = await wp.apiFetch( options );
-				setTokenMeta( res );
-			} catch (err) {
-				console.error('Failed to fetch preview token meta', err);
-				setTokenMeta(null);
-			}
-		};
-
-		fetchMeta();
-	}, [ postId, isEnabled ] );
 	const { postId, metaValue, isEnabled, ttlHours } = useSelect((select) => {
 		const postId = select('core/editor').getCurrentPostId();
 		const postType = select('core/editor').getCurrentPostType();
@@ -75,7 +38,43 @@ const PreviewSharePanel = () => {
 	});
 	const { editPost } = useDispatch('core/editor');
 
-	const handleToggleChange = (enabled) => {
+	// Auto-generate a preview URL when the panel loads and preview sharing is enabled.
+	// This ensures a pretty token URL is shown after a page refresh.
+	useEffect( () => {
+		if ( isEnabled && ! previewUrl ) {
+			generatePreviewUrl();
+		}
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [ isEnabled ] );
+
+	// Fetch token meta (expired/revoked) for the current post so we can show
+	// a message in the panel when the token is expired.
+	useEffect( () => {
+		fetchTokenMeta();
+	}, [ postId, isEnabled ] );
+
+	const fetchTokenMeta = async () => {
+		if ( ! postId ) {
+			setTokenMeta(null);
+			return;
+		}
+
+		try {
+			const path = `/previewshare/v1/post-meta?post_id=${postId}`;
+			const options = { path };
+			if ( window.previewshare_rest && window.previewshare_rest.nonce ) {
+				options.headers = { 'X-WP-Nonce': window.previewshare_rest.nonce };
+			}
+
+			const res = await wp.apiFetch( options );
+			setTokenMeta( res );
+		} catch (err) {
+			console.error('Failed to fetch preview token meta', err);
+			setTokenMeta(null);
+		}
+	};
+
+	const handleToggleChange = async (enabled) => {
 		editPost({
 			meta: {
 				...metaValue,
@@ -86,9 +85,9 @@ const PreviewSharePanel = () => {
 		// If enabling preview sharing, generate a preview URL immediately.
 		if ( enabled ) {
 			// Generate a fresh preview URL and populate the field.
-			generatePreviewUrl();
+			await generatePreviewUrl();
 		} else {
-			// Clear any generated URL when disabling.
+			await revokePreviewUrl();
 			setPreviewUrl('');
 		}
 	};
@@ -103,10 +102,13 @@ const PreviewSharePanel = () => {
 	};
 
 	const generatePreviewUrl = async () => {
+		if ( ! postId ) {
+			return null;
+		}
+
 		setIsGenerating(true);
 		try {
-			// Use the REST path we control to ensure apiFetch resolves correctly.
-			const apiPath = '/previewshare/v1/generate-url';
+			const apiPath = '/previewshare/v1/v2/generate';
 
 			const fetchOptions = {
 				path: apiPath,
@@ -126,6 +128,8 @@ const PreviewSharePanel = () => {
 
 			if ( response && response.url ) {
 				setPreviewUrl( response.url );
+				await fetchTokenMeta();
+				return response.url;
 			} else {
 				// If no token URL returned, clear previous value.
 				setPreviewUrl( '' );
@@ -136,16 +140,48 @@ const PreviewSharePanel = () => {
 		} finally {
 			setIsGenerating(false);
 		}
+
+		return null;
 	};
 
-	const copyToClipboard = async () => {
-		if (!previewUrl) {
-			await generatePreviewUrl();
+	const revokePreviewUrl = async () => {
+		if ( ! postId ) {
 			return;
 		}
 
 		try {
-			await navigator.clipboard.writeText(previewUrl);
+			const fetchOptions = {
+				path: '/previewshare/v1/v2/revoke',
+				method: 'POST',
+				data: {
+					post_id: postId,
+				},
+			};
+
+			if ( window.previewshare_rest && window.previewshare_rest.nonce ) {
+				fetchOptions.headers = Object.assign( {}, fetchOptions.headers, { 'X-WP-Nonce': window.previewshare_rest.nonce } );
+			}
+
+			await wp.apiFetch( fetchOptions );
+			await fetchTokenMeta();
+		} catch (error) {
+			console.error('Failed to revoke preview URL:', error);
+		}
+	};
+
+	const copyToClipboard = async () => {
+		let url = previewUrl;
+
+		if (!url) {
+			url = await generatePreviewUrl();
+		}
+
+		if ( ! url ) {
+			return;
+		}
+
+		try {
+			await navigator.clipboard.writeText(url);
 			// Could add a success notice here
 		} catch (error) {
 			console.error('Failed to copy URL:', error);
@@ -207,11 +243,11 @@ const PreviewSharePanel = () => {
 							style={{ flex: 1 }}
 						/>
 					</div>
-					{ tokenMeta && tokenMeta.meta && tokenMeta.meta.expired && (
-						<div style={{ marginTop: '8px', color: '#b00020' }}>
-							{ __( 'The current preview token has expired. Generate a new token to re-enable public preview.', 'previewshare' ) }
-						</div>
-					) }
+						{ tokenMeta && tokenMeta.meta && ( tokenMeta.meta.expired || tokenMeta.meta.revoked ) && (
+							<div style={{ marginTop: '8px', color: '#b00020' }}>
+								{ __( 'The current preview token is no longer active. Generate a new token to re-enable public preview.', 'previewshare' ) }
+							</div>
+						) }
 				</div>
 			)}
 		</PluginDocumentSettingPanel>

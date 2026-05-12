@@ -17,12 +17,23 @@
     "type": "git",
     "url": "git+https://github.com/mehul0810/previewshare.git"
   },
+  "files": [
+    "assets/dist",
+    "config",
+    "languages",
+    "src",
+    "vendor",
+    "license.txt",
+    "previewshare.php",
+    "readme.txt"
+  ],
   "scripts": {
     "start": "wp-scripts start --mode development",
     "build": "wp-scripts build --mode production",
+    "plugin-zip": "composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress && wp-scripts plugin-zip",
     "format": "wp-scripts format",
-    "lint:css": "wp-scripts lint-style",
-    "lint:js": "wp-scripts lint-js"
+    "lint:css": "wp-scripts lint-style \"assets/src/css/**/*.css\"",
+    "lint:js": "wp-scripts lint-js assets/src/js webpack.config.js wp-textdomain.js"
   },
   "devDependencies": {
     "@babel/core": "^7.28.5",

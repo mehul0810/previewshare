@@ -45,8 +45,14 @@ function previewshare_generate_token_for_post( int $post_id, ?int $ttl_hours = n
 
     $token = $token_service->generate();
 
-    $ttl = is_null( $ttl_hours ) ? (int) get_option( 'previewshare_default_ttl_hours', 24 ) : absint( $ttl_hours );
-    $storage->store_token( $post_id, $token, $ttl );
+    $ttl = is_null( $ttl_hours ) ? (int) get_option( 'previewshare_default_ttl_hours', 6 ) : absint( $ttl_hours );
+    $stored = $storage->store_token( $post_id, $token, $ttl );
+
+    if ( ! $stored ) {
+        return false;
+    }
+
+    update_post_meta( $post_id, '_previewshare_enabled', true );
 
     return $token;
 }

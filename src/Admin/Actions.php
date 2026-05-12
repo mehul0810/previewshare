@@ -43,7 +43,7 @@ class Actions {
 	 *
 	* @param PostMetaStorage|null $storage Optional storage driver, useful for testing.
 	 */
-	public function __construct( PostMetaStorage $storage = null ) {
+	public function __construct( ?PostMetaStorage $storage = null ) {
 		$this->storage = $storage ?: new PostMetaStorage();
 
 		add_action( 'enqueue_block_editor_assets', [ $this, 'enqueue_block_editor_assets' ] );
@@ -99,8 +99,8 @@ class Actions {
 					'single'       => true,
 					'type'         => 'boolean',
 					'default'      => false,
-					'auth_callback' => function() {
-						return current_user_can( 'edit_posts' );
+					'auth_callback' => function( $allowed, $meta_key, $post_id ) {
+						return current_user_can( 'edit_post', $post_id );
 					},
 				]
 			);
@@ -113,9 +113,8 @@ class Actions {
 					'show_in_rest' => true,
 					'single'       => true,
 					'type'         => 'integer',
-					'default'      => null,
-					'auth_callback' => function() {
-						return current_user_can( 'edit_posts' );
+					'auth_callback' => function( $allowed, $meta_key, $post_id ) {
+						return current_user_can( 'edit_post', $post_id );
 					},
 				]
 			);
@@ -149,6 +148,12 @@ class Actions {
 					'required'          => true,
 					'validate_callback' => function( $value ) {
 						return is_numeric( $value ) && $value > 0;
+					},
+				],
+				'ttl_hours' => [
+					'required'          => false,
+					'validate_callback' => function( $value ) {
+						return is_numeric( $value ) && $value >= 0;
 					},
 				],
 			],
@@ -205,9 +210,11 @@ class Actions {
 		}
 
 		$post = get_post( $post_id );
-		if ( ! $post || ! in_array( $post->post_status, [ 'publish', 'draft', 'pending', 'future' ], true ) ) {
+		if ( ! $post || ! $this->is_previewable_post_status( $post->post_status ) ) {
 			return new \WP_Error( 'invalid_post_status', 'Post must be published, draft, pending, or scheduled to generate preview links', [ 'status' => 400 ] );
 		}
+
+		$ttl = $this->get_requested_ttl_hours( $request, $post_id );
 
 		// Generate new unique token and store in custom table
 		$token_service = new TokenService();
@@ -217,7 +224,16 @@ class Actions {
 		} while ( $this->token_exists( $token ) );
 
 		// Persist via storage driver
-		$this->storage->store_token( $post_id, $token );
+		$stored = $this->storage->store_token( $post_id, $token, $ttl );
+
+		if ( ! $stored ) {
+			return new \WP_Error( 'token_storage_failed', 'Preview token could not be stored', [ 'status' => 500 ] );
+		}
+
+		update_post_meta( $post_id, '_previewshare_enabled', true );
+		if ( null !== $request->get_param( 'ttl_hours' ) ) {
+			update_post_meta( $post_id, '_previewshare_ttl_hours', $ttl );
+		}
 
 		// Generate pretty URL
 		$preview_url = home_url() . '/preview/' . $token;
@@ -299,14 +315,22 @@ class Actions {
 			wp_die( 'Preview link is invalid or has expired.' );
 		}
 
+		if ( ! get_post_meta( $post_id, '_previewshare_enabled', true ) ) {
+			wp_die( 'Preview link is disabled.' );
+		}
+
 		$meta = $this->storage->get_token_meta( $post_id );
-		if ( $meta && ( time() - $meta['created'] ) > ( 30 * DAY_IN_SECONDS ) ) {
-			wp_die( 'Preview link has expired.' );
+		if ( empty( $meta ) || ! empty( $meta['revoked'] ) || ! empty( $meta['expired'] ) ) {
+			wp_die( 'Preview link is invalid or has expired.' );
 		}
 
 		$post = get_post( $post_id );
 		if ( ! $post ) {
 			wp_die( 'Preview link is invalid or has expired.' );
+		}
+
+		if ( ! $this->is_previewable_post_status( $post->post_status ) ) {
+			wp_die( 'Preview link is not available for this content.' );
 		}
 
 		// Safely set the query so template hierarchy will pick the correct template.
@@ -376,5 +400,37 @@ class Actions {
 		}
 
 		return $redirect_url;
+	}
+
+	/**
+	 * Get a normalized TTL for a preview generation request.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @param int              $post_id Post ID.
+	 * @return int TTL in hours. 0 means no expiry.
+	 */
+	private function get_requested_ttl_hours( $request, int $post_id ): int {
+		$ttl = $request->get_param( 'ttl_hours' );
+
+		if ( null !== $ttl ) {
+			return absint( $ttl );
+		}
+
+		$post_ttl = get_post_meta( $post_id, '_previewshare_ttl_hours', true );
+		if ( '' !== $post_ttl && null !== $post_ttl ) {
+			return absint( $post_ttl );
+		}
+
+		return (int) get_option( 'previewshare_default_ttl_hours', 6 );
+	}
+
+	/**
+	 * Check whether a post status can be exposed through a preview token.
+	 *
+	 * @param string $status Post status.
+	 * @return bool
+	 */
+	private function is_previewable_post_status( string $status ): bool {
+		return in_array( $status, [ 'publish', 'draft', 'pending', 'future' ], true );
 	}
 }

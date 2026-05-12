@@ -1,0 +1,265 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Call to method get_param\(\) on an unknown class PreviewShare\\Admin\\WP_REST_Request\.$#'
+			identifier: class.notFound
+			count: 3
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Constant PREVIEWSHARE_PLUGIN_URL not found\.$#'
+			identifier: constant.notFound
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Constant PREVIEWSHARE_VERSION not found\.$#'
+			identifier: constant.notFound
+			count: 3
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:add_rewrite_rules\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:check_generate_url_permissions\(\) has invalid return type PreviewShare\\Admin\\WP_Error\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:check_generate_url_permissions\(\) should return bool\|PreviewShare\\Admin\\WP_Error but returns WP_Error\.$#'
+			identifier: return.type
+			count: 2
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:enqueue_block_editor_assets\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:flush_rewrite_rules\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:generate_preview_url\(\) has invalid return type PreviewShare\\Admin\\WP_Error\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:generate_preview_url\(\) has invalid return type PreviewShare\\Admin\\WP_REST_Response\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:generate_preview_url\(\) should return PreviewShare\\Admin\\WP_Error\|PreviewShare\\Admin\\WP_REST_Response but returns WP_Error\.$#'
+			identifier: return.type
+			count: 3
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:generate_preview_url\(\) should return PreviewShare\\Admin\\WP_Error\|PreviewShare\\Admin\\WP_REST_Response but returns WP_REST_Response\.$#'
+			identifier: return.type
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:generate_unique_token\(\) is unused\.$#'
+			identifier: method.unused
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:get_post_token_meta\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
+			identifier: missingType.generics
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:get_requested_ttl_hours\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
+			identifier: missingType.generics
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:maybe_flush_rewrite_rules\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:register_meta_fields\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Method PreviewShare\\Admin\\Actions\:\:register_rest_routes\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Parameter \#1 \$request of method PreviewShare\\Admin\\Actions\:\:get_requested_ttl_hours\(\) expects WP_REST_Request, PreviewShare\\Admin\\WP_REST_Request given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Parameter \$request of method PreviewShare\\Admin\\Actions\:\:check_generate_url_permissions\(\) has invalid type PreviewShare\\Admin\\WP_REST_Request\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Parameter \$request of method PreviewShare\\Admin\\Actions\:\:generate_preview_url\(\) has invalid type PreviewShare\\Admin\\WP_REST_Request\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Admin/Actions.php
+
+		-
+			message: '#^Constant PREVIEWSHARE_PLUGIN_URL not found\.$#'
+			identifier: constant.notFound
+			count: 1
+			path: src/Admin/Settings.php
+
+		-
+			message: '#^Constant PREVIEWSHARE_VERSION not found\.$#'
+			identifier: constant.notFound
+			count: 1
+			path: src/Admin/Settings.php
+
+		-
+			message: '#^Property PreviewShare\\Container\:\:\$services type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Container.php
+
+		-
+			message: '#^Call to new PreviewShare\\Admin\\Filters\(\) on a separate line has no effect\.$#'
+			identifier: new.resultUnused
+			count: 1
+			path: src/Plugin.php
+
+		-
+			message: '#^Call to new PreviewShare\\Includes\\Actions\(\) on a separate line has no effect\.$#'
+			identifier: new.resultUnused
+			count: 1
+			path: src/Plugin.php
+
+		-
+			message: '#^Call to new PreviewShare\\Includes\\Filters\(\) on a separate line has no effect\.$#'
+			identifier: new.resultUnused
+			count: 1
+			path: src/Plugin.php
+
+		-
+			message: '#^Constant PREVIEWSHARE_PLUGIN_FILE not found\.$#'
+			identifier: constant.notFound
+			count: 2
+			path: src/Plugin.php
+
+		-
+			message: '#^Method PreviewShare\\REST\\PreviewController\:\:generate\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
+			identifier: missingType.generics
+			count: 1
+			path: src/REST/PreviewController.php
+
+		-
+			message: '#^Method PreviewShare\\REST\\PreviewController\:\:generate\(\) should return WP_REST_Response but returns WP_Error\.$#'
+			identifier: return.type
+			count: 3
+			path: src/REST/PreviewController.php
+
+		-
+			message: '#^Method PreviewShare\\REST\\PreviewController\:\:list_tokens\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
+			identifier: missingType.generics
+			count: 1
+			path: src/REST/PreviewController.php
+
+		-
+			message: '#^Method PreviewShare\\REST\\PreviewController\:\:permission_generate\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
+			identifier: missingType.generics
+			count: 1
+			path: src/REST/PreviewController.php
+
+		-
+			message: '#^Method PreviewShare\\REST\\PreviewController\:\:permission_revoke\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
+			identifier: missingType.generics
+			count: 1
+			path: src/REST/PreviewController.php
+
+		-
+			message: '#^Method PreviewShare\\REST\\PreviewController\:\:revoke\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
+			identifier: missingType.generics
+			count: 1
+			path: src/REST/PreviewController.php
+
+		-
+			message: '#^Method PreviewShare\\REST\\PreviewController\:\:revoke\(\) should return WP_REST_Response but returns WP_Error\.$#'
+			identifier: return.type
+			count: 1
+			path: src/REST/PreviewController.php
+
+		-
+			message: '#^Method PreviewShare\\REST\\PreviewController\:\:revoke_by_id\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
+			identifier: missingType.generics
+			count: 1
+			path: src/REST/PreviewController.php
+
+		-
+			message: '#^Method PreviewShare\\REST\\PreviewController\:\:revoke_by_id\(\) should return WP_REST_Response but returns WP_Error\.$#'
+			identifier: return.type
+			count: 1
+			path: src/REST/PreviewController.php
+
+		-
+			message: '#^Method PreviewShare\\REST\\PreviewController\:\:update_settings\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
+			identifier: missingType.generics
+			count: 1
+			path: src/REST/PreviewController.php
+
+		-
+			message: '#^Negated boolean expression is always false\.$#'
+			identifier: booleanNot.alwaysFalse
+			count: 1
+			path: src/REST/PreviewController.php
+
+		-
+			message: '#^Method PreviewShare\\Services\\PostMetaStorage\:\:get_token_detail\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Services/PostMetaStorage.php
+
+		-
+			message: '#^Method PreviewShare\\Services\\PostMetaStorage\:\:get_token_meta\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Services/PostMetaStorage.php
+
+		-
+			message: '#^Method PreviewShare\\Services\\PostMetaStorage\:\:list_tokens\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: src/Services/PostMetaStorage.php
+
+		-
+			message: '#^Constant AUTH_SALT not found\.$#'
+			identifier: constant.notFound
+			count: 1
+			path: src/Services/TokenService.php
