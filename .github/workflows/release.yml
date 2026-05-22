@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to package, for example v1.0.0.
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+env:
+  PLUGIN_SLUG: previewshare
+
+jobs:
+  build:
+    name: Build release artifact
+    runs-on: ubuntu-latest
+    if: github.event_name != 'push' || !contains(github.ref_name, '-')
+    steps:
+      - name: Resolve release context
+        id: release
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            TAG_NAME="${INPUT_TAG}"
+          else
+            TAG_NAME="${REF_NAME}"
+          fi
+
+          if [[ -z "${TAG_NAME}" ]]; then
+            echo "A release tag is required." >&2
+            exit 1
+          fi
+
+          if [[ ! "${TAG_NAME}" =~ ^v?[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            echo "Release tag must look like v1.0.0." >&2
+            exit 1
+          fi
+
+          echo "tag=${TAG_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "zip_file=${PLUGIN_SLUG}-${TAG_NAME}.zip" >> "${GITHUB_OUTPUT}"
+          echo "artifact_name=${PLUGIN_SLUG}-release-${TAG_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Validate release version
+        shell: bash
+        env:
+          TAG_NAME: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          PLUGIN_VERSION="$(awk -F: '/^[[:space:]]*\\* Version:/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit }' previewshare.php)"
+          STABLE_TAG="$(awk -F: '/^Stable tag:/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit }' readme.txt)"
+          TAG_VERSION="${TAG_NAME#v}"
+
+          if [[ "${PLUGIN_VERSION}" != "${TAG_VERSION}" ]]; then
+            echo "Plugin header version (${PLUGIN_VERSION}) must match release tag (${TAG_VERSION})." >&2
+            exit 1
+          fi
+
+          if [[ "${STABLE_TAG}" != "${TAG_VERSION}" ]]; then
+            echo "readme.txt Stable tag (${STABLE_TAG}) must match release tag (${TAG_VERSION})." >&2
+            exit 1
+          fi
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: mbstring
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install Composer dependencies
+        run: composer install --no-progress --prefer-dist
+
+      - name: Validate Composer metadata
+        run: composer validate --no-check-publish --no-interaction
+
+      - name: Run PHP syntax checks
+        run: find . -path ./vendor -prune -o -path ./node_modules -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Run PHPStan
+        run: vendor/bin/phpstan analyse -c phpstan.neon
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Build production zip
+        run: npm run plugin-zip
+
+      - name: Validate production zip
+        run: npm run validate:zip
+
+      - name: Rename artifact
+        run: mv previewshare.zip "${{ steps.release.outputs.zip_file }}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.release.outputs.artifact_name }}
+          path: ${{ steps.release.outputs.zip_file }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach artifact to GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.release.outputs.tag }}
+          ZIP_FILE: ${{ steps.release.outputs.zip_file }}
+        run: |
+          set -euo pipefail
+
+          NOTES="Production-ready PreviewShare release artifact."
+
+          if gh release view "${TAG_NAME}" > /dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" "${ZIP_FILE}" --clobber
+          else
+            gh release create "${TAG_NAME}" "${ZIP_FILE}" --title "${TAG_NAME}" --notes "${NOTES}" --verify-tag
+          fi
+
+      # Future: add WordPress.org SVN deployment here with the 10up plugin deployment action.

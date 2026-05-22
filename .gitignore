@@ -1,6 +1,7 @@
 # Unit tests
 /tmp
 /tests/bin/tmp
+.phpunit.result.cache
 
 # Numerous always-ignore extensions
 .diff

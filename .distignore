@@ -17,11 +17,13 @@
 /coverage
 /build
 /artifacts
+/output
 
 .scrutinizer.yml
 .travis.yml
 .editorconfig
 .babelrc
+.phpunit.result.cache
 .jscrsrc
 .jshintrc
 .eslintignore
@@ -48,6 +50,7 @@ phpunit.xml.dist
 phpstan.neon
 phpstan.neon.dist
 phpstan-baseline.neon
+phpstan-bootstrap.php
 CHANGELOG.md
 README.md
 readme.md
