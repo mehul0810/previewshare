@@ -1,4 +1,4 @@
-# Copyright (C) 2025 PreviewShare
+# Copyright (C) 2026 PreviewShare
 # This file is distributed under the same license as the PreviewShare package.
 msgid ""
 msgstr ""
@@ -7,7 +7,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Language-Team: Mehul Gohil <hello@mehulgohil.com>\n"
-"POT-Creation-Date: 2025-12-19 14:29+0000\n"
+"POT-Creation-Date: 2026-05-22 06:51+0000\n"
 "Report-Msgid-Bugs-To: https://github.com/mehul0810/previewshare/issues/new\n"
 "X-Poedit-Basepath: ..\n"
 "X-Poedit-KeywordsList: __;_e;_ex:1,2c;_n:1,2;_n_noop:1,2;_nx:1,2,4c;_nx_noop:1,2,3c;_x:1,2c;esc_attr__;esc_attr_e;esc_attr_x:1,2c;esc_html__;esc_html_e;esc_html_x:1,2c\n"
@@ -16,6 +16,77 @@ msgstr ""
 "X-Poedit-SourceCharset: UTF-8\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-#: src/Admin/Settings.php:41, src/Admin/Settings.php:42
+#: src/Admin/Actions.php:384, src/Admin/Actions.php:393, src/Admin/Actions.php:398
+msgid "Preview link is invalid or has expired."
+msgstr ""
+
+#: src/Admin/Actions.php:388
+msgid "Preview link is disabled."
+msgstr ""
+
+#: src/Admin/Actions.php:402
+msgid "Preview link is not available for this content."
+msgstr ""
+
+#: src/Admin/Actions.php:539, src/Admin/Settings.php:41, src/Admin/Settings.php:42
 msgid "PreviewShare"
+msgstr ""
+
+#: src/Admin/Actions.php:556
+msgid "Preview sharing is unavailable for this content."
+msgstr ""
+
+#. translators: %d: Number of active preview links.
+#: src/Admin/Actions.php:568
+msgid "%d active preview link."
+msgid_plural "%d active preview links."
+msgstr[0] ""
+msgstr[1] ""
+
+#: src/Admin/Actions.php:572, src/Admin/Actions.php:591
+msgid "Generate Preview Link"
+msgstr ""
+
+#: src/Admin/Actions.php:575
+msgid "Revoke Active Links"
+msgstr ""
+
+#: src/Admin/Actions.php:608
+msgid "Admin generated link"
+msgstr ""
+
+#: src/Admin/Actions.php:624
+msgid "Preview link could not be generated."
+msgstr ""
+
+#: src/Admin/Actions.php:649
+msgid "Preview links revoked."
+msgstr ""
+
+#: src/Admin/Actions.php:649
+msgid "No active preview links were found."
+msgstr ""
+
+#: src/Admin/Actions.php:679
+msgid "Preview link generated."
+msgstr ""
+
+#: src/Admin/Actions.php:827
+msgid "Draft preview"
+msgstr ""
+
+#: src/Admin/Actions.php:828
+msgid "This content is shared privately. Search engines are blocked from indexing this preview link."
+msgstr ""
+
+#: src/Admin/Actions.php:858
+msgid "Invalid post."
+msgstr ""
+
+#: src/Admin/Actions.php:864
+msgid "PreviewShare is not available for this content."
+msgstr ""
+
+#: src/Admin/Actions.php:868
+msgid "You are not allowed to manage preview links for this content."
 msgstr ""

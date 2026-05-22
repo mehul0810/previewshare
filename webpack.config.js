@@ -9,7 +9,7 @@ const defaultConfig = require( '@wordpress/scripts/config/webpack.config' );
 const ImageminPlugin = require( 'imagemin-webpack-plugin' ).default;
 const wpPot = require( 'wp-pot' );
 
-const inProduction = ( 'production' === process.env.NODE_ENV );
+const inProduction = 'production' === process.env.NODE_ENV;
 const mode = inProduction ? 'production' : 'development';
 
 const config = {
@@ -17,10 +17,19 @@ const config = {
 	mode,
 	entry: {
 		...defaultConfig.entry,
-		previewshare: [ './assets/src/js/frontend/main.js', './assets/src/css/frontend/main.css' ],
-		'previewshare-admin': [ './assets/src/js/admin/main.js', './assets/src/css/admin/main.css' ],
+		previewshare: [
+			'./assets/src/js/frontend/main.js',
+			'./assets/src/css/frontend/main.css',
+		],
+		'previewshare-admin': [
+			'./assets/src/js/admin/main.js',
+			'./assets/src/css/admin/main.css',
+		],
 		// Settings React app we added - builds to assets/dist/js/previewshare-settings.min.js
-		'previewshare-settings': [ './assets/src/js/settings.js' ],
+		'previewshare-settings': [
+			'./assets/src/js/settings.js',
+			'./assets/src/css/admin/settings.css',
+		],
 	},
 	output: {
 		...defaultConfig.output,
@@ -36,7 +45,9 @@ const config = {
 
 if ( inProduction ) {
 	// Minify images.
-	config.plugins.push( new ImageminPlugin( { test: /\.(jpe?g|png|gif|svg)$/i } ) );
+	config.plugins.push(
+		new ImageminPlugin( { test: /\.(jpe?g|png|gif|svg)$/i } )
+	);
 
 	// POT file generation for translations.
 	wpPot( {

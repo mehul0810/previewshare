@@ -1,1 +1,130 @@
-/* PreviewShare editor styles are intentionally empty until needed. */
+.previewshare-panel__body {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	padding-top: 4px;
+}
+
+.previewshare-panel__body .components-base-control {
+	margin-bottom: 0;
+}
+
+.previewshare-panel__body .components-base-control__field {
+	margin-bottom: 0;
+}
+
+.previewshare-panel__toggle .components-base-control__field {
+	align-items: center;
+}
+
+.previewshare-panel__field .components-base-control__label {
+	margin-bottom: 6px;
+	letter-spacing: 0;
+	line-height: 1.25;
+}
+
+.previewshare-panel__field .components-base-control__help {
+	margin-top: 8px;
+	color: #757575;
+	font-size: 12px;
+	line-height: 1.45;
+}
+
+.previewshare-panel__notice {
+	margin: -6px 0 0;
+	color: #757575;
+	font-size: 12px;
+	line-height: 1.45;
+}
+
+.previewshare-panel__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding-top: 2px;
+}
+
+.previewshare-panel__actions .components-button {
+	min-height: 36px;
+}
+
+.previewshare-panel__url {
+	position: relative;
+}
+
+.previewshare-panel__url .components-text-control__input {
+	min-height: 40px;
+	padding-right: 42px;
+	font-size: 13px;
+	line-height: 1.4;
+	text-overflow: ellipsis;
+}
+
+.previewshare-panel__copy-button.components-button {
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	width: 32px;
+	min-width: 32px;
+	height: 32px;
+	padding: 0;
+	color: #1e1e1e;
+}
+
+.previewshare-panel__copy-button .components-button__icon,
+.previewshare-panel__copy-button svg {
+	width: 20px;
+	height: 20px;
+	margin: 0;
+}
+
+.previewshare-panel__links {
+	margin-top: 2px;
+	padding-top: 14px;
+	border-top: 1px solid #ddd;
+}
+
+.previewshare-panel__links-title {
+	margin: 0 0 10px;
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+.previewshare-panel__links-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.previewshare-panel__link-item {
+	margin: 0;
+	padding: 0 0 10px;
+	border-bottom: 1px solid #f0f0f0;
+}
+
+.previewshare-panel__link-item:last-child {
+	padding-bottom: 0;
+	border-bottom: 0;
+}
+
+.previewshare-panel__link-label {
+	display: block;
+	font-size: 13px;
+	font-weight: 500;
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+
+.previewshare-panel__link-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 8px;
+	margin-top: 3px;
+	color: #757575;
+	font-size: 12px;
+	line-height: 1.4;
+}

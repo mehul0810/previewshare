@@ -12,7 +12,7 @@ use PreviewShare\Services\PostMetaStorage;
 
 // Abort if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
-    exit;
+	exit;
 }
 
 /**
@@ -20,378 +20,448 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class PreviewController {
 
-    /**
-     * Token service instance.
-     *
-     * @var TokenService
-     */
-    private $token_service;
+	/**
+	 * Token service instance.
+	 *
+	 * @var TokenService
+	 */
+	private $token_service;
 
-    /**
-     * Storage instance.
-     *
-     * @var PostMetaStorage
-     */
-    private $storage;
+	/**
+	 * Storage instance.
+	 *
+	 * @var PostMetaStorage
+	 */
+	private $storage;
 
-    /**
-     * Constructor.
-     *
-     * @param TokenService         $token_service Token helper.
-     * @param PostMetaStorage      $storage Storage driver.
-     */
-    public function __construct( TokenService $token_service, PostMetaStorage $storage ) {
-        $this->token_service = $token_service;
-        $this->storage       = $storage;
+	/**
+	 * Constructor.
+	 *
+	 * @param TokenService    $token_service Token helper.
+	 * @param PostMetaStorage $storage Storage driver.
+	 */
+	public function __construct( TokenService $token_service, PostMetaStorage $storage ) {
+		$this->token_service = $token_service;
+		$this->storage       = $storage;
 
-        // Register routes on rest_api_init (normal) and also immediately
-        // if rest_api_init already fired (defensive - ensures route
-        // availability if constructed later in the request lifecycle).
-        add_action( 'rest_api_init', [ $this, 'register_routes' ] );
+		// Register routes on rest_api_init (normal) and also immediately
+		// if rest_api_init already fired (defensive - ensures route
+		// availability if constructed later in the request lifecycle).
+		add_action( 'rest_api_init', [ $this, 'register_routes' ] );
 
-        if ( did_action( 'rest_api_init' ) ) {
-            $this->register_routes();
-        }
-    }
+		if ( did_action( 'rest_api_init' ) ) {
+			$this->register_routes();
+		}
+	}
 
-    /**
-     * Register REST routes for preview management.
-     */
-    public function register_routes(): void {
-        register_rest_route( 'previewshare/v1', '/v2/generate', [
-            'methods'             => 'POST',
-            'callback'            => [ $this, 'generate' ],
-            'permission_callback' => [ $this, 'permission_generate' ],
-            'args'                => [
-                'post_id' => [
-                    'required'          => true,
-                    'validate_callback' => function( $value ) {
-                        return is_numeric( $value ) && $value > 0;
-                    },
-                ],
-                'ttl_hours' => [
-                    'required' => false,
-                    'validate_callback' => function( $value ) {
-                        return is_numeric( $value ) && $value >= 0;
-                    },
-                ],
-            ],
-        ] );
+	/**
+	 * Register REST routes for preview management.
+	 */
+	public function register_routes(): void {
+		register_rest_route(
+			'previewshare/v1',
+			'/v2/generate',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'generate' ],
+				'permission_callback' => [ $this, 'permission_generate' ],
+				'args'                => [
+					'post_id' => [
+						'required'          => true,
+						'validate_callback' => function ( $value ) {
+							return is_numeric( $value ) && $value > 0;
+						},
+					],
+					'ttl_hours' => [
+						'required' => false,
+						'validate_callback' => function ( $value ) {
+							return is_numeric( $value ) && $value >= 0;
+						},
+					],
+					'label' => [
+						'required' => false,
+						'type'     => 'string',
+					],
+				],
+			]
+		);
 
-        register_rest_route( 'previewshare/v1', '/v2/revoke', [
-            'methods'             => 'POST',
-            'callback'            => [ $this, 'revoke' ],
-            'permission_callback' => [ $this, 'permission_revoke' ],
-            'args'                => [
-                'post_id' => [
-                    'required'          => false,
-                    'validate_callback' => function( $value ) {
-                        return is_numeric( $value ) && $value > 0;
-                    },
-                ],
-                'token' => [
-                    'required' => false,
-                    'type'     => 'string',
-                ],
-            ],
-        ] );
+		register_rest_route(
+			'previewshare/v1',
+			'/v2/revoke',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'revoke' ],
+				'permission_callback' => [ $this, 'permission_revoke' ],
+				'args'                => [
+					'post_id' => [
+						'required'          => false,
+						'validate_callback' => function ( $value ) {
+							return is_numeric( $value ) && $value > 0;
+						},
+					],
+					'token' => [
+						'required' => false,
+						'type'     => 'string',
+					],
+				],
+			]
+		);
 
-        // List tokens (admin)
-        register_rest_route( 'previewshare/v1', '/tokens', [
-            'methods'             => 'GET',
-            'callback'            => [ $this, 'list_tokens' ],
-            'permission_callback' => function() {
-                return current_user_can( 'manage_options' );
-            },
-            'args'                => [
-                'per_page' => [ 'required' => false, 'default' => 50 ],
-                'page'     => [ 'required' => false, 'default' => 1 ],
-            ],
-        ] );
+		// List tokens in the admin settings screen.
+		register_rest_route(
+			'previewshare/v1',
+			'/tokens',
+			[
+				'methods'             => 'GET',
+				'callback'            => [ $this, 'list_tokens' ],
+				'permission_callback' => function () {
+					return current_user_can( 'manage_options' );
+				},
+				'args'                => [
+					'per_page' => [
+						'required' => false,
+						'default' => 50,
+					],
+					'page'     => [
+						'required' => false,
+						'default' => 1,
+					],
+				],
+			]
+		);
 
-        // Revoke token by DB id (admin)
-        register_rest_route( 'previewshare/v1', '/tokens/revoke', [
-            'methods'             => 'POST',
-            'callback'            => [ $this, 'revoke_by_id' ],
-            'permission_callback' => function() {
-                return current_user_can( 'manage_options' );
-            },
-            'args'                => [
-                'id' => [
-                    'required' => true,
-                    'validate_callback' => function( $v ) {
-                        return is_numeric( $v ) && $v > 0;
-                    },
-                ],
-            ],
-        ] );
+		// Revoke a token by stored ID/hash in the admin settings screen.
+		register_rest_route(
+			'previewshare/v1',
+			'/tokens/revoke',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'revoke_by_id' ],
+				'permission_callback' => function () {
+					return current_user_can( 'manage_options' );
+				},
+				'args'                => [
+					'id' => [
+						'required' => true,
+						'type'     => 'string',
+					],
+				],
+			]
+		);
 
-        // No legacy postmeta routes - plugin now uses custom table only.
+		// No legacy post meta REST routes are exposed.
 
-        // Settings get/update
-        register_rest_route( 'previewshare/v1', '/settings', [
-            [
-                'methods'             => 'GET',
-                'callback'            => [ $this, 'get_settings' ],
-                'permission_callback' => function() {
-                    return current_user_can( 'manage_options' );
-                },
-            ],
-            [
-                'methods'             => 'POST',
-                'callback'            => [ $this, 'update_settings' ],
-                'permission_callback' => function() {
-                    return current_user_can( 'manage_options' );
-                },
-                'args'                => [
-                    'default_ttl_hours' => [ 'required' => false, 'type' => 'integer' ],
-                    'enable_logging'    => [ 'required' => false, 'type' => 'boolean' ],
-                    'enable_caching'    => [ 'required' => false, 'type' => 'boolean' ],
-                ],
-            ],
-        ] );
-    }
+		// Settings get/update routes.
+		register_rest_route(
+			'previewshare/v1',
+			'/settings',
+			[
+				[
+					'methods'             => 'GET',
+					'callback'            => [ $this, 'get_settings' ],
+					'permission_callback' => function () {
+						return current_user_can( 'manage_options' );
+					},
+				],
+				[
+					'methods'             => 'POST',
+					'callback'            => [ $this, 'update_settings' ],
+					'permission_callback' => function () {
+						return current_user_can( 'manage_options' );
+					},
+					'args'                => [
+						'default_ttl_hours' => [
+							'required' => false,
+							'type' => 'integer',
+						],
+						'enable_logging'    => [
+							'required' => false,
+							'type' => 'boolean',
+						],
+						'enable_caching'    => [
+							'required' => false,
+							'type' => 'boolean',
+						],
+						'post_types'        => [
+							'required' => false,
+							'type' => 'array',
+						],
+						'reset_defaults'    => [
+							'required' => false,
+							'type' => 'boolean',
+						],
+					],
+				],
+			]
+		);
+	}
 
-    /**
-     * List tokens callback.
-     *
-     * @param \WP_REST_Request $request
-     * @return \WP_REST_Response
-     */
-    public function list_tokens( $request ) {
-        $per_page = min( 100, absint( $request->get_param( 'per_page' ) ) ?: 50 );
-        $page     = absint( $request->get_param( 'page' ) ) ?: 1;
-        // Pull rows from custom table only (no legacy postmeta handling).
-        $rows = $this->storage->list_tokens( $per_page, $page );
-        $total = $this->storage->count_tokens();
+	/**
+	 * List tokens callback.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public function list_tokens( $request ) {
+		$requested_per_page = absint( $request->get_param( 'per_page' ) );
+		$requested_page     = absint( $request->get_param( 'page' ) );
+		$per_page           = min( 100, $requested_per_page ? $requested_per_page : 50 );
+		$page               = $requested_page ? $requested_page : 1;
+		// Pull rows from post meta storage.
+		$rows  = $this->storage->list_tokens( $per_page, $page );
+		$total = $this->storage->count_tokens();
 
-        // Enrich with post title
-        $items = array_map( function( $row ) {
-            $post = get_post( $row['post_id'] );
-            return [
-                'id'        => isset( $row['id'] ) ? (int) $row['id'] : 0,
-                'post_id'   => (int) $row['post_id'],
-                'post_title'=> $post ? get_the_title( $post ) : '(deleted)',
-                'created_at'=> isset( $row['created_at'] ) ? (int) $row['created_at'] : 0,
-                'expires_at'=> isset( $row['expires_at'] ) ? (int) $row['expires_at'] : null,
-                'revoked'   => (bool) $row['revoked'],
-            ];
-        }, $rows );
+		// Enrich each token with the related post title.
+		$items = array_map(
+			function ( $row ) {
+				$post = get_post( $row['post_id'] );
+				return [
+					'id'             => isset( $row['id'] ) ? (string) $row['id'] : '',
+					'post_id'        => (int) $row['post_id'],
+					'post_title'     => $post ? get_the_title( $post ) : '(deleted)',
+					'label'          => isset( $row['label'] ) ? (string) $row['label'] : '',
+					'created_at'     => isset( $row['created_at'] ) ? (int) $row['created_at'] : 0,
+					'expires_at'     => isset( $row['expires_at'] ) ? $row['expires_at'] : null,
+					'revoked'        => (bool) $row['revoked'],
+					'expired'        => ! empty( $row['expired'] ),
+					'status'         => isset( $row['status'] ) ? (string) $row['status'] : 'active',
+					'view_count'     => isset( $row['view_count'] ) ? (int) $row['view_count'] : 0,
+					'last_viewed_at' => isset( $row['last_viewed_at'] ) ? $row['last_viewed_at'] : null,
+				];
+			},
+			$rows
+		);
 
-        if ( get_option( 'previewshare_enable_logging', false ) ) {
-            error_log( '[PreviewShare] list_tokens called by user ' . get_current_user_id() . ' page=' . $page . ' per_page=' . $per_page );
-        }
+		\previewshare_log(
+			'list_tokens',
+			[
+				'user_id'  => get_current_user_id(),
+				'page'     => $page,
+				'per_page' => $per_page,
+			]
+		);
 
-        return new \WP_REST_Response( [ 'items' => $items, 'total' => $total ], 200 );
-    }
+		return new \WP_REST_Response(
+			[
+				'items' => $items,
+				'total' => $total,
+			],
+			200
+		);
+	}
 
-    /**
-     * Revoke token by DB id.
-     *
-     * @param \WP_REST_Request $request
-     * @return \WP_REST_Response
-     */
-    public function revoke_by_id( $request ) {
-        $id = absint( $request->get_param( 'id' ) );
+	/**
+	 * Revoke token by DB id.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function revoke_by_id( $request ) {
+		$id = sanitize_key( (string) $request->get_param( 'id' ) );
 
-        if ( ! $id ) {
-            return new \WP_Error( 'invalid_id', 'Invalid token id', [ 'status' => 400 ] );
-        }
+		if ( ! $id ) {
+			return new \WP_Error( 'invalid_id', 'Invalid token id', [ 'status' => 400 ] );
+		}
 
-        $revoked = $this->storage->revoke_token_by_id( $id );
+		$revoked = $this->storage->revoke_token_by_id( $id );
 
-        if ( get_option( 'previewshare_enable_logging', false ) ) {
-            error_log( '[PreviewShare] revoke_by_id called by user ' . get_current_user_id() . ' id=' . $id . ' result=' . (int) $revoked );
-        }
+		\previewshare_log(
+			'revoke_by_id',
+			[
+				'user_id' => get_current_user_id(),
+				'id'      => $id,
+				'revoked' => (bool) $revoked,
+			]
+		);
 
-        return new \WP_REST_Response( [ 'revoked' => (bool) $revoked ], 200 );
-    }
+		return new \WP_REST_Response( [ 'revoked' => (bool) $revoked ], 200 );
+	}
 
 
-    /**
-     * Return current plugin settings.
-     *
-     * @return \WP_REST_Response
-     */
-    public function get_settings() {
-        $settings = [
-            'default_ttl_hours' => $this->get_default_ttl_hours(),
-            'enable_logging'    => (bool) get_option( 'previewshare_enable_logging', false ),
-            'enable_caching'    => (bool) get_option( 'previewshare_enable_caching', true ),
-        ];
+	/**
+	 * Return current plugin settings.
+	 *
+	 * @return \WP_REST_Response
+	 */
+	public function get_settings() {
+		\previewshare_maybe_initialize_default_settings();
 
-        return new \WP_REST_Response( $settings, 200 );
-    }
+		return new \WP_REST_Response( \previewshare_get_settings(), 200 );
+	}
 
-    /**
-     * Update plugin settings.
-     *
-     * @param \WP_REST_Request $request
-     * @return \WP_REST_Response
-     */
-    public function update_settings( $request ) {
-        $ttl = $request->get_param( 'default_ttl_hours' );
-        $log = $request->get_param( 'enable_logging' );
-        $cache = $request->get_param( 'enable_caching' );
+	/**
+	 * Update plugin settings.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public function update_settings( $request ) {
+		$reset_defaults = $request->get_param( 'reset_defaults' );
 
-        // Sanitize and persist only the provided keys.
-        if ( null !== $ttl ) {
-            $sanitized_ttl = absint( $ttl );
-            update_option( 'previewshare_default_ttl_hours', $sanitized_ttl, false );
-        }
+		if ( $reset_defaults ) {
+			$settings = \previewshare_reset_default_settings();
+		} else {
+			$settings_to_update = [];
 
-        if ( null !== $log ) {
-            $sanitized_log = filter_var( $log, FILTER_VALIDATE_BOOLEAN );
-            update_option( 'previewshare_enable_logging', (bool) $sanitized_log, false );
-        }
+			foreach ( [ 'default_ttl_hours', 'enable_logging', 'enable_caching', 'post_types' ] as $key ) {
+				if ( null !== $request->get_param( $key ) ) {
+					$settings_to_update[ $key ] = $request->get_param( $key );
+				}
+			}
 
-        if ( null !== $cache ) {
-            $sanitized_cache = filter_var( $cache, FILTER_VALIDATE_BOOLEAN );
-            update_option( 'previewshare_enable_caching', (bool) $sanitized_cache, false );
-        }
+			$settings = \previewshare_update_settings( $settings_to_update );
+		}
 
-        // Return the current settings so the client can refresh its state.
-        $settings = [
-            'default_ttl_hours' => $this->get_default_ttl_hours(),
-            'enable_logging'    => (bool) get_option( 'previewshare_enable_logging', false ),
-            'enable_caching'    => (bool) get_option( 'previewshare_enable_caching', true ),
-        ];
+		\previewshare_log(
+			'update_settings',
+			[
+				'user_id' => get_current_user_id(),
+			]
+		);
 
-        if ( get_option( 'previewshare_enable_logging', false ) ) {
-            error_log( '[PreviewShare] update_settings called by user ' . get_current_user_id() );
-        }
+		return new \WP_REST_Response( $settings, 200 );
+	}
 
-        return new \WP_REST_Response( $settings, 200 );
-    }
+	/**
+	 * Permissions callback for generation/revocation.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return bool
+	 */
+	public function permission_generate( $request ): bool {
+		$post_id = isset( $request['post_id'] ) ? absint( $request['post_id'] ) : 0;
 
-    /**
-     * Permissions callback for generation/revocation.
-     *
-     * @param \WP_REST_Request $request Request.
-     * @return bool
-     */
-    public function permission_generate( $request ): bool {
-        $post_id = isset( $request['post_id'] ) ? absint( $request['post_id'] ) : 0;
+		if ( $post_id ) {
+			return current_user_can( 'edit_post', $post_id );
+		}
 
-        if ( $post_id ) {
-            return current_user_can( 'edit_post', $post_id );
-        }
+		return false;
+	}
 
-        return false;
-    }
+	/**
+	 * Permissions callback for revocation.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return bool
+	 */
+	public function permission_revoke( $request ): bool {
+		$post_id = isset( $request['post_id'] ) ? absint( $request['post_id'] ) : 0;
 
-    /**
-     * Permissions callback for revocation.
-     *
-     * @param \WP_REST_Request $request Request.
-     * @return bool
-     */
-    public function permission_revoke( $request ): bool {
-        $post_id = isset( $request['post_id'] ) ? absint( $request['post_id'] ) : 0;
+		if ( $post_id ) {
+			return current_user_can( 'edit_post', $post_id );
+		}
 
-        if ( $post_id ) {
-            return current_user_can( 'edit_post', $post_id );
-        }
+		return current_user_can( 'manage_options' );
+	}
 
-        return current_user_can( 'manage_options' );
-    }
+	/**
+	 * Create a preview token and persist it.
+	 *
+	 * @param \WP_REST_Request<array<string,mixed>> $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function generate( $request ) {
+		$post_id = absint( $request->get_param( 'post_id' ) );
 
-    /**
-     * Create a preview token and persist it.
-     *
-     * @param \WP_REST_Request $request Request.
-     * @return \WP_REST_Response
-     */
-    public function generate( $request ) {
-        $post_id = absint( $request->get_param( 'post_id' ) );
+		if ( ! $post_id || ! get_post( $post_id ) ) {
+			return new \WP_Error( 'invalid_post', 'Invalid post ID', [ 'status' => 400 ] );
+		}
 
-        if ( ! $post_id || ! get_post( $post_id ) ) {
-            return new \WP_Error( 'invalid_post', 'Invalid post ID', [ 'status' => 400 ] );
-        }
+		$post = get_post( $post_id );
+		if ( ! $post || ! \previewshare_is_supported_post_type( $post->post_type ) ) {
+			return new \WP_Error( 'unsupported_post_type', 'PreviewShare is not enabled for this post type', [ 'status' => 400 ] );
+		}
 
-        $post = get_post( $post_id );
-        if ( ! $post || ! $this->is_previewable_post_status( $post->post_status ) ) {
-            return new \WP_Error( 'invalid_post_status', 'Post must be published, draft, pending, or scheduled to generate preview links', [ 'status' => 400 ] );
-        }
+		if ( ! $this->is_previewable_post_status( $post->post_status ) ) {
+			return new \WP_Error( 'invalid_post_status', 'Post must be published, draft, pending, scheduled, or private to generate preview links', [ 'status' => 400 ] );
+		}
 
-        $ttl = $request->get_param( 'ttl_hours' );
-        $ttl = is_null( $ttl ) ? $this->get_post_or_default_ttl_hours( $post_id ) : absint( $ttl );
+		$ttl   = $request->get_param( 'ttl_hours' );
+		$ttl   = is_null( $ttl ) ? $this->get_post_or_default_ttl_hours( $post_id ) : absint( $ttl );
+		$label = sanitize_text_field( (string) $request->get_param( 'label' ) );
 
-        $token = $this->token_service->generate();
-        $stored = $this->storage->store_token( $post_id, $token, $ttl );
+		$token  = $this->token_service->generate();
+		$stored = $this->storage->store_token( $post_id, $token, $ttl, $label );
 
-        if ( ! $stored ) {
-            return new \WP_Error( 'token_storage_failed', 'Preview token could not be stored', [ 'status' => 500 ] );
-        }
+		if ( ! $stored ) {
+			return new \WP_Error( 'token_storage_failed', 'Preview token could not be stored', [ 'status' => 500 ] );
+		}
 
-        update_post_meta( $post_id, '_previewshare_enabled', true );
-        if ( null !== $request->get_param( 'ttl_hours' ) ) {
-            update_post_meta( $post_id, '_previewshare_ttl_hours', $ttl );
-        }
+		update_post_meta( $post_id, '_previewshare_enabled', true );
+		if ( null !== $request->get_param( 'ttl_hours' ) ) {
+			update_post_meta( $post_id, '_previewshare_ttl_hours', $ttl );
+		}
 
-        $preview_url = home_url( '/preview/' . $token );
+		$preview_url = home_url( '/preview/' . $token );
 
-        return new \WP_REST_Response( [ 'url' => $preview_url, 'token' => $token ], 200 );
-    }
+		return new \WP_REST_Response(
+			[
+				'url' => $preview_url,
+				'token' => $token,
+			],
+			200
+		);
+	}
 
-    /**
-     * Revoke token endpoint (simple implementation).
-     *
-     * @param \WP_REST_Request $request Request.
-     * @return \WP_REST_Response
-     */
-    public function revoke( $request ) {
-        $post_id = absint( $request->get_param( 'post_id' ) );
-        if ( $post_id ) {
-            $revoked = $this->storage->revoke_token_for_post( $post_id );
+	/**
+	 * Revoke token endpoint (simple implementation).
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public function revoke( $request ) {
+		$post_id = absint( $request->get_param( 'post_id' ) );
+		if ( $post_id ) {
+			$revoked = $this->storage->revoke_token_for_post( $post_id );
 
-            return new \WP_REST_Response( [ 'revoked' => (bool) $revoked ], 200 );
-        }
+			return new \WP_REST_Response( [ 'revoked' => (bool) $revoked ], 200 );
+		}
 
-        $token = $request->get_param( 'token' );
+		$token = $request->get_param( 'token' );
 
-        if ( empty( $token ) ) {
-            return new \WP_Error( 'invalid_token', 'Token is required', [ 'status' => 400 ] );
-        }
+		if ( empty( $token ) ) {
+			return new \WP_Error( 'invalid_token', 'Token is required', [ 'status' => 400 ] );
+		}
 
-        // Use storage driver revoke implementation.
-        $revoked = $this->storage->revoke_token( $token );
+		// Use storage driver revoke implementation.
+		$revoked = $this->storage->revoke_token( $token );
 
-        return new \WP_REST_Response( [ 'revoked' => (bool) $revoked ], 200 );
-    }
+		return new \WP_REST_Response( [ 'revoked' => (bool) $revoked ], 200 );
+	}
 
-    /**
-     * Get the global default TTL in hours.
-     *
-     * @return int
-     */
-    private function get_default_ttl_hours(): int {
-        return (int) get_option( 'previewshare_default_ttl_hours', 6 );
-    }
+	/**
+	 * Get the global default TTL in hours.
+	 *
+	 * @return int
+	 */
+	private function get_default_ttl_hours(): int {
+		return (int) get_option( 'previewshare_default_ttl_hours', 6 );
+	}
 
-    /**
-     * Get the per-post TTL override, falling back to the global default.
-     *
-     * @param int $post_id Post ID.
-     * @return int
-     */
-    private function get_post_or_default_ttl_hours( int $post_id ): int {
-        $post_ttl = get_post_meta( $post_id, '_previewshare_ttl_hours', true );
+	/**
+	 * Get the per-post TTL override, falling back to the global default.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return int
+	 */
+	private function get_post_or_default_ttl_hours( int $post_id ): int {
+		$post_ttl = get_post_meta( $post_id, '_previewshare_ttl_hours', true );
 
-        if ( '' !== $post_ttl && null !== $post_ttl ) {
-            return absint( $post_ttl );
-        }
+		if ( '' !== $post_ttl && null !== $post_ttl ) {
+			return absint( $post_ttl );
+		}
 
-        return $this->get_default_ttl_hours();
-    }
+		return $this->get_default_ttl_hours();
+	}
 
-    /**
-     * Check whether a post status can be exposed through a preview token.
-     *
-     * @param string $status Post status.
-     * @return bool
-     */
-    private function is_previewable_post_status( string $status ): bool {
-        return in_array( $status, [ 'publish', 'draft', 'pending', 'future' ], true );
-    }
+	/**
+	 * Check whether a post status can be exposed through a preview token.
+	 *
+	 * @param string $status Post status.
+	 * @return bool
+	 */
+	private function is_previewable_post_status( string $status ): bool {
+		return in_array( $status, [ 'publish', 'draft', 'pending', 'future', 'private' ], true );
+	}
 }

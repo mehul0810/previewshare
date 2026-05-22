@@ -12,7 +12,7 @@ namespace PreviewShare;
 
 // Abort if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
-    exit;
+	exit;
 }
 
 /**
@@ -20,49 +20,49 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Container {
 
-    /**
-     * Services map.
-     *
-     * @var array
-     */
-    private static $services = [];
+	/**
+	 * Services map.
+	 *
+	 * @var array
+	 */
+	private static $services = [];
 
-    /**
-     * Set a service by key.
-     *
-     * @param string $key Key name.
-     * @param mixed  $service Service instance.
-     * @return void
-     */
-    public static function set( string $key, $service ): void {
-        self::$services[ $key ] = $service;
-    }
+	/**
+	 * Set a service by key.
+	 *
+	 * @param string $key Key name.
+	 * @param mixed  $service Service instance.
+	 * @return void
+	 */
+	public static function set( string $key, $service ): void {
+		self::$services[ $key ] = $service;
+	}
 
-    /**
-     * Get a service by key.
-     *
-     * @param string $key Key name.
-     * @return mixed|null
-     */
-    public static function get( string $key ) {
-        return self::$services[ $key ] ?? null;
-    }
+	/**
+	 * Get a service by key.
+	 *
+	 * @param string $key Key name.
+	 * @return mixed|null
+	 */
+	public static function get( string $key ) {
+		return self::$services[ $key ] ?? null;
+	}
 
-    /**
-     * Convenience getter for token service.
-     *
-     * @return mixed|null
-     */
-    public static function token_service() {
-        return self::get( 'token_service' );
-    }
+	/**
+	 * Convenience getter for token service.
+	 *
+	 * @return mixed|null
+	 */
+	public static function token_service() {
+		return self::get( 'token_service' );
+	}
 
-    /**
-     * Convenience getter for storage.
-     *
-     * @return mixed|null
-     */
-    public static function storage() {
-        return self::get( 'storage' );
-    }
+	/**
+	 * Convenience getter for storage.
+	 *
+	 * @return mixed|null
+	 */
+	public static function storage() {
+		return self::get( 'storage' );
+	}
 }
