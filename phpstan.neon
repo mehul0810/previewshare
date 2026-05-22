@@ -1,7 +1,3 @@
 includes:
+  - phpstan.neon.dist
   - phpstan-baseline.neon
-
-parameters:
-  level: 6
-  paths:
-    - src

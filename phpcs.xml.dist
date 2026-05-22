@@ -2,11 +2,23 @@
 <ruleset name="PreviewShare WPCS">
     <description>WordPress Coding Standards for PreviewShare plugin.</description>
 
-    <!-- Use the installed WordPress Coding Standards to avoid vendor path issues -->
-    <rule ref="WordPress" />
+    <arg name="extensions" value="php"/>
+    <config name="testVersion" value="8.0-"/>
 
-    <!-- Exclude vendor and build directories -->
     <file>src</file>
+    <file>config</file>
+    <file>previewshare.php</file>
+
+    <rule ref="WordPress">
+        <!-- PreviewShare uses PSR-4 class names and PHP 8+ syntax intentionally. -->
+        <exclude name="WordPress.Files.FileName"/>
+        <exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
+        <exclude name="WordPress.Arrays.MultipleStatementAlignment"/>
+        <exclude name="WordPress.PHP.YodaConditions.NotYoda"/>
+    </rule>
+
     <exclude-pattern>vendor/*</exclude-pattern>
     <exclude-pattern>node_modules/*</exclude-pattern>
+    <exclude-pattern>tests/*</exclude-pattern>
+    <exclude-pattern>assets/*</exclude-pattern>
 </ruleset>

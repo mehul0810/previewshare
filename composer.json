@@ -1,5 +1,5 @@
 {
-	"name": "mehulgohil/preview",
+	"name": "mehulgohil/previewshare",
 	"description": "PreviewShare lets you securely share preview links for draft, pending, or scheduled content without publishing it publicly.",
 	"license": "GPL-3.0-or-later",
 	"authors": [
@@ -8,9 +8,6 @@
 			"email": "hello@mehulgohil.com"
 		}
 	],
-	"require": {
-		"freemius/wordpress-sdk": "^2.13"
-	},
 	"require-dev": {
 		"composer/installers": "^2.3",
 		"dealerdirect/phpcodesniffer-composer-installer": "^0.7.1",
@@ -18,29 +15,18 @@
 		"wp-coding-standards/wpcs": "3.3",
 		"phpstan/phpstan": "^2.0",
 		"phpstan/extension-installer": "^1.4",
-		"szepeviktor/phpstan-wordpress": "^2.0"
+		"szepeviktor/phpstan-wordpress": "^2.0",
+		"phpunit/phpunit": "^9.6",
+		"brain/monkey": "^2.6",
+		"mockery/mockery": "^1.6"
 	},
 	"scripts": {
-		"check-cs": [
-			"@php ./vendor/bin/phpcs -s"
-		],
-		"fix-cs": [
-			"PHP_CS_FIXER_IGNORE_ENV=1",
-			"@php ./vendor/bin/phpcbf",
-			"@php ./vendor/bin/php-cs-fixer fix . --allow-risky=yes"
-		],
-		"lint": [
-			"@php ./vendor/php-parallel-lint/php-parallel-lint/parallel-lint . -e php --show-deprecated --exclude vendor --exclude node_modules --exclude .git"
-		],
-		"lint-blueprint": [
-			"@php -r \"exit( intval( is_null( json_decode( file_get_contents( './.wordpress-org/blueprints/blueprint.json' ) ) ) ) );\""
-		],
-		"test": [
-			"@php ./vendor/phpunit/phpunit/phpunit --dont-report-useless-tests"
-		],
-		"phpstan": [
-			"@php ./vendor/bin/phpstan analyse --memory-limit=2048M"
-		]
+		"check-cs": "@php ./vendor/bin/phpcs -s",
+		"fix-cs": "@php ./vendor/bin/phpcbf",
+		"lint": "find . -path ./vendor -prune -o -path ./node_modules -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l",
+		"test": "@php ./vendor/bin/phpunit --configuration phpunit.xml.dist --dont-report-useless-tests",
+		"test:coverage": "@php ./vendor/bin/phpunit --configuration phpunit.xml.dist --coverage-text --colors=never",
+		"phpstan": "@php ./vendor/bin/phpstan analyse --memory-limit=2048M"
 	},
 	"autoload": {
 		"psr-4": {
@@ -53,8 +39,7 @@
 			"dealerdirect/phpcodesniffer-composer-installer": true,
 			"phpstan/extension-installer": true
 		}
-	}
-	,
+	},
 	"minimum-stability": "stable",
 	"prefer-stable": true
 }

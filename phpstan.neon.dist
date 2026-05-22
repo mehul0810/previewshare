@@ -1,8 +1,13 @@
 parameters:
   level: 6
   paths:
-    - .
+    - config
+    - previewshare.php
+    - src
+  bootstrapFiles:
+    - phpstan-bootstrap.php
   excludePaths:
+    - node_modules
     - vendor
     - tests
   treatPhpDocTypesAsCertain: false
