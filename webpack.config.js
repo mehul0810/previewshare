@@ -6,7 +6,6 @@ const path = require( 'path' );
 // layout that writes to `assets/dist/js/[name].min.js` so existing
 // enqueue paths continue to work.
 const defaultConfig = require( '@wordpress/scripts/config/webpack.config' );
-const ImageminPlugin = require( 'imagemin-webpack-plugin' ).default;
 const wpPot = require( 'wp-pot' );
 
 const inProduction = 'production' === process.env.NODE_ENV;
@@ -44,11 +43,6 @@ const config = {
 };
 
 if ( inProduction ) {
-	// Minify images.
-	config.plugins.push(
-		new ImageminPlugin( { test: /\.(jpe?g|png|gif|svg)$/i } )
-	);
-
 	// POT file generation for translations.
 	wpPot( {
 		package: 'PreviewShare',

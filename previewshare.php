@@ -15,9 +15,11 @@
  * @wordpress-plugin
  *
  * Plugin Name: PreviewShare
- * Plugin URI: https://mehulgohil.com/products/previewshare/
+ * Plugin URI: https://github.com/mehul0810/previewshare
  * Description: This plugin lets you securely share preview links for draft, pending, or scheduled content without publishing it publicly.
  * Version: 1.0.0
+ * Requires at least: 5.8
+ * Requires PHP: 8.0
  * Author: Mehul Gohil
  * Author URI: https://mehulgohil.com/
  * License: GPLv3 or later
