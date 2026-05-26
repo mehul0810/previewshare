@@ -65,7 +65,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          PLUGIN_VERSION="$(awk -F: '/^[[:space:]]*\\* Version:/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit }' previewshare.php)"
+          PLUGIN_VERSION="$(awk -F: '/^[[:space:]]*[*][[:space:]]Version:/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit }' previewshare.php)"
           STABLE_TAG="$(awk -F: '/^Stable tag:/ { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit }' readme.txt)"
           TAG_VERSION="${TAG_NAME#v}"
 
