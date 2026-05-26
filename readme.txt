@@ -85,7 +85,7 @@ Production ZIP files are built from the source repository with:
 `npm install`
 `npm run plugin-zip`
 
-The release artifact includes compiled assets, Composer autoload files, plugin PHP, languages, readme, and license files. Development files such as `node_modules`, source assets, CI configuration, tests, and build tooling are excluded from production ZIP files.
+The release artifact includes compiled assets, Composer autoload files, `composer.json`, plugin PHP, languages, readme, and license files. Development files such as `node_modules`, source assets, CI configuration, tests, and build tooling are excluded from production ZIP files.
 
 == Changelog ==
 
