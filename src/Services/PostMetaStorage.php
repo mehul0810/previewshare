@@ -32,6 +32,22 @@ class PostMetaStorage {
 	private const CACHE_GROUP           = 'previewshare_tokens';
 
 	/**
+	 * Token helper.
+	 *
+	 * @var TokenService
+	 */
+	private $token_service;
+
+	/**
+	 * Constructor.
+	 *
+	 * @param TokenService|null $token_service Optional token helper.
+	 */
+	public function __construct( ?TokenService $token_service = null ) {
+		$this->token_service = $token_service ? $token_service : new TokenService();
+	}
+
+	/**
 	 * Store a token for a post.
 	 *
 	 * @param int    $post_id Post ID.
@@ -41,13 +57,12 @@ class PostMetaStorage {
 	 * @return bool
 	 */
 	public function store_token( int $post_id, string $token, int $ttl_hours = 6, string $label = '' ): bool {
-		$token_service = new TokenService();
-		$hash          = $token_service->hash( $token );
-		$now           = time();
-		$ttl_seconds   = $ttl_hours > 0 ? ( $ttl_hours * HOUR_IN_SECONDS ) : 0;
-		$expires       = $ttl_hours > 0 ? ( $now + $ttl_seconds ) : null;
-		$links         = $this->get_links_for_post( $post_id );
-		$current_user  = get_current_user_id();
+		$hash         = $this->token_service->hash( $token );
+		$now          = time();
+		$ttl_seconds  = $ttl_hours > 0 ? ( $ttl_hours * HOUR_IN_SECONDS ) : 0;
+		$expires      = $ttl_hours > 0 ? ( $now + $ttl_seconds ) : null;
+		$links        = $this->get_links_for_post( $post_id );
+		$current_user = get_current_user_id();
 
 		$links[ $hash ] = $this->normalize_link_record(
 			[
@@ -101,9 +116,8 @@ class PostMetaStorage {
 	 * @return array{post_id:int,hash:string,link:LinkRecord}|null Link context or null when invalid.
 	 */
 	public function get_link_by_token( string $token ): ?array {
-		$token_service = new TokenService();
-		$hash          = $token_service->hash( $token );
-		$post_id       = $this->get_post_id_by_hash( $hash );
+		$hash    = $this->token_service->hash( $token );
+		$post_id = $this->get_post_id_by_hash( $hash );
 
 		if ( ! $post_id ) {
 			return null;
@@ -130,9 +144,8 @@ class PostMetaStorage {
 	 * @return bool
 	 */
 	public function record_token_view( string $token ): bool {
-		$token_service = new TokenService();
-		$hash          = $token_service->hash( $token );
-		$post_id       = $this->get_post_id_by_hash( $hash );
+		$hash    = $this->token_service->hash( $token );
+		$post_id = $this->get_post_id_by_hash( $hash );
 
 		if ( ! $post_id ) {
 			return false;
@@ -237,9 +250,7 @@ class PostMetaStorage {
 	 * @return bool
 	 */
 	public function revoke_token( string $token ): bool {
-		$token_service = new TokenService();
-
-		return $this->revoke_token_by_id( $token_service->hash( $token ) );
+		return $this->revoke_token_by_id( $this->token_service->hash( $token ) );
 	}
 
 	/**

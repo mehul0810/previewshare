@@ -97,6 +97,37 @@ class SettingsFunctionsTest extends TestCase {
 		$this->addToAssertionCount( 1 );
 	}
 
+	public function test_token_hash_key_is_generated_and_persisted_without_autoloading(): void {
+		Functions\expect( 'get_option' )
+			->once()
+			->with( 'previewshare_token_hash_key', '' )
+			->andReturn( '' );
+		Functions\expect( 'add_option' )
+			->once()
+			->withArgs(
+				static function( string $option, string $key, string $deprecated, bool $autoload ): bool {
+					return 'previewshare_token_hash_key' === $option
+						&& 1 === preg_match( '/^[a-f0-9]{64}$/', $key )
+						&& '' === $deprecated
+						&& false === $autoload;
+				}
+			)
+			->andReturn( true );
+
+		$this->assertMatchesRegularExpression( '/^[a-f0-9]{64}$/', \previewshare_get_token_hash_key() );
+	}
+
+	public function test_token_hash_key_uses_existing_plugin_owned_key(): void {
+		$key = 'previewshare-existing-plugin-owned-key';
+
+		Functions\expect( 'get_option' )
+			->once()
+			->with( 'previewshare_token_hash_key', '' )
+			->andReturn( $key );
+
+		$this->assertSame( $key, \previewshare_get_token_hash_key() );
+	}
+
 	private function mockAvailablePostTypes(): void {
 		Functions\expect( 'get_post_types' )
 			->twice()

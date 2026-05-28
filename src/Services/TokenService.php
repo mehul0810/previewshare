@@ -20,6 +20,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 class TokenService {
 
 	/**
+	 * Optional token hash key override.
+	 *
+	 * @var string|null
+	 */
+	private $hash_key;
+
+	/**
+	 * Constructor.
+	 *
+	 * @param string|null $hash_key Optional token hash key, useful for tests.
+	 */
+	public function __construct( ?string $hash_key = null ) {
+		$this->hash_key = $hash_key;
+	}
+
+	/**
 	 * Generate a new random token for user consumption.
 	 *
 	 * @return string Raw token string.
@@ -35,7 +51,7 @@ class TokenService {
 	 * @return string Hash of token.
 	 */
 	public function hash( string $token ): string {
-		return hash_hmac( 'sha256', $token, AUTH_SALT );
+		return hash_hmac( 'sha256', $token, $this->get_hash_key() );
 	}
 
 	/**
@@ -47,5 +63,18 @@ class TokenService {
 	 */
 	public function verify( string $token, string $stored_hash ): bool {
 		return hash_equals( $stored_hash, $this->hash( $token ) );
+	}
+
+	/**
+	 * Resolve the hash key used for token storage.
+	 *
+	 * @return string Hash key.
+	 */
+	private function get_hash_key(): string {
+		if ( is_string( $this->hash_key ) && '' !== $this->hash_key ) {
+			return $this->hash_key;
+		}
+
+		return \previewshare_get_token_hash_key();
 	}
 }

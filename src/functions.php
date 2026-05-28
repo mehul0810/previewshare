@@ -116,6 +116,38 @@ function previewshare_maybe_initialize_default_settings(): void {
 }
 
 /**
+ * Get the plugin-owned secret key used to hash preview tokens.
+ *
+ * @return string Token hash key.
+ */
+function previewshare_get_token_hash_key(): string {
+	$option_name = 'previewshare_token_hash_key';
+	$stored_key  = get_option( $option_name, '' );
+
+	if ( is_string( $stored_key ) && strlen( $stored_key ) >= 32 ) {
+		return $stored_key;
+	}
+
+	try {
+		$generated_key = bin2hex( random_bytes( 32 ) );
+	} catch ( \Throwable ) {
+		$generated_key = wp_generate_password( 64, true, true );
+	}
+
+	if ( ! add_option( $option_name, $generated_key, '', false ) ) {
+		$stored_key = get_option( $option_name, '' );
+
+		if ( is_string( $stored_key ) && strlen( $stored_key ) >= 32 ) {
+			return $stored_key;
+		}
+
+		update_option( $option_name, $generated_key, false );
+	}
+
+	return $generated_key;
+}
+
+/**
  * Get normalized plugin settings.
  *
  * @return array{default_ttl_hours:int,enable_logging:bool,enable_caching:bool,post_types:string[],available_post_types:array<string,string>,defaults:array{default_ttl_hours:int,enable_logging:bool,enable_caching:bool,post_types:string[]}}

@@ -9,14 +9,17 @@ namespace PreviewShare\Tests\Unit;
 
 use Brain\Monkey\Functions;
 use PreviewShare\Services\PostMetaStorage;
+use PreviewShare\Services\TokenService;
 
 class PostMetaStorageTest extends TestCase {
 
+	private const HASH_KEY = 'previewshare-test-token-hash-key-for-storage-tests';
+
 	public function test_store_token_persists_hashed_link_and_cache_entry(): void {
-		$storage      = new PostMetaStorage();
+		$storage      = $this->make_storage();
 		$post_id      = 123;
 		$token        = 'raw-token';
-		$hash         = hash_hmac( 'sha256', $token, AUTH_SALT );
+		$hash         = hash_hmac( 'sha256', $token, self::HASH_KEY );
 		$stored_links = null;
 
 		Functions\expect( 'get_post_meta' )
@@ -64,9 +67,9 @@ class PostMetaStorageTest extends TestCase {
 	}
 
 	public function test_get_link_by_token_returns_null_for_revoked_link_and_clears_cache_when_enabled(): void {
-		$storage = new PostMetaStorage();
+		$storage = $this->make_storage();
 		$token   = 'revoked-token';
-		$hash    = hash_hmac( 'sha256', $token, AUTH_SALT );
+		$hash    = hash_hmac( 'sha256', $token, self::HASH_KEY );
 		$post_id = 456;
 
 		Functions\expect( 'get_option' )
@@ -106,9 +109,9 @@ class PostMetaStorageTest extends TestCase {
 	}
 
 	public function test_record_token_view_updates_active_link_view_fields(): void {
-		$storage = new PostMetaStorage();
+		$storage = $this->make_storage();
 		$token   = 'active-token';
-		$hash    = hash_hmac( 'sha256', $token, AUTH_SALT );
+		$hash    = hash_hmac( 'sha256', $token, self::HASH_KEY );
 		$post_id = 789;
 
 		Functions\expect( 'get_option' )
@@ -147,5 +150,9 @@ class PostMetaStorageTest extends TestCase {
 		Functions\expect( 'update_post_meta' )->once()->andReturn( true );
 
 		$this->assertTrue( $storage->record_token_view( $token ) );
+	}
+
+	private function make_storage(): PostMetaStorage {
+		return new PostMetaStorage( new TokenService( self::HASH_KEY ) );
 	}
 }

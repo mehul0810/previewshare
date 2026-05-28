@@ -66,7 +66,7 @@ class Actions {
 		// Use pre_get_posts to safely alter the main query for preview URLs.
 		add_action( 'pre_get_posts', [ $this, 'maybe_handle_preview_request' ], 1 );
 		add_action( 'send_headers', [ $this, 'send_preview_robots_header' ] );
-		add_action( 'wp_head', [ $this, 'render_preview_bar_styles' ], 1 );
+		add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_preview_bar_styles' ] );
 		add_action( 'wp_body_open', [ $this, 'render_preview_bar' ], 0 );
 		add_action( 'wp_footer', [ $this, 'render_preview_bar' ], 0 );
 		add_filter( 'wp_robots', [ $this, 'filter_preview_robots' ] );
@@ -739,75 +739,20 @@ class Actions {
 	}
 
 	/**
-	 * Render the frontend preview bar styles.
+	 * Enqueue the frontend preview bar styles.
 	 *
 	 * @return void
 	 */
-	public function render_preview_bar_styles(): void {
+	public function enqueue_preview_bar_styles(): void {
 		if ( ! $this->is_previewshare_request() ) {
 			return;
 		}
-		?>
-		<style id="previewshare-preview-bar-css">
-			html {
-				margin-top: 40px !important;
-			}
 
-			body.previewshare-preview-active.admin-bar {
-				padding-top: 40px;
-			}
+		$version = defined( 'PREVIEWSHARE_VERSION' ) ? (string) constant( 'PREVIEWSHARE_VERSION' ) : '1.0.0';
 
-			.previewshare-preview-bar {
-				position: fixed;
-				top: 0;
-				left: 0;
-				right: 0;
-				z-index: 99999;
-				box-sizing: border-box;
-				min-height: 40px;
-				padding: 8px 16px;
-				display: flex;
-				align-items: center;
-				justify-content: center;
-				background: #1d2327;
-				color: #f0f0f1;
-				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-				font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
-				font-size: 13px;
-				line-height: 1.4;
-				text-align: center;
-			}
-
-			body.admin-bar .previewshare-preview-bar {
-				top: 32px;
-			}
-
-			.previewshare-preview-bar__inner {
-				width: 100%;
-				max-width: 1200px;
-				display: flex;
-				flex-wrap: wrap;
-				align-items: center;
-				justify-content: center;
-				gap: 4px 8px;
-			}
-
-			.previewshare-preview-bar__label {
-				color: #fff;
-				font-weight: 600;
-			}
-
-			.previewshare-preview-bar__message {
-				color: #f0f0f1;
-			}
-
-			@media screen and (max-width: 782px) {
-				body.admin-bar .previewshare-preview-bar {
-					top: 46px;
-				}
-			}
-		</style>
-		<?php
+		wp_register_style( 'previewshare-preview-bar', false, [], $version );
+		wp_enqueue_style( 'previewshare-preview-bar' );
+		wp_add_inline_style( 'previewshare-preview-bar', $this->get_preview_bar_styles() );
 	}
 
 	/**
@@ -844,6 +789,73 @@ class Actions {
 		global $wp;
 
 		return isset( $wp->query_vars['previewshare_token'] ) && (bool) $wp->query_vars['previewshare_token'];
+	}
+
+	/**
+	 * Get the frontend preview bar CSS.
+	 *
+	 * @return string CSS rules.
+	 */
+	private function get_preview_bar_styles(): string {
+		return '
+html {
+	margin-top: 40px !important;
+}
+
+body.previewshare-preview-active.admin-bar {
+	padding-top: 40px;
+}
+
+.previewshare-preview-bar {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 99999;
+	box-sizing: border-box;
+	min-height: 40px;
+	padding: 8px 16px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: #1d2327;
+	color: #f0f0f1;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+	font-size: 13px;
+	line-height: 1.4;
+	text-align: center;
+}
+
+body.admin-bar .previewshare-preview-bar {
+	top: 32px;
+}
+
+.previewshare-preview-bar__inner {
+	width: 100%;
+	max-width: 1200px;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: center;
+	gap: 4px 8px;
+}
+
+.previewshare-preview-bar__label {
+	color: #fff;
+	font-weight: 600;
+}
+
+.previewshare-preview-bar__message {
+	color: #f0f0f1;
+}
+
+@media screen and (max-width: 782px) {
+	body.admin-bar .previewshare-preview-bar {
+		top: 46px;
+	}
+}
+';
 	}
 
 	/**
