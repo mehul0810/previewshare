@@ -17,6 +17,7 @@ jobs:
         with:
           php-version: '8.1'
           extensions: mbstring
+          coverage: pcov
       - name: Get Composer Cache
         uses: actions/cache@v4
         with:
@@ -26,8 +27,16 @@ jobs:
         run: composer install --no-progress --prefer-dist
       - name: Validate Composer metadata
         run: composer validate --no-check-publish --no-interaction
+      - name: Audit Composer dependencies
+        run: composer audit:php
       - name: Run PHP syntax checks
-        run: find . -path ./vendor -prune -o -path ./node_modules -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+        run: composer lint
+      - name: Run PHP coding standards
+        run: composer check-cs
+      - name: Run PHPUnit
+        run: composer test
+      - name: Run PHPUnit coverage smoke
+        run: composer test:coverage
       - name: Run PHPStan
         run: vendor/bin/phpstan analyse -c phpstan.neon
 
@@ -42,6 +51,14 @@ jobs:
           node-version: '20'
       - name: Install dependencies
         run: npm ci
+      - name: Audit production npm dependencies
+        run: npm run audit:prod
+      - name: Lint JavaScript
+        run: npm run lint:js
+      - name: Lint CSS
+        run: npm run lint:css
+      - name: Run JavaScript unit tests
+        run: npm run test:js
       - name: Build assets
         run: npm run build
 

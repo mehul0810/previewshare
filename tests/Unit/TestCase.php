@@ -47,10 +47,33 @@ abstract class TestCase extends PHPUnitTestCase {
 			}
 		);
 
-		Functions\when( 'apply_filters' )->returnArg( 1 );
+		Functions\when( 'maybe_unserialize' )->alias(
+			static function( $value ) {
+				if ( ! is_string( $value ) ) {
+					return $value;
+				}
+
+				$unserialized = @unserialize( $value );
+
+				return false === $unserialized && 'b:0;' !== $value ? $value : $unserialized;
+			}
+		);
+
+		Functions\when( 'maybe_serialize' )->alias(
+			static function( $value ) {
+				return is_array( $value ) || is_object( $value ) ? serialize( $value ) : $value;
+			}
+		);
+
+		Functions\when( 'apply_filters' )->returnArg( 2 );
 	}
 
 	protected function tearDown(): void {
+		if ( class_exists( '\PreviewShare\Container' ) ) {
+			\PreviewShare\Container::set( 'token_service', null );
+			\PreviewShare\Container::set( 'storage', null );
+		}
+
 		Monkey\tearDown();
 		\Mockery::close();
 		parent::tearDown();

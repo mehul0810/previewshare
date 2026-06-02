@@ -1,3 +1,9 @@
+import {
+	fallbackSettings,
+	getRestBase,
+	normalizeSettings,
+} from './settings-utils';
+
 ( function ( wp ) {
 	const { createElement: el, render, useEffect, useState } = wp.element;
 	const { __, sprintf } = wp.i18n;
@@ -6,53 +12,8 @@
 
 	const PER_PAGE = 25;
 	const localized = window.previewshare_settings || {};
-	const restBase = localized.rest_url
-		? localized.rest_url.replace( /\/$/, '' )
-		: '/wp-json/previewshare/v1';
+	const restBase = getRestBase( localized );
 	const nonce = localized.nonce || '';
-	const fallbackSettings = {
-		default_ttl_hours: 6,
-		enable_logging: false,
-		enable_caching: true,
-		post_types: [],
-		available_post_types: {},
-		defaults: {
-			default_ttl_hours: 6,
-			enable_logging: false,
-			enable_caching: true,
-			post_types: [],
-		},
-	};
-
-	function normalizeSettings( settings = {} ) {
-		const availablePostTypes = settings.available_post_types || {};
-		const defaults = Object.assign(
-			{},
-			fallbackSettings.defaults,
-			settings.defaults || {}
-		);
-		const defaultPostTypes = Array.isArray( defaults.post_types )
-			? defaults.post_types
-			: Object.keys( availablePostTypes );
-		const selectedPostTypes = Array.isArray( settings.post_types )
-			? settings.post_types
-			: defaultPostTypes;
-
-		return {
-			default_ttl_hours: parseInt(
-				settings.default_ttl_hours ??
-					fallbackSettings.default_ttl_hours,
-				10
-			),
-			enable_logging:
-				settings.enable_logging ?? fallbackSettings.enable_logging,
-			enable_caching:
-				settings.enable_caching ?? fallbackSettings.enable_caching,
-			post_types: selectedPostTypes,
-			available_post_types: availablePostTypes,
-			defaults,
-		};
-	}
 
 	function apiFetch( path, options = {} ) {
 		const headers = Object.assign(
@@ -436,7 +397,10 @@
 						'tbody',
 						null,
 						tokens.map( ( token ) => {
-							const editUrl = `/wp-admin/post.php?post=${ token.post_id }&action=edit`;
+							const editUrl = token.edit_url || '';
+							const title =
+								token.post_title ||
+								__( 'Untitled', 'previewshare' );
 							const isWorking = workingTokenId === token.id;
 
 							return el(
@@ -451,12 +415,9 @@
 								el(
 									'td',
 									{ className: 'previewshare-content-cell' },
-									el(
-										'a',
-										{ href: editUrl },
-										token.post_title ||
-											__( 'Untitled', 'previewshare' )
-									),
+									editUrl
+										? el( 'a', { href: editUrl }, title )
+										: el( 'span', null, title ),
 									el(
 										'small',
 										null,

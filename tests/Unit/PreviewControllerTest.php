@@ -9,6 +9,7 @@ namespace PreviewShare\Tests\Unit;
 
 use Brain\Monkey\Functions;
 use Mockery;
+use PreviewShare\Container;
 use PreviewShare\REST\PreviewController;
 use PreviewShare\Services\PostMetaStorage;
 use PreviewShare\Services\TokenService;
@@ -49,6 +50,10 @@ class PreviewControllerTest extends TestCase {
 			->with( 42 )
 			->andReturn( new WP_Post( [ 'ID' => 42, 'post_type' => 'post' ] ) );
 		Functions\expect( 'get_the_title' )->once()->andReturn( 'Draft post' );
+		Functions\expect( 'get_edit_post_link' )
+			->once()
+			->with( 42, 'raw' )
+			->andReturn( 'https://example.test/wp-admin/post.php?post=42&action=edit' );
 		Functions\expect( 'get_current_user_id' )->once()->andReturn( 7 );
 		Functions\expect( 'get_option' )->once()->with( 'previewshare_enable_logging', false )->andReturn( false );
 		Functions\expect( 'do_action' )->never();
@@ -58,6 +63,7 @@ class PreviewControllerTest extends TestCase {
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'Draft post', $response->get_data()['items'][0]['post_title'] );
+		$this->assertSame( 'https://example.test/wp-admin/post.php?post=42&action=edit', $response->get_data()['items'][0]['edit_url'] );
 		$this->assertSame( 1, $response->get_data()['total'] );
 	}
 
@@ -68,6 +74,178 @@ class PreviewControllerTest extends TestCase {
 
 		$this->assertInstanceOf( WP_Error::class, $response );
 		$this->assertSame( 'invalid_id', $response->get_error_code() );
+		$this->assertSame( [ 'status' => 400 ], $response->get_error_data() );
+	}
+
+	public function test_generate_permission_requires_edit_post_capability(): void {
+		$controller = $this->makeController();
+
+		Functions\expect( 'current_user_can' )
+			->once()
+			->with( 'edit_post', 42 )
+			->andReturn( false );
+
+		$this->assertFalse( $controller->permission_generate( new WP_REST_Request( [ 'post_id' => 42 ] ) ) );
+	}
+
+	public function test_revoke_permission_falls_back_to_manage_options_without_post_id(): void {
+		$controller = $this->makeController();
+
+		Functions\expect( 'current_user_can' )
+			->once()
+			->with( 'manage_options' )
+			->andReturn( true );
+
+		$this->assertTrue( $controller->permission_revoke( new WP_REST_Request() ) );
+	}
+
+	public function test_generate_stores_token_for_supported_previewable_post(): void {
+		$storage       = Mockery::mock( PostMetaStorage::class );
+		$token_service = Mockery::mock( TokenService::class );
+		$controller    = $this->makeController( $storage, $token_service );
+		$post          = new WP_Post(
+			[
+				'ID'          => 42,
+				'post_type'   => 'post',
+				'post_status' => 'draft',
+			]
+		);
+
+		Functions\expect( 'get_post' )
+			->once()
+			->with( 42 )
+			->andReturn( $post );
+		$this->mockSupportedPostTypes();
+		Functions\expect( 'get_post_meta' )
+			->once()
+			->with( 42, '_previewshare_ttl_hours', true )
+			->andReturn( '' );
+		Functions\expect( 'update_post_meta' )
+			->once()
+			->with( 42, '_previewshare_enabled', true )
+			->andReturn( true );
+		Functions\expect( 'home_url' )
+			->once()
+			->with( '/preview/generated-token' )
+			->andReturn( 'https://example.test/preview/generated-token' );
+
+		$token_service->shouldReceive( 'generate' )->once()->andReturn( 'generated-token' );
+		$storage->shouldReceive( 'get_post_id_by_token' )
+			->once()
+			->with( 'generated-token' )
+			->andReturn( false );
+		$storage->shouldReceive( 'store_token' )
+			->once()
+			->with( 42, 'generated-token', 12, 'Client review' )
+			->andReturn( true );
+
+		$response = $controller->generate(
+			new WP_REST_Request(
+				[
+					'post_id' => 42,
+					'label'   => '<b>Client review</b>',
+				]
+			)
+		);
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'https://example.test/preview/generated-token', $response->get_data()['url'] );
+		$this->assertSame( 'generated-token', $response->get_data()['token'] );
+	}
+
+	public function test_generate_returns_error_when_token_storage_fails(): void {
+		$storage       = Mockery::mock( PostMetaStorage::class );
+		$token_service = Mockery::mock( TokenService::class );
+		$controller    = $this->makeController( $storage, $token_service );
+		$post          = new WP_Post(
+			[
+				'ID'          => 42,
+				'post_type'   => 'post',
+				'post_status' => 'draft',
+			]
+		);
+
+		Functions\expect( 'get_post' )
+			->once()
+			->with( 42 )
+			->andReturn( $post );
+		$this->mockSupportedPostTypes();
+		Functions\expect( 'get_post_meta' )
+			->once()
+			->with( 42, '_previewshare_ttl_hours', true )
+			->andReturn( '' );
+
+		$token_service->shouldReceive( 'generate' )->once()->andReturn( 'generated-token' );
+		$storage->shouldReceive( 'get_post_id_by_token' )
+			->once()
+			->with( 'generated-token' )
+			->andReturn( false );
+		$storage->shouldReceive( 'store_token' )
+			->once()
+			->with( 42, 'generated-token', 12, 'Client review' )
+			->andReturn( false );
+
+		$response = $controller->generate(
+			new WP_REST_Request(
+				[
+					'post_id' => 42,
+					'label'   => '<b>Client review</b>',
+				]
+			)
+		);
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'token_storage_failed', $response->get_error_code() );
+		$this->assertSame( [ 'status' => 500 ], $response->get_error_data() );
+	}
+
+	public function test_generate_rejects_unsupported_post_type(): void {
+		$controller = $this->makeController();
+		$post       = new WP_Post(
+			[
+				'ID'          => 55,
+				'post_type'   => 'product',
+				'post_status' => 'draft',
+			]
+		);
+
+		Functions\expect( 'get_post' )
+			->once()
+			->with( 55 )
+			->andReturn( $post );
+		$this->mockSupportedPostTypes();
+
+		$response = $controller->generate( new WP_REST_Request( [ 'post_id' => 55 ] ) );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'unsupported_post_type', $response->get_error_code() );
+		$this->assertSame( [ 'status' => 400 ], $response->get_error_data() );
+	}
+
+	public function test_revoke_post_id_uses_post_scoped_storage(): void {
+		$storage    = Mockery::mock( PostMetaStorage::class );
+		$controller = $this->makeController( $storage );
+
+		$storage->shouldReceive( 'revoke_token_for_post' )
+			->once()
+			->with( 42 )
+			->andReturn( true );
+
+		$response = $controller->revoke( new WP_REST_Request( [ 'post_id' => 42 ] ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertTrue( $response->get_data()['revoked'] );
+	}
+
+	public function test_revoke_requires_token_when_post_id_is_missing(): void {
+		$controller = $this->makeController();
+
+		$response = $controller->revoke( new WP_REST_Request() );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'invalid_token', $response->get_error_code() );
 		$this->assertSame( [ 'status' => 400 ], $response->get_error_data() );
 	}
 
@@ -111,10 +289,43 @@ class PreviewControllerTest extends TestCase {
 		$this->assertSame( [ 'post' ], $response->get_data()['post_types'] );
 	}
 
-	private function makeController( ?PostMetaStorage $storage = null ): PreviewController {
+	private function makeController( ?PostMetaStorage $storage = null, ?TokenService $token_service = null ): PreviewController {
 		Functions\expect( 'add_action' )->once()->with( 'rest_api_init', Mockery::type( 'array' ) );
 		Functions\expect( 'did_action' )->once()->with( 'rest_api_init' )->andReturn( 0 );
 
-		return new PreviewController( new TokenService(), $storage ?: Mockery::mock( PostMetaStorage::class ) );
+		$token_service = $token_service ?: new TokenService();
+		$storage       = $storage ?: Mockery::mock( PostMetaStorage::class );
+
+		Container::set( 'token_service', $token_service );
+		Container::set( 'storage', $storage );
+
+		return new PreviewController( $token_service, $storage );
+	}
+
+	private function mockSupportedPostTypes(): void {
+		Functions\expect( 'get_post_types' )
+			->twice()
+			->with( [ 'public' => true ], 'objects' )
+			->andReturn(
+				[
+					'post' => (object) [
+						'label'  => 'Posts',
+						'labels' => (object) [ 'singular_name' => 'Post' ],
+					],
+				]
+			);
+		Functions\expect( 'is_post_type_viewable' )->twice()->andReturn( true );
+		Functions\when( 'get_option' )->alias(
+			static function( string $option, $default = false ) {
+				$values = [
+					'previewshare_post_types'        => [ 'post' ],
+					'previewshare_default_ttl_hours' => 12,
+					'previewshare_enable_logging'    => false,
+					'previewshare_enable_caching'    => true,
+				];
+
+				return $values[ $option ] ?? $default;
+			}
+		);
 	}
 }

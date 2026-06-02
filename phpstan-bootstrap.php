@@ -9,10 +9,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', '/tmp/wordpress/' );
 }
 
-if ( ! defined( 'AUTH_SALT' ) ) {
-	define( 'AUTH_SALT', 'previewshare-phpstan-auth-salt' );
-}
-
 if ( ! defined( 'HOUR_IN_SECONDS' ) ) {
 	define( 'HOUR_IN_SECONDS', 3600 );
 }

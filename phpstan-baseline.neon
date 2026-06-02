@@ -25,12 +25,6 @@ parameters:
 			path: src/Admin/Actions.php
 
 		-
-			message: '#^Method PreviewShare\\Admin\\Actions\:\:get_requested_ttl_hours\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
-			identifier: missingType.generics
-			count: 1
-			path: src/Admin/Actions.php
-
-		-
 			message: '#^Method PreviewShare\\Admin\\Actions\:\:maybe_flush_rewrite_rules\(\) has no return type specified\.$#'
 			identifier: missingType.return
 			count: 1
@@ -45,12 +39,6 @@ parameters:
 		-
 			message: '#^Method PreviewShare\\Admin\\Actions\:\:register_rest_routes\(\) has no return type specified\.$#'
 			identifier: missingType.return
-			count: 1
-			path: src/Admin/Actions.php
-
-		-
-			message: '#^Negated boolean expression is always false\.$#'
-			identifier: booleanNot.alwaysFalse
 			count: 1
 			path: src/Admin/Actions.php
 
@@ -117,11 +105,5 @@ parameters:
 		-
 			message: '#^Method PreviewShare\\REST\\PreviewController\:\:update_settings\(\) has parameter \$request with generic class WP_REST_Request but does not specify its types\: T$#'
 			identifier: missingType.generics
-			count: 1
-			path: src/REST/PreviewController.php
-
-		-
-			message: '#^Negated boolean expression is always false\.$#'
-			identifier: booleanNot.alwaysFalse
 			count: 1
 			path: src/REST/PreviewController.php

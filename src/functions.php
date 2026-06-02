@@ -14,6 +14,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 use PreviewShare\Container;
+use PreviewShare\Services\PostMetaStorage;
+use PreviewShare\Services\TokenService;
 
 /**
  * Resolve post ID from a preview token.
@@ -31,6 +33,98 @@ function previewshare_get_post_id_by_token( string $token ) {
 }
 
 /**
+ * Check whether a post status can be exposed through a preview token.
+ *
+ * @param string $status Post status.
+ * @return bool
+ */
+function previewshare_is_previewable_post_status( string $status ): bool {
+	return in_array( $status, [ 'publish', 'draft', 'pending', 'future', 'private' ], true );
+}
+
+/**
+ * Get the effective TTL for a preview link request.
+ *
+ * @param int      $post_id Post ID.
+ * @param int|null $ttl_hours Optional requested TTL.
+ * @return int TTL in hours. 0 means no expiry.
+ */
+function previewshare_get_effective_ttl_hours( int $post_id, ?int $ttl_hours = null ): int {
+	if ( null !== $ttl_hours ) {
+		return absint( $ttl_hours );
+	}
+
+	$post_ttl = get_post_meta( $post_id, '_previewshare_ttl_hours', true );
+	if ( '' !== $post_ttl && null !== $post_ttl ) {
+		return absint( $post_ttl );
+	}
+
+	return (int) get_option( 'previewshare_default_ttl_hours', 6 );
+}
+
+/**
+ * Generate, persist, and return a preview link for a post.
+ *
+ * @param int      $post_id Post ID.
+ * @param int|null $ttl_hours Optional requested TTL.
+ * @param string   $label Optional link label.
+ * @return array{url:string,token:string,ttl_hours:int}|\WP_Error Preview link data or error.
+ */
+function previewshare_generate_preview_link( int $post_id, ?int $ttl_hours = null, string $label = '' ) {
+	$token_service = Container::token_service();
+	$storage       = Container::storage();
+
+	if ( ! $token_service instanceof TokenService || ! $storage instanceof PostMetaStorage ) {
+		return new \WP_Error( 'previewshare_unavailable', 'PreviewShare services are unavailable.', [ 'status' => 500 ] );
+	}
+
+	$post = get_post( $post_id );
+	if ( ! $post ) {
+		return new \WP_Error( 'invalid_post', 'Invalid post ID', [ 'status' => 400 ] );
+	}
+
+	if ( ! previewshare_is_supported_post_type( $post->post_type ) ) {
+		return new \WP_Error( 'unsupported_post_type', 'PreviewShare is not enabled for this post type', [ 'status' => 400 ] );
+	}
+
+	if ( ! previewshare_is_previewable_post_status( $post->post_status ) ) {
+		return new \WP_Error( 'invalid_post_status', 'Post must be published, draft, pending, scheduled, or private to generate preview links', [ 'status' => 400 ] );
+	}
+
+	$ttl   = previewshare_get_effective_ttl_hours( $post_id, $ttl_hours );
+	$label = sanitize_text_field( $label );
+	$token = '';
+
+	for ( $attempt = 0; $attempt < 5; $attempt++ ) {
+		$candidate = $token_service->generate();
+
+		if ( false === $storage->get_post_id_by_token( $candidate ) ) {
+			$token = $candidate;
+			break;
+		}
+	}
+
+	if ( '' === $token ) {
+		return new \WP_Error( 'token_generation_failed', 'Preview token could not be generated.', [ 'status' => 500 ] );
+	}
+
+	if ( ! $storage->store_token( $post_id, $token, $ttl, $label ) ) {
+		return new \WP_Error( 'token_storage_failed', 'Preview token could not be stored.', [ 'status' => 500 ] );
+	}
+
+	update_post_meta( $post_id, '_previewshare_enabled', true );
+	if ( null !== $ttl_hours ) {
+		update_post_meta( $post_id, '_previewshare_ttl_hours', $ttl );
+	}
+
+	return [
+		'url'       => home_url( '/preview/' . $token ),
+		'token'     => $token,
+		'ttl_hours' => $ttl,
+	];
+}
+
+/**
  * Generate and store a preview token for a post.
  *
  * @param int      $post_id Post ID.
@@ -39,29 +133,12 @@ function previewshare_get_post_id_by_token( string $token ) {
  * @return string|false Raw token on success, false on failure.
  */
 function previewshare_generate_token_for_post( int $post_id, ?int $ttl_hours = null, string $label = '' ) {
-	$token_service = Container::token_service();
-	$storage       = Container::storage();
-	if ( ! $token_service || ! $storage ) {
+	$result = previewshare_generate_preview_link( $post_id, $ttl_hours, $label );
+	if ( $result instanceof \WP_Error ) {
 		return false;
 	}
 
-	$post = get_post( $post_id );
-	if ( ! $post || ! previewshare_is_supported_post_type( $post->post_type ) ) {
-		return false;
-	}
-
-	$token = $token_service->generate();
-
-	$ttl    = is_null( $ttl_hours ) ? (int) get_option( 'previewshare_default_ttl_hours', 6 ) : absint( $ttl_hours );
-	$stored = $storage->store_token( $post_id, $token, $ttl, $label );
-
-	if ( ! $stored ) {
-		return false;
-	}
-
-	update_post_meta( $post_id, '_previewshare_enabled', true );
-
-	return $token;
+	return $result['token'];
 }
 
 /**

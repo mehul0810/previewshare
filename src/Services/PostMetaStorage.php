@@ -28,7 +28,6 @@ class PostMetaStorage {
 	private const CURRENT_HASH_META_KEY = '_previewshare_token_hash';
 	private const DETAIL_META_PREFIX    = '_previewshare_token:';
 	private const REVERSE_META_PREFIX   = '_previewshare_token_rev:';
-	private const TRANSIENT_PREFIX      = 'previewshare_token_tr:';
 	private const CACHE_GROUP           = 'previewshare_tokens';
 
 	/**
@@ -57,12 +56,12 @@ class PostMetaStorage {
 	 * @return bool
 	 */
 	public function store_token( int $post_id, string $token, int $ttl_hours = 6, string $label = '' ): bool {
-		$hash         = $this->token_service->hash( $token );
-		$now          = time();
-		$ttl_seconds  = $ttl_hours > 0 ? ( $ttl_hours * HOUR_IN_SECONDS ) : 0;
-		$expires      = $ttl_hours > 0 ? ( $now + $ttl_seconds ) : null;
-		$links        = $this->get_links_for_post( $post_id );
-		$current_user = get_current_user_id();
+		$hash                  = $this->token_service->hash( $token );
+		$now                   = time();
+		$expires               = $ttl_hours > 0 ? ( $now + ( $ttl_hours * HOUR_IN_SECONDS ) ) : null;
+		$links                 = $this->get_links_for_post( $post_id );
+		$current_user          = get_current_user_id();
+		$previous_current_hash = get_post_meta( $post_id, self::CURRENT_HASH_META_KEY, true );
 
 		$links[ $hash ] = $this->normalize_link_record(
 			[
@@ -84,11 +83,26 @@ class PostMetaStorage {
 			return false;
 		}
 
-		update_post_meta( $post_id, self::CURRENT_HASH_META_KEY, $hash );
-		update_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $links[ $hash ] );
-		update_post_meta( $post_id, self::REVERSE_META_PREFIX . $hash, 1 );
+		if (
+			! $this->update_required_post_meta( $post_id, self::CURRENT_HASH_META_KEY, $hash )
+			|| ! $this->update_required_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $links[ $hash ] )
+			|| ! $this->update_required_post_meta( $post_id, self::REVERSE_META_PREFIX . $hash, 1 )
+		) {
+			unset( $links[ $hash ] );
+			update_post_meta( $post_id, self::LINKS_META_KEY, $links );
+			delete_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash );
+			delete_post_meta( $post_id, self::REVERSE_META_PREFIX . $hash );
+
+			if ( is_string( $previous_current_hash ) && '' !== $previous_current_hash ) {
+				update_post_meta( $post_id, self::CURRENT_HASH_META_KEY, $previous_current_hash );
+			} else {
+				delete_post_meta( $post_id, self::CURRENT_HASH_META_KEY );
+			}
+
+			return false;
+		}
+
 		update_post_meta( $post_id, '_previewshare_enabled', true );
-		set_transient( self::TRANSIENT_PREFIX . $hash, 1, $ttl_seconds );
 
 		if ( $this->is_caching_enabled() ) {
 			wp_cache_set( $hash, (int) $post_id, self::CACHE_GROUP, HOUR_IN_SECONDS );
@@ -151,19 +165,16 @@ class PostMetaStorage {
 			return false;
 		}
 
-		$links = $this->get_links_for_post( $post_id );
+		$link = $this->get_link_record( $post_id, $hash );
 
-		if ( empty( $links[ $hash ] ) || ! $this->is_link_active( $links[ $hash ] ) ) {
+		if ( ! $this->is_link_active( $link ) ) {
 			return false;
 		}
 
-		$links[ $hash ]['last_viewed_at'] = time();
-		$links[ $hash ]['view_count']     = (int) $links[ $hash ]['view_count'] + 1;
+		$link['last_viewed_at'] = time();
+		$link['view_count']     = (int) $link['view_count'] + 1;
 
-		update_post_meta( $post_id, self::LINKS_META_KEY, $links );
-		update_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $links[ $hash ] );
-
-		return true;
+		return $this->update_required_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $link );
 	}
 
 	/**
@@ -178,6 +189,8 @@ class PostMetaStorage {
 		if ( empty( $links ) ) {
 			return null;
 		}
+
+		$links = $this->hydrate_link_detail_records( $post_id, $links );
 
 		uasort(
 			$links,
@@ -214,10 +227,10 @@ class PostMetaStorage {
 	 * @return array<int,array<string,mixed>>
 	 */
 	public function list_tokens( int $per_page = 50, int $page = 1 ): array {
-		$links  = $this->get_all_links();
-		$offset = ( max( 1, $page ) - 1 ) * $per_page;
+		$per_page = max( 1, min( 100, $per_page ) );
+		$offset   = ( max( 1, $page ) - 1 ) * $per_page;
 
-		return array_slice( $links, $offset, $per_page );
+		return $this->get_link_rows( $per_page, $offset );
 	}
 
 	/**
@@ -226,7 +239,7 @@ class PostMetaStorage {
 	 * @return int
 	 */
 	public function count_tokens(): int {
-		return count( $this->get_all_links() );
+		return $this->count_link_rows();
 	}
 
 	/**
@@ -292,7 +305,6 @@ class PostMetaStorage {
 				$changed                   = true;
 			}
 
-			delete_transient( self::TRANSIENT_PREFIX . $hash );
 			$this->delete_cache( $hash );
 			update_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $links[ $hash ] );
 		}
@@ -348,7 +360,6 @@ class PostMetaStorage {
 		$links[ $hash ]['revoked'] = 1;
 		update_post_meta( $post_id, self::LINKS_META_KEY, $links );
 		update_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $links[ $hash ] );
-		delete_transient( self::TRANSIENT_PREFIX . $hash );
 		$this->delete_cache( $hash );
 
 		if ( ! $this->has_active_link( $links ) ) {
@@ -406,12 +417,29 @@ class PostMetaStorage {
 	 * @return LinkRecord|null
 	 */
 	private function get_link_record( int $post_id, string $hash ): ?array {
+		$detail = $this->get_link_detail_record( $post_id, $hash );
+
+		if ( $detail ) {
+			return $detail;
+		}
+
 		$links = $this->get_links_for_post( $post_id );
 
 		if ( ! empty( $links[ $hash ] ) ) {
 			return $links[ $hash ];
 		}
 
+		return null;
+	}
+
+	/**
+	 * Get a link detail record by post/hash.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $hash Token hash.
+	 * @return LinkRecord|null
+	 */
+	private function get_link_detail_record( int $post_id, string $hash ): ?array {
 		$detail = get_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, true );
 
 		if ( ! is_array( $detail ) ) {
@@ -422,61 +450,22 @@ class PostMetaStorage {
 	}
 
 	/**
-	 * Get all links across posts.
+	 * Merge current detail rows into a link collection.
 	 *
-	 * @return list<LinkListItem>
+	 * @param int                      $post_id Post ID.
+	 * @param array<string,LinkRecord> $links Link collection.
+	 * @return array<string,LinkRecord>
 	 */
-	private function get_all_links(): array {
-		$query = new \WP_Query(
-			[
-				'post_type'      => 'any',
-				'post_status'    => 'any',
-				'posts_per_page' => -1,
-				'fields'         => 'ids',
-				'no_found_rows'  => true,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Admin-only inventory view; public token resolution uses exact-key lookup.
-				'meta_query'     => [
-					'relation' => 'OR',
-					[
-						'key'     => self::LINKS_META_KEY,
-						'compare' => 'EXISTS',
-					],
-					[
-						'key'     => self::CURRENT_HASH_META_KEY,
-						'compare' => 'EXISTS',
-					],
-				],
-			]
-		);
+	private function hydrate_link_detail_records( int $post_id, array $links ): array {
+		foreach ( array_keys( $links ) as $hash ) {
+			$detail = $this->get_link_detail_record( $post_id, $hash );
 
-		// phpcs:ignore Generic.Commenting.DocComment.MissingShort -- PHPStan variable type annotation.
-		/** @var list<LinkListItem> $items Preview link list items. */
-		$items = [];
-
-		foreach ( $query->posts as $post_id ) {
-			foreach ( $this->get_links_for_post( (int) $post_id ) as $link ) {
-				$item    = $this->format_link_for_response( $link );
-				$items[] = [
-					'id'             => $item['id'],
-					'token_hash'     => $item['token_hash'],
-					'label'          => $item['label'],
-					'created_at'     => $item['created_at'],
-					'created_by'     => $item['created_by'],
-					'expires_at'     => $item['expires_at'],
-					'revoked'        => $item['revoked'],
-					'expired'        => $item['expired'],
-					'status'         => $item['status'],
-					'last_viewed_at' => $item['last_viewed_at'],
-					'view_count'     => $item['view_count'],
-					'post_id'        => (int) $post_id,
-				];
+			if ( $detail ) {
+				$links[ $hash ] = $detail;
 			}
 		}
 
-		$created_at = array_column( $items, 'created_at' );
-		array_multisort( $created_at, SORT_DESC, SORT_NUMERIC, $items );
-
-		return $items;
+		return $links;
 	}
 
 	/**
@@ -528,6 +517,35 @@ class PostMetaStorage {
 	}
 
 	/**
+	 * Update post meta that is required for token lookup consistency.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $key Meta key.
+	 * @param mixed  $value Meta value.
+	 * @return bool
+	 */
+	private function update_required_post_meta( int $post_id, string $key, $value ): bool {
+		$result = update_post_meta( $post_id, $key, $value );
+
+		if ( false !== $result ) {
+			return true;
+		}
+
+		return $this->post_meta_value_matches( get_post_meta( $post_id, $key, true ), $value );
+	}
+
+	/**
+	 * Check whether a stored meta value matches an expected value.
+	 *
+	 * @param mixed $stored Stored meta value.
+	 * @param mixed $expected Expected meta value.
+	 * @return bool
+	 */
+	private function post_meta_value_matches( $stored, $expected ): bool {
+		return maybe_serialize( $stored ) === maybe_serialize( $expected );
+	}
+
+	/**
 	 * Normalize one link record.
 	 *
 	 * @param array<string,mixed> $link Raw link data.
@@ -572,6 +590,109 @@ class PostMetaStorage {
 			'last_viewed_at' => $link['last_viewed_at'],
 			'view_count'     => (int) $link['view_count'],
 		];
+	}
+
+	/**
+	 * Get a bounded set of link detail rows for the admin inventory.
+	 *
+	 * @param int $per_page Number of rows to fetch.
+	 * @param int $offset Row offset.
+	 * @return list<LinkListItem>
+	 */
+	private function get_link_rows( int $per_page, int $offset ): array {
+		global $wpdb;
+
+		$like = $wpdb->esc_like( self::DETAIL_META_PREFIX ) . '%';
+		$sql  = $wpdb->prepare(
+			"SELECT pm.post_id, pm.meta_key, pm.meta_value
+			FROM {$wpdb->postmeta} pm
+			INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+			WHERE pm.meta_key LIKE %s
+				AND p.post_type <> %s
+			ORDER BY pm.meta_id DESC
+			LIMIT %d OFFSET %d",
+			$like,
+			'revision',
+			$per_page,
+			max( 0, $offset )
+		);
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared -- Admin token inventory is bounded and uses the prepared SQL built above.
+		$rows = $wpdb->get_results( $sql, ARRAY_A );
+
+		if ( ! is_array( $rows ) ) {
+			return [];
+		}
+
+		return $this->format_link_rows( $rows );
+	}
+
+	/**
+	 * Count link detail rows without loading the full inventory.
+	 *
+	 * @return int
+	 */
+	private function count_link_rows(): int {
+		global $wpdb;
+
+		$like = $wpdb->esc_like( self::DETAIL_META_PREFIX ) . '%';
+		$sql  = $wpdb->prepare(
+			"SELECT COUNT(*)
+			FROM {$wpdb->postmeta} pm
+			INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+			WHERE pm.meta_key LIKE %s
+				AND p.post_type <> %s",
+			$like,
+			'revision'
+		);
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared -- Admin token inventory count is a bounded scalar query and uses the prepared SQL built above.
+		return max( 0, (int) $wpdb->get_var( $sql ) );
+	}
+
+	/**
+	 * Format raw postmeta rows as token inventory rows.
+	 *
+	 * @param array<int,array<string,mixed>> $rows Raw postmeta rows.
+	 * @return list<LinkListItem>
+	 */
+	private function format_link_rows( array $rows ): array {
+		// phpcs:ignore Generic.Commenting.DocComment.MissingShort -- PHPStan variable type annotation.
+		/** @var list<LinkListItem> $items Preview link list items. */
+		$items = [];
+
+		foreach ( $rows as $row ) {
+			$meta_key = isset( $row['meta_key'] ) ? (string) $row['meta_key'] : '';
+
+			if ( ! str_starts_with( $meta_key, self::DETAIL_META_PREFIX ) ) {
+				continue;
+			}
+
+			$hash   = substr( $meta_key, strlen( self::DETAIL_META_PREFIX ) );
+			$detail = maybe_unserialize( $row['meta_value'] ?? null );
+
+			if ( '' === $hash || ! is_array( $detail ) ) {
+				continue;
+			}
+
+			$item    = $this->format_link_for_response( $this->normalize_link_record( $detail, $hash ) );
+			$items[] = [
+				'id'             => $item['id'],
+				'token_hash'     => $item['token_hash'],
+				'label'          => $item['label'],
+				'created_at'     => $item['created_at'],
+				'created_by'     => $item['created_by'],
+				'expires_at'     => $item['expires_at'],
+				'revoked'        => $item['revoked'],
+				'expired'        => $item['expired'],
+				'status'         => $item['status'],
+				'last_viewed_at' => $item['last_viewed_at'],
+				'view_count'     => $item['view_count'],
+				'post_id'        => isset( $row['post_id'] ) ? (int) $row['post_id'] : 0,
+			];
+		}
+
+		return $items;
 	}
 
 	/**

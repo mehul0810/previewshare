@@ -14,33 +14,13 @@ import { Fragment, useState, useEffect } from '@wordpress/element';
 import { useSelect, useDispatch } from '@wordpress/data';
 import { Button, ToggleControl, TextControl } from '@wordpress/components';
 import { copy } from '@wordpress/icons';
-
-const getSupportedPostTypes = () =>
-	window.previewshare_rest &&
-	Array.isArray( window.previewshare_rest.post_types )
-		? window.previewshare_rest.post_types
-		: [ 'post', 'page' ];
-
-const PREVIEWABLE_STATUSES = [
-	'publish',
-	'draft',
-	'pending',
-	'future',
-	'private',
-];
-
-const getStatusLabel = ( status ) => {
-	switch ( status ) {
-		case 'active':
-			return __( 'Active', 'previewshare' );
-		case 'expired':
-			return __( 'Expired', 'previewshare' );
-		case 'revoked':
-			return __( 'Revoked', 'previewshare' );
-		default:
-			return status || __( 'Unknown', 'previewshare' );
-	}
-};
+import {
+	canGeneratePreview as canGeneratePreviewForState,
+	getStatusLabel,
+	getSupportedPostTypes,
+	normalizeTtlHours,
+	resolvePreviewableStatus,
+} from './utils';
 
 const PreviewSharePanel = () => {
 	const [ previewUrl, setPreviewUrl ] = useState( '' );
@@ -66,11 +46,10 @@ const PreviewSharePanel = () => {
 		const editedPostStatus = editor.getEditedPostAttribute( 'status' );
 		const currentMeta = editor.getEditedPostAttribute( 'meta' ) || {};
 		const rawTtl = currentMeta._previewshare_ttl_hours;
-		const resolvedPostStatus = PREVIEWABLE_STATUSES.includes(
+		const resolvedPostStatus = resolvePreviewableStatus(
+			currentPostStatus,
 			editedPostStatus
-		)
-			? editedPostStatus
-			: currentPostStatus;
+		);
 
 		return {
 			postId: currentPostId,
@@ -90,14 +69,16 @@ const PreviewSharePanel = () => {
 	} );
 	const { editPost } = useDispatch( 'core/editor' );
 	const { createNotice } = useDispatch( 'core/notices' );
-	const isSupportedPostType = getSupportedPostTypes().includes( postType );
-	const isPreviewableStatus = PREVIEWABLE_STATUSES.includes( postStatus );
-	const canGeneratePreview =
-		Boolean( postId ) &&
-		isSupportedPostType &&
-		isPreviewableStatus &&
-		! isSavingPost &&
-		! isAutosavingPost;
+	const supportedPostTypes = getSupportedPostTypes();
+	const isSupportedPostType = supportedPostTypes.includes( postType );
+	const canGeneratePreview = canGeneratePreviewForState( {
+		postId,
+		postType,
+		postStatus,
+		isSavingPost,
+		isAutosavingPost,
+		supportedPostTypes,
+	} );
 
 	useEffect( () => {
 		if ( canGeneratePreview ) {
@@ -162,8 +143,7 @@ const PreviewSharePanel = () => {
 	};
 
 	const handleTtlChange = ( val ) => {
-		const normalized =
-			val === '' ? null : Math.max( 0, parseInt( val, 10 ) || 0 );
+		const normalized = normalizeTtlHours( val );
 
 		editPost( {
 			meta: {

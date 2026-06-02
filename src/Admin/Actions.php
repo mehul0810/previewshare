@@ -12,7 +12,6 @@
 namespace PreviewShare\Admin;
 
 use PreviewShare\Services\PostMetaStorage;
-use PreviewShare\Services\TokenService;
 
 // Bailout, if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -263,79 +262,24 @@ class Actions {
 	 * @return \WP_REST_Response|\WP_Error
 	 */
 	public function generate_preview_url( $request ) {
-		$post_id = intval( $request->get_param( 'post_id' ) );
-		if ( ! $post_id || ! get_post( $post_id ) ) {
-			return new \WP_Error( 'invalid_post', 'Invalid post ID', [ 'status' => 400 ] );
+		$ttl    = $request->get_param( 'ttl_hours' );
+		$result = \previewshare_generate_preview_link(
+			absint( $request->get_param( 'post_id' ) ),
+			null === $ttl ? null : absint( $ttl ),
+			(string) $request->get_param( 'label' )
+		);
+
+		if ( $result instanceof \WP_Error ) {
+			return $result;
 		}
-
-		$post = get_post( $post_id );
-		if ( ! $post || ! \previewshare_is_supported_post_type( $post->post_type ) ) {
-			return new \WP_Error( 'unsupported_post_type', 'PreviewShare is not enabled for this post type', [ 'status' => 400 ] );
-		}
-
-		if ( ! $this->is_previewable_post_status( $post->post_status ) ) {
-			return new \WP_Error( 'invalid_post_status', 'Post must be published, draft, pending, scheduled, or private to generate preview links', [ 'status' => 400 ] );
-		}
-
-		$ttl   = $this->get_requested_ttl_hours( $request, $post_id );
-		$label = sanitize_text_field( (string) $request->get_param( 'label' ) );
-
-		// Generate a unique token and store it in post meta.
-		$token_service = new TokenService();
-		// This is very unlikely to loop more than once.
-		do {
-			$token = $token_service->generate();
-		} while ( $this->token_exists( $token ) );
-
-		// Persist via the storage driver.
-		$stored = $this->storage->store_token( $post_id, $token, $ttl, $label );
-
-		if ( ! $stored ) {
-			return new \WP_Error( 'token_storage_failed', 'Preview token could not be stored', [ 'status' => 500 ] );
-		}
-
-		update_post_meta( $post_id, '_previewshare_enabled', true );
-		if ( null !== $request->get_param( 'ttl_hours' ) ) {
-			update_post_meta( $post_id, '_previewshare_ttl_hours', $ttl );
-		}
-
-		// Generate the pretty URL.
-		$preview_url = home_url() . '/preview/' . $token;
 
 		return new \WP_REST_Response(
 			[
-				'url'   => $preview_url,
-				'token' => $token,
+				'url'   => $result['url'],
+				'token' => $result['token'],
 			],
 			200
 		);
-	}
-
-	/**
-	 * Generate a unique token for preview URLs.
-	 *
-	 * @since 1.0.0
-	 * @return string
-	 */
-	private function generate_unique_token() {
-		do {
-			$token = wp_generate_password( 32, false );
-		} while ( $this->token_exists( $token ) );
-
-		return $token;
-	}
-
-	/**
-	 * Check if a token already exists.
-	 *
-	 * @since 1.0.0
-	 * @param string $token Token to check.
-	 * @return bool
-	 */
-	private function token_exists( $token ) {
-		// Use the storage driver to check existence by attempting lookup.
-		$post_id = $this->storage->get_post_id_by_token( $token );
-		return ( $post_id !== false );
 	}
 
 	/**
@@ -398,7 +342,7 @@ class Actions {
 			wp_die( esc_html__( 'Preview link is invalid or has expired.', 'previewshare' ), '', [ 'response' => 410 ] );
 		}
 
-		if ( ! \previewshare_is_supported_post_type( $post->post_type ) || ! $this->is_previewable_post_status( $post->post_status ) ) {
+		if ( ! \previewshare_is_supported_post_type( $post->post_type ) || ! \previewshare_is_previewable_post_status( $post->post_status ) ) {
 			wp_die( esc_html__( 'Preview link is not available for this content.', 'previewshare' ), '', [ 'response' => 410 ] );
 		}
 
@@ -492,38 +436,6 @@ class Actions {
 	}
 
 	/**
-	 * Get a normalized TTL for a preview generation request.
-	 *
-	 * @param \WP_REST_Request $request Request.
-	 * @param int              $post_id Post ID.
-	 * @return int TTL in hours. 0 means no expiry.
-	 */
-	private function get_requested_ttl_hours( $request, int $post_id ): int {
-		$ttl = $request->get_param( 'ttl_hours' );
-
-		if ( null !== $ttl ) {
-			return absint( $ttl );
-		}
-
-		$post_ttl = get_post_meta( $post_id, '_previewshare_ttl_hours', true );
-		if ( '' !== $post_ttl && null !== $post_ttl ) {
-			return absint( $post_ttl );
-		}
-
-		return (int) get_option( 'previewshare_default_ttl_hours', 6 );
-	}
-
-	/**
-	 * Check whether a post status can be exposed through a preview token.
-	 *
-	 * @param string $status Post status.
-	 * @return bool
-	 */
-	private function is_previewable_post_status( string $status ): bool {
-		return in_array( $status, [ 'publish', 'draft', 'pending', 'future', 'private' ], true );
-	}
-
-	/**
 	 * Register Classic Editor meta boxes.
 	 *
 	 * @return void
@@ -552,7 +464,7 @@ class Actions {
 	 * @return void
 	 */
 	public function render_classic_meta_box( \WP_Post $post ): void {
-		if ( ! current_user_can( 'edit_post', $post->ID ) || ! $this->is_previewable_post_status( $post->post_status ) ) {
+		if ( ! current_user_can( 'edit_post', $post->ID ) || ! \previewshare_is_previewable_post_status( $post->post_status ) ) {
 			echo '<p>' . esc_html__( 'Preview sharing is unavailable for this content.', 'previewshare' ) . '</p>';
 			return;
 		}
@@ -584,7 +496,7 @@ class Actions {
 	 * @return array<string,string>
 	 */
 	public function add_post_row_actions( array $actions, \WP_Post $post ): array {
-		if ( ! \previewshare_is_supported_post_type( $post->post_type ) || ! current_user_can( 'edit_post', $post->ID ) || ! $this->is_previewable_post_status( $post->post_status ) ) {
+		if ( ! \previewshare_is_supported_post_type( $post->post_type ) || ! current_user_can( 'edit_post', $post->ID ) || ! \previewshare_is_previewable_post_status( $post->post_status ) ) {
 			return $actions;
 		}
 
@@ -603,16 +515,18 @@ class Actions {
 		$post_id = isset( $_GET['post_id'] ) ? absint( $_GET['post_id'] ) : 0;
 		$this->verify_admin_action( 'previewshare_generate_link', $post_id );
 
-		$token  = $this->generate_unique_token();
-		$ttl    = (int) get_option( 'previewshare_default_ttl_hours', 6 );
-		$stored = $this->storage->store_token( $post_id, $token, $ttl, __( 'Admin generated link', 'previewshare' ) );
+		$result = \previewshare_generate_preview_link(
+			$post_id,
+			(int) get_option( 'previewshare_default_ttl_hours', 6 ),
+			__( 'Admin generated link', 'previewshare' )
+		);
 
-		if ( $stored ) {
+		if ( ! ( $result instanceof \WP_Error ) ) {
 			set_transient(
 				'previewshare_admin_notice_' . get_current_user_id(),
 				[
 					'type' => 'success',
-					'url'  => home_url( '/preview/' . $token ),
+					'url'  => $result['url'],
 				],
 				10 * MINUTE_IN_SECONDS
 			);
@@ -872,7 +786,7 @@ body.admin-bar .previewshare-preview-bar {
 
 		$post = get_post( $post_id );
 
-		if ( ! \previewshare_is_supported_post_type( $post->post_type ) || ! $this->is_previewable_post_status( $post->post_status ) ) {
+		if ( ! \previewshare_is_supported_post_type( $post->post_type ) || ! \previewshare_is_previewable_post_status( $post->post_status ) ) {
 			wp_die( esc_html__( 'PreviewShare is not available for this content.', 'previewshare' ), '', [ 'response' => 400 ] );
 		}
 

@@ -21,6 +21,7 @@
 		"mockery/mockery": "^1.6"
 	},
 	"scripts": {
+		"audit:php": "composer audit --format=plain",
 		"check-cs": "@php ./vendor/bin/phpcs -s",
 		"fix-cs": "@php ./vendor/bin/phpcbf",
 		"lint": "find . -path ./vendor -prune -o -path ./node_modules -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l",

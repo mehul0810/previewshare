@@ -7,6 +7,7 @@
 
 namespace PreviewShare\REST;
 
+use PreviewShare\Container;
 use PreviewShare\Services\TokenService;
 use PreviewShare\Services\PostMetaStorage;
 
@@ -19,13 +20,6 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Class PreviewController
  */
 class PreviewController {
-
-	/**
-	 * Token service instance.
-	 *
-	 * @var TokenService
-	 */
-	private $token_service;
 
 	/**
 	 * Storage instance.
@@ -41,8 +35,9 @@ class PreviewController {
 	 * @param PostMetaStorage $storage Storage driver.
 	 */
 	public function __construct( TokenService $token_service, PostMetaStorage $storage ) {
-		$this->token_service = $token_service;
-		$this->storage       = $storage;
+		$this->storage = $storage;
+		Container::set( 'token_service', $token_service );
+		Container::set( 'storage', $storage );
 
 		// Register routes on rest_api_init (normal) and also immediately
 		// if rest_api_init already fired (defensive - ensures route
@@ -215,11 +210,14 @@ class PreviewController {
 		// Enrich each token with the related post title.
 		$items = array_map(
 			function ( $row ) {
-				$post = get_post( $row['post_id'] );
+				$post     = get_post( $row['post_id'] );
+				$edit_url = $post ? get_edit_post_link( $post->ID, 'raw' ) : '';
+
 				return [
 					'id'             => isset( $row['id'] ) ? (string) $row['id'] : '',
 					'post_id'        => (int) $row['post_id'],
 					'post_title'     => $post ? get_the_title( $post ) : '(deleted)',
+					'edit_url'       => $edit_url ? $edit_url : '',
 					'label'          => isset( $row['label'] ) ? (string) $row['label'] : '',
 					'created_at'     => isset( $row['created_at'] ) ? (int) $row['created_at'] : 0,
 					'expires_at'     => isset( $row['expires_at'] ) ? $row['expires_at'] : null,
@@ -363,42 +361,21 @@ class PreviewController {
 	 */
 	public function generate( $request ) {
 		$post_id = absint( $request->get_param( 'post_id' ) );
+		$ttl     = $request->get_param( 'ttl_hours' );
+		$result  = \previewshare_generate_preview_link(
+			$post_id,
+			null === $ttl ? null : absint( $ttl ),
+			(string) $request->get_param( 'label' )
+		);
 
-		if ( ! $post_id || ! get_post( $post_id ) ) {
-			return new \WP_Error( 'invalid_post', 'Invalid post ID', [ 'status' => 400 ] );
+		if ( $result instanceof \WP_Error ) {
+			return $result;
 		}
-
-		$post = get_post( $post_id );
-		if ( ! $post || ! \previewshare_is_supported_post_type( $post->post_type ) ) {
-			return new \WP_Error( 'unsupported_post_type', 'PreviewShare is not enabled for this post type', [ 'status' => 400 ] );
-		}
-
-		if ( ! $this->is_previewable_post_status( $post->post_status ) ) {
-			return new \WP_Error( 'invalid_post_status', 'Post must be published, draft, pending, scheduled, or private to generate preview links', [ 'status' => 400 ] );
-		}
-
-		$ttl   = $request->get_param( 'ttl_hours' );
-		$ttl   = is_null( $ttl ) ? $this->get_post_or_default_ttl_hours( $post_id ) : absint( $ttl );
-		$label = sanitize_text_field( (string) $request->get_param( 'label' ) );
-
-		$token  = $this->token_service->generate();
-		$stored = $this->storage->store_token( $post_id, $token, $ttl, $label );
-
-		if ( ! $stored ) {
-			return new \WP_Error( 'token_storage_failed', 'Preview token could not be stored', [ 'status' => 500 ] );
-		}
-
-		update_post_meta( $post_id, '_previewshare_enabled', true );
-		if ( null !== $request->get_param( 'ttl_hours' ) ) {
-			update_post_meta( $post_id, '_previewshare_ttl_hours', $ttl );
-		}
-
-		$preview_url = home_url( '/preview/' . $token );
 
 		return new \WP_REST_Response(
 			[
-				'url' => $preview_url,
-				'token' => $token,
+				'url'   => $result['url'],
+				'token' => $result['token'],
 			],
 			200
 		);
@@ -428,40 +405,5 @@ class PreviewController {
 		$revoked = $this->storage->revoke_token( $token );
 
 		return new \WP_REST_Response( [ 'revoked' => (bool) $revoked ], 200 );
-	}
-
-	/**
-	 * Get the global default TTL in hours.
-	 *
-	 * @return int
-	 */
-	private function get_default_ttl_hours(): int {
-		return (int) get_option( 'previewshare_default_ttl_hours', 6 );
-	}
-
-	/**
-	 * Get the per-post TTL override, falling back to the global default.
-	 *
-	 * @param int $post_id Post ID.
-	 * @return int
-	 */
-	private function get_post_or_default_ttl_hours( int $post_id ): int {
-		$post_ttl = get_post_meta( $post_id, '_previewshare_ttl_hours', true );
-
-		if ( '' !== $post_ttl && null !== $post_ttl ) {
-			return absint( $post_ttl );
-		}
-
-		return $this->get_default_ttl_hours();
-	}
-
-	/**
-	 * Check whether a post status can be exposed through a preview token.
-	 *
-	 * @param string $status Post status.
-	 * @return bool
-	 */
-	private function is_previewable_post_status( string $status ): bool {
-		return in_array( $status, [ 'publish', 'draft', 'pending', 'future', 'private' ], true );
 	}
 }
