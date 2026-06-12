@@ -8,6 +8,8 @@
 /.storybook
 /.cache
 
+.DS_Store
+
 /tests
 /scripts
 /node_modules

@@ -57,4 +57,9 @@ if grep -E "${forbidden_pattern}" "${LIST_FILE}"; then
 	exit 1
 fi
 
+if grep -E '(^|/)\.DS_Store$' "${LIST_FILE}"; then
+	echo "Release zip contains macOS metadata files." >&2
+	exit 1
+fi
+
 echo "Release zip validation passed: ${ZIP_PATH}"
