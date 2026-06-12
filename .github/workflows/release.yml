@@ -112,6 +112,19 @@ jobs:
       - name: Validate production zip
         run: npm run validate:zip
 
+      - name: Validate WordPress.org assets
+        run: npm run validate:wporg
+
+      - name: Prepare SVN deployment directory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf build/svn
+          mkdir -p build/svn
+          unzip -q previewshare.zip -d build/svn
+          test -f "build/svn/${PLUGIN_SLUG}/previewshare.php"
+
       - name: Rename artifact
         run: mv previewshare.zip "${{ steps.release.outputs.zip_file }}"
 
@@ -140,4 +153,11 @@ jobs:
             gh release create "${TAG_NAME}" "${ZIP_FILE}" --title "${TAG_NAME}" --notes "${NOTES}" --verify-tag
           fi
 
-      # Future: add WordPress.org SVN deployment here with the 10up plugin deployment action.
+      - name: Deploy to WordPress.org SVN
+        uses: 10up/action-wordpress-plugin-deploy@stable
+        env:
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+          SLUG: ${{ env.PLUGIN_SLUG }}
+          ASSETS_DIR: .wordpress-org
+          BUILD_DIR: build/svn/${{ env.PLUGIN_SLUG }}

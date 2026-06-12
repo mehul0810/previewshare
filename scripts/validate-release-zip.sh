@@ -50,7 +50,7 @@ for required_path in "${required_paths[@]}"; do
 	fi
 done
 
-forbidden_pattern="^${PLUGIN_SLUG}/(\\.git|\\.github|node_modules|assets/src|tests|scripts|vendor/bin|phpstan|phpcs|composer\\.lock|package\\.json|package-lock\\.json|README\\.md|AGENTS\\.md|\\.distignore|\\.editorconfig|\\.gitignore|\\.babelrc|\\.phpunit\\.result\\.cache|postcss\\.config\\.js|webpack\\.config\\.js|wp-textdomain\\.js|previewshare\\.zip)(/|$)"
+forbidden_pattern="^${PLUGIN_SLUG}/(\\.git|\\.github|\\.wordpress-org|node_modules|assets/src|tests|scripts|vendor/bin|phpstan|phpcs|composer\\.lock|package\\.json|package-lock\\.json|README\\.md|AGENTS\\.md|\\.distignore|\\.editorconfig|\\.gitignore|\\.babelrc|\\.phpunit\\.result\\.cache|postcss\\.config\\.js|webpack\\.config\\.js|wp-textdomain\\.js|previewshare\\.zip)(/|$)"
 
 if grep -E "${forbidden_pattern}" "${LIST_FILE}"; then
 	echo "Release zip contains development-only files." >&2

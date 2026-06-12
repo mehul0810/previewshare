@@ -38,6 +38,12 @@ Preview links use random tokens, token hashes are stored in post meta, and acces
 4. Open a supported post type in the block editor or Classic Editor.
 5. Enable public preview from the PreviewShare panel and copy the generated preview URL.
 
+== Screenshots ==
+
+1. PreviewShare settings with preview link inventory, status, expiry, and view counts.
+2. General defaults for the site-wide preview link expiry setting.
+3. PreviewShare editor panel for enabling public preview and generating secure review links.
+
 == Frequently Asked Questions ==
 
 = Who can generate preview links? =
@@ -95,8 +101,3 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 * Added support for configurable public post types, multiple labeled links, view counts, noindex/nofollow previews, Classic Editor entry points, post-list actions, and Preview dropdown generation.
 * Added global settings for default expiration, logging, and object cache lookup.
 * Added post meta based token storage with hashed token lookup.
-
-== Upgrade Notice ==
-
-= 1.0.0 =
-Initial release.
