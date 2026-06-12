@@ -90,9 +90,18 @@ Before finalizing any patch:
 ## Pull Request Guidelines
 
 - Title should follow: `[component] Short summary of change`
+- For milestone work, use the active `release/<milestone>` branch as the PR base.
 - Include a concise description of what changed and why
 - Reference relevant issues or tickets
 - Avoid unrelated changes in the same PR
+
+## Release Branch Strategy
+
+- `develop` is the ongoing integration branch.
+- `main` is the production branch.
+- Create `release/<milestone>` branches from `develop` before milestone work starts.
+- Open PRs for milestone-tied work against the matching `release/<milestone>` branch.
+- After each production release on `main`, sync `develop` from `main`.
 
 ---
 
