@@ -77,14 +77,6 @@ Open the draft in the block editor or Classic Editor, enable public preview in t
 
 Users must be able to edit the content item before they can generate or revoke a preview link for it.
 
-= Do visitors need a WordPress account to open a preview link? =
-
-No. Anyone with a valid preview URL can view the linked content until the token expires or is revoked.
-
-= Which content statuses can be shared? =
-
-PreviewShare can generate preview links for published, draft, pending, scheduled, and private content in enabled post types. Published content redirects to its canonical permalink when a preview link is opened.
-
 = Does PreviewShare work with the block editor and Classic Editor? =
 
 Yes. PreviewShare supports the block editor, Classic Editor, post list table actions, and the Preview dropdown.
@@ -116,10 +108,6 @@ Expired tokens stop resolving to content. The editor panel will show the expired
 = Does PreviewShare expose private content publicly? =
 
 PreviewShare only exposes a specific content item to visitors who have a valid preview URL. Treat preview URLs like private sharing links and send them only to intended reviewers.
-
-= Does the plugin use custom database tables? =
-
-No. PreviewShare stores its token index and token metadata in WordPress post meta.
 
 == Development ==
 
