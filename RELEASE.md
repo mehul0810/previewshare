@@ -10,6 +10,9 @@
 - Open PRs for milestone work against the matching `release/<milestone>` branch.
 - Keep `release/<milestone>` branches scoped to that milestone.
 
+## WordPress.org metadata hygiene
+- Keep `readme.txt` to a maximum of 5 high-intent generic tags.
+- Avoid keyword stuffing or competitor/product-name tags in WordPress.org metadata.
+
 ## Post-release process
 - After each production release is merged/tagged on `main`, sync `develop` from `main` so future development starts from released state.
-
