@@ -75,6 +75,7 @@ Before finalizing any patch:
 - Unit tests should be green
 - No unhandled PHP notices, warnings, or errors
 - No introduced security vulnerabilities
+- When work targets `develop` or `release/<milestone>`, verify whether GitHub Actions covers that branch. If hosted CI does not run there yet, run the cheapest reliable local validation for the touched surface and call out the missing hosted coverage explicitly in the PR or check-in.
 
 ---
 
