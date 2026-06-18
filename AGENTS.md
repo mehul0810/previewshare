@@ -85,6 +85,7 @@ Before finalizing any patch:
 - v1.0.0 is the initial release
 - Tag releases in Git with their version (e.g., `v1.0.0`)
 - Keep CHANGELOG updated with meaningful changes
+- For WordPress.org metadata work, keep `readme.txt` to a maximum of 5 high-intent generic tags even though the directory allows more.
 
 ---
 
@@ -123,3 +124,4 @@ When generating or modifying code in this project:
 - Use existing API functions and WordPress hooks responsibly
 - Validate all input/output sanitation
 - Maintain minimal performance overhead
+- Keep WordPress.org-facing metadata concise, especially the 5-tag `readme.txt` cap.
