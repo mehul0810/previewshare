@@ -117,7 +117,7 @@ const PreviewSharePanel = () => {
 
 			const res = await wp.apiFetch( options );
 			setTokenMeta( res );
-		} catch ( err ) {
+		} catch {
 			setTokenMeta( null );
 		}
 	};
@@ -204,7 +204,7 @@ const PreviewSharePanel = () => {
 			}
 
 			setPreviewUrl( '' );
-		} catch ( error ) {
+		} catch {
 			setPreviewUrl( '' );
 			notify(
 				'error',
@@ -242,7 +242,7 @@ const PreviewSharePanel = () => {
 			await wp.apiFetch( fetchOptions );
 			await fetchTokenMeta();
 			notify( 'success', __( 'Preview links revoked.', 'previewshare' ) );
-		} catch ( error ) {
+		} catch {
 			notify(
 				'error',
 				__( 'Preview links could not be revoked.', 'previewshare' )
@@ -258,7 +258,7 @@ const PreviewSharePanel = () => {
 		try {
 			await window.navigator.clipboard.writeText( url );
 			notify( 'success', __( 'Preview URL copied.', 'previewshare' ) );
-		} catch ( error ) {
+		} catch {
 			notify(
 				'error',
 				__(
