@@ -75,6 +75,7 @@ Before finalizing any patch:
 - Unit tests should be green
 - No unhandled PHP notices, warnings, or errors
 - No introduced security vulnerabilities
+- Keep admin UI, copy, state, accessibility, responsive, and asset decisions aligned with `DESIGN.md`
 
 ---
 
