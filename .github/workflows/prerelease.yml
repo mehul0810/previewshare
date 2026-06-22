@@ -52,7 +52,7 @@ jobs:
           echo "zip_file=${PLUGIN_SLUG}-${TAG_NAME}.zip" >> "${GITHUB_OUTPUT}"
           echo "artifact_name=${PLUGIN_SLUG}-prerelease-${TAG_NAME}" >> "${GITHUB_OUTPUT}"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.release.outputs.tag }}
           fetch-depth: 0
@@ -80,7 +80,7 @@ jobs:
           extensions: mbstring
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: npm
@@ -110,7 +110,7 @@ jobs:
         run: mv previewshare.zip "${{ steps.release.outputs.zip_file }}"
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.release.outputs.artifact_name }}
           path: ${{ steps.release.outputs.zip_file }}
