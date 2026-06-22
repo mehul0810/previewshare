@@ -4,7 +4,7 @@ Tags: preview, draft preview, preview link, share draft, client review
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 8.0
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -121,6 +121,12 @@ Production ZIP files are built from the source repository with:
 The release artifact includes compiled assets, Composer autoload files, `composer.json`, plugin PHP, languages, readme, and license files. Development files such as `node_modules`, source assets, CI configuration, tests, and build tooling are excluded from production ZIP files.
 
 == Changelog ==
+
+= 1.0.1 =
+* Added safer diagnostics and recovery guidance for invalid preview links.
+* Reduced npm development-tooling audit findings and documented remaining dev-only findings.
+* Expanded CI coverage for release branches and updated GitHub Actions runtime pins.
+* Limited WordPress.org readme tags to five focused tags and added validation for the tag cap.
 
 = 1.0.0 =
 * Initial release.

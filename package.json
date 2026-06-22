@@ -1,6 +1,6 @@
 {
   "name": "previewshare",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "PreviewShare lets you securely share preview links for draft, pending, or scheduled content without publishing it publicly.",
   "homepage": "https://github.com/mehul0810/previewshare#readme",
   "license": "GPL-3.0-or-later",
