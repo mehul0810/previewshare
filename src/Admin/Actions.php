@@ -25,6 +25,15 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Actions {
 
+	private const FAILURE_MISSING_TOKEN      = 'missing_token';
+	private const FAILURE_TOKEN_NOT_FOUND    = 'token_not_found';
+	private const FAILURE_TOKEN_REVOKED      = 'token_revoked';
+	private const FAILURE_TOKEN_EXPIRED      = 'token_expired';
+	private const FAILURE_LINK_DISABLED      = 'link_disabled';
+	private const FAILURE_MISSING_POST       = 'missing_post';
+	private const FAILURE_UNSUPPORTED_POST   = 'unsupported_post_type';
+	private const FAILURE_UNSUPPORTED_STATUS = 'unsupported_post_status';
+
 	/**
 	 * Constructor.
 	 *
@@ -316,34 +325,56 @@ class Actions {
 			return;
 		}
 
-		$token = get_query_var( 'previewshare_token' );
-		if ( ! $token ) {
+		$token = (string) get_query_var( 'previewshare_token' );
+		if ( '' === $token ) {
 			return;
 		}
 
 		$this->send_preview_robots_header();
 
-		$post_id = $this->storage->get_post_id_by_token( $token );
+		$diagnostic = $this->storage->get_token_diagnostic( $token );
+		$post_id    = isset( $diagnostic['post_id'] ) ? (int) $diagnostic['post_id'] : 0;
+
+		if ( self::FAILURE_MISSING_TOKEN === $diagnostic['reason_code'] || self::FAILURE_TOKEN_NOT_FOUND === $diagnostic['reason_code'] ) {
+			$this->fail_preview_request( (string) $diagnostic['reason_code'], $post_id );
+		}
+
+		if ( self::FAILURE_TOKEN_REVOKED === $diagnostic['reason_code'] || self::FAILURE_TOKEN_EXPIRED === $diagnostic['reason_code'] ) {
+			$this->fail_preview_request( (string) $diagnostic['reason_code'], $post_id );
+		}
+
 		if ( ! $post_id ) {
-			wp_die( esc_html__( 'Preview link is invalid or has expired.', 'previewshare' ), '', [ 'response' => 410 ] );
+			$this->fail_preview_request( self::FAILURE_TOKEN_NOT_FOUND );
 		}
 
 		if ( ! get_post_meta( $post_id, '_previewshare_enabled', true ) ) {
-			wp_die( esc_html__( 'Preview link is disabled.', 'previewshare' ), '', [ 'response' => 410 ] );
+			$this->fail_preview_request( self::FAILURE_LINK_DISABLED, $post_id );
 		}
 
 		$meta = $this->storage->get_token_meta( $post_id );
-		if ( empty( $meta ) || ! empty( $meta['revoked'] ) || ! empty( $meta['expired'] ) ) {
-			wp_die( esc_html__( 'Preview link is invalid or has expired.', 'previewshare' ), '', [ 'response' => 410 ] );
+		if ( empty( $meta ) ) {
+			$this->fail_preview_request( self::FAILURE_TOKEN_NOT_FOUND, $post_id );
+		}
+
+		if ( ! empty( $meta['revoked'] ) ) {
+			$this->fail_preview_request( self::FAILURE_TOKEN_REVOKED, $post_id );
+		}
+
+		if ( ! empty( $meta['expired'] ) ) {
+			$this->fail_preview_request( self::FAILURE_TOKEN_EXPIRED, $post_id );
 		}
 
 		$post = get_post( $post_id );
 		if ( ! $post ) {
-			wp_die( esc_html__( 'Preview link is invalid or has expired.', 'previewshare' ), '', [ 'response' => 410 ] );
+			$this->fail_preview_request( self::FAILURE_MISSING_POST, $post_id );
 		}
 
-		if ( ! \previewshare_is_supported_post_type( $post->post_type ) || ! \previewshare_is_previewable_post_status( $post->post_status ) ) {
-			wp_die( esc_html__( 'Preview link is not available for this content.', 'previewshare' ), '', [ 'response' => 410 ] );
+		if ( ! \previewshare_is_supported_post_type( $post->post_type ) ) {
+			$this->fail_preview_request( self::FAILURE_UNSUPPORTED_POST, $post_id );
+		}
+
+		if ( ! \previewshare_is_previewable_post_status( $post->post_status ) ) {
+			$this->fail_preview_request( self::FAILURE_UNSUPPORTED_STATUS, $post_id );
 		}
 
 		if ( 'publish' === $post->post_status ) {
@@ -387,6 +418,53 @@ class Actions {
 	}
 
 	/**
+	 * Render a safe public failure screen and emit opt-in diagnostics.
+	 *
+	 * @param string $reason_code Stable internal failure reason.
+	 * @param int    $post_id Optional related post ID when known.
+	 * @return void
+	 */
+	private function fail_preview_request( string $reason_code, int $post_id = 0 ): void {
+		$reason_code = sanitize_key( $reason_code );
+
+		\previewshare_log(
+			'preview_request_failed',
+			[
+				'reason_code' => $reason_code,
+				'post_id'     => $post_id > 0 ? $post_id : null,
+			]
+		);
+
+		/**
+		 * Fires when a public preview request cannot be served.
+		 *
+		 * The raw token and token hash are intentionally omitted.
+		 *
+		 * @param string $reason_code Stable internal failure reason.
+		 * @param int    $post_id Related post ID, or 0 when unknown.
+		 */
+		do_action( 'previewshare_preview_request_failed', $reason_code, $post_id );
+
+		wp_die(
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Message HTML is built from escaped translation strings in get_preview_failure_message().
+			$this->get_preview_failure_message(),
+			esc_html__( 'Preview link unavailable', 'previewshare' ),
+			[ 'response' => 410 ]
+		);
+	}
+
+	/**
+	 * Build the anonymous-safe preview failure message.
+	 *
+	 * @return string
+	 */
+	private function get_preview_failure_message(): string {
+		return '<h1>' . esc_html__( 'Preview link unavailable', 'previewshare' ) . '</h1>'
+			. '<p>' . esc_html__( 'This preview link can no longer be opened. It may have expired, been revoked, or no longer match available content.', 'previewshare' ) . '</p>'
+			. '<p>' . esc_html__( 'Please ask the person who sent the link to generate and share a new PreviewShare link.', 'previewshare' ) . '</p>';
+	}
+
+	/**
 	 * REST handler: return token meta for a given post_id.
 	 *
 	 * @param \WP_REST_Request $request Request.
@@ -406,15 +484,68 @@ class Actions {
 		$meta = $this->storage->get_token_meta( $post_id );
 
 		// Also indicate whether the post currently has an indexed token.
-		$has_token = (bool) get_post_meta( $post_id, '_previewshare_token_hash', true );
+		$has_token  = (bool) get_post_meta( $post_id, '_previewshare_token_hash', true );
+		$diagnostic = $this->get_post_recovery_guidance( $post_id, $post, $meta, $has_token );
 
 		return new \WP_REST_Response(
 			[
-				'has_token' => $has_token,
-				'meta' => $meta,
+				'has_token'  => $has_token,
+				'meta'       => $meta,
+				'diagnostic' => $diagnostic,
 			],
 			200
 		);
+	}
+
+	/**
+	 * Get admin/editor recovery guidance for a post's current link state.
+	 *
+	 * @param int                      $post_id Post ID.
+	 * @param \WP_Post                 $post Post object.
+	 * @param array<string,mixed>|null $meta Token meta.
+	 * @param bool                     $has_token Whether an indexed token exists.
+	 * @return array{reason_code:string,message:string,action:string}
+	 */
+	private function get_post_recovery_guidance( int $post_id, \WP_Post $post, ?array $meta, bool $has_token ): array {
+		unset( $post_id );
+
+		if ( ! \previewshare_is_previewable_post_status( $post->post_status ) ) {
+			return [
+				'reason_code' => self::FAILURE_UNSUPPORTED_STATUS,
+				'message'     => __( 'Preview links are unavailable for this content status.', 'previewshare' ),
+				'action'      => __( 'Move the content to a draft, pending, scheduled, private, or published status before generating a link.', 'previewshare' ),
+			];
+		}
+
+		if ( empty( $meta ) || ! $has_token ) {
+			return [
+				'reason_code' => self::FAILURE_TOKEN_NOT_FOUND,
+				'message'     => __( 'No active preview link is available for this content.', 'previewshare' ),
+				'action'      => __( 'Generate a new PreviewShare link and send the new URL to reviewers.', 'previewshare' ),
+			];
+		}
+
+		if ( ! empty( $meta['revoked'] ) ) {
+			return [
+				'reason_code' => self::FAILURE_TOKEN_REVOKED,
+				'message'     => __( 'The latest preview link was revoked.', 'previewshare' ),
+				'action'      => __( 'Generate a new PreviewShare link before sharing this content again.', 'previewshare' ),
+			];
+		}
+
+		if ( ! empty( $meta['expired'] ) ) {
+			return [
+				'reason_code' => self::FAILURE_TOKEN_EXPIRED,
+				'message'     => __( 'The latest preview link has expired.', 'previewshare' ),
+				'action'      => __( 'Generate a new PreviewShare link or increase the expiry time before sharing.', 'previewshare' ),
+			];
+		}
+
+		return [
+			'reason_code' => 'active',
+			'message'     => __( 'Preview links are available for this content.', 'previewshare' ),
+			'action'      => __( 'Copy an active link or generate a fresh one when reviewers need access.', 'previewshare' ),
+		];
 	}
 
 	/**
@@ -485,6 +616,8 @@ class Actions {
 
 		if ( $active_count > 0 ) {
 			echo '<p><a class="button" href="' . esc_url( $revoke_url ) . '">' . esc_html__( 'Revoke Active Links', 'previewshare' ) . '</a></p>';
+		} elseif ( ! empty( $meta['revoked'] ) || ! empty( $meta['expired'] ) ) {
+			echo '<p class="description">' . esc_html__( 'The latest preview link is no longer usable. Generate a new link before sharing this content again.', 'previewshare' ) . '</p>';
 		}
 	}
 
