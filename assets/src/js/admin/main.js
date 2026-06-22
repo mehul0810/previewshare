@@ -285,6 +285,8 @@ const PreviewSharePanel = () => {
 			: [];
 	const activeCount =
 		tokenMeta && tokenMeta.meta ? tokenMeta.meta.active_count || 0 : 0;
+	const diagnostic =
+		tokenMeta && tokenMeta.diagnostic ? tokenMeta.diagnostic : null;
 
 	return (
 		<Fragment>
@@ -324,6 +326,12 @@ const PreviewSharePanel = () => {
 										'Save this content as a draft before generating a preview link.',
 										'previewshare'
 								  ) }
+						</p>
+					) }
+					{ diagnostic && diagnostic.reason_code !== 'active' && (
+						<p className="description previewshare-panel__notice">
+							<strong>{ diagnostic.message }</strong>{ ' ' }
+							{ diagnostic.action }
 						</p>
 					) }
 					<div className="previewshare-panel__field">
