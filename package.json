@@ -20,6 +20,15 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "overrides": {
+    "http-proxy-middleware": "3.0.7",
+    "js-yaml": "5.0.0",
+    "markdown-it": "14.2.0",
+    "minimatch": "3.1.5",
+    "serialize-javascript": "7.0.6",
+    "uuid": "11.1.1",
+    "webpack-dev-server": "5.2.5"
+  },
   "files": [
     "assets/dist",
     "config",
@@ -47,15 +56,14 @@
     "@babel/core": "^7.28.5",
     "@babel/preset-env": "^7.28.5",
     "@babel/preset-react": "^7.28.5",
-    "@wordpress/components": "^30.9.0",
+    "@wordpress/components": "^35.0.1",
     "@wordpress/data": "^10.36.0",
-    "@wordpress/edit-post": "^8.36.0",
     "@wordpress/editor": "^14.36.0",
     "@wordpress/element": "^6.36.0",
     "@wordpress/i18n": "^6.9.0",
     "@wordpress/icons": "11.3.0",
     "@wordpress/plugins": "^7.36.0",
-    "@wordpress/scripts": "^31.1.0",
+    "@wordpress/scripts": "^32.4.1",
     "babel-loader": "^10.0.0",
     "mini-css-extract-plugin": "^2.8.1",
     "postcss-import": "^16.1.0",
