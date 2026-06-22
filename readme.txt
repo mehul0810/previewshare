@@ -1,6 +1,6 @@
 === PreviewShare ===
 Contributors: mehul0810
-Tags: preview, draft preview, preview link, share draft, client review, public preview, private preview, drafts, scheduled posts, content approval, editorial workflow, block editor
+Tags: preview, draft preview, preview link, share draft, client review
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 8.0
