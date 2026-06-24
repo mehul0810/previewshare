@@ -1,6 +1,6 @@
 === PreviewShare ===
 Contributors: mehul0810
-Tags: preview, draft preview, preview link, share draft, client review
+Tags: preview, draft preview, preview link, share draft, public preview
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 8.0
@@ -8,11 +8,11 @@ Stable tag: 1.0.1
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
-Create secure public preview links for WordPress drafts, scheduled posts, and client reviews without user accounts.
+Share WordPress draft posts with secure public preview links for anonymous reviewers without publishing or creating user accounts.
 
 == Description ==
 
-PreviewShare is a secure public preview plugin for WordPress. It helps editors share draft posts, pending pages, scheduled content, private posts, and other enabled public post types through controlled preview links without publishing early or creating temporary reviewer accounts.
+PreviewShare is a secure public preview plugin for WordPress. It helps editors share draft posts, pending pages, scheduled content, private posts, and other enabled public post types through controlled public preview links for anonymous reviewers without publishing early or creating temporary reviewer accounts.
 
 Use PreviewShare when a client, legal reviewer, teammate, editor, or stakeholder needs to review WordPress content before it goes live. Each preview URL uses a random token, can expire automatically, can be revoked, and is designed for private review workflows such as client approval, content approval, editorial review, and scheduled campaign checks.
 
@@ -127,6 +127,7 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 * Reduced npm development-tooling audit findings and documented remaining dev-only findings.
 * Expanded CI coverage for release branches and updated GitHub Actions runtime pins.
 * Limited WordPress.org readme tags to five focused tags and added validation for the tag cap.
+* Improved WordPress.org readme tags and opening copy for public preview workflows.
 
 = 1.0.0 =
 * Initial release.
