@@ -20,7 +20,9 @@
 /coverage
 /build
 /artifacts
+/playwright-report
 /output
+/playwright.config.js
 
 .scrutinizer.yml
 .travis.yml

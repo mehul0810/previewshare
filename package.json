@@ -41,6 +41,7 @@
     "audit:prod": "npm audit --omit=dev --audit-level=moderate",
     "lint:css": "wp-scripts lint-style \"assets/src/css/**/*.css\"",
     "lint:js": "wp-scripts lint-js assets/src/js webpack.config.js wp-textdomain.js",
+    "test:e2e": "wp-scripts test-playwright --config=playwright.config.js",
     "test:js": "wp-scripts test-unit-js"
   },
   "devDependencies": {

@@ -2,6 +2,8 @@
 /tmp
 /tests/bin/tmp
 .phpunit.result.cache
+artifacts
+playwright-report
 
 # Numerous always-ignore extensions
 .diff

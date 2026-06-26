@@ -51,11 +51,14 @@ Include this file in the project’s root so AI agents can understand the plugin
 
 ## Testing Instructions
 
-*(Define tests here once they exist)*  
-If the project adds unit tests:
-- Use the WordPress PHPUnit test framework
-- Run tests locally before submitting pull requests
-- Use `vendor/bin/phpunit` or WP-CLI test commands
+PHP unit tests:
+- Use the WordPress PHPUnit test framework.
+- Run `composer test` locally before submitting pull requests when PHP behavior changes.
+
+Browser smoke tests:
+- Run `npm run test:e2e` against a WordPress test install with PreviewShare installed.
+- The Playwright harness reads `WP_BASE_URL`, `WP_USERNAME`, and `WP_PASSWORD`; defaults are `http://localhost:8889`, `admin`, and `password`.
+- Set `PREVIEWSHARE_E2E_WP_CLI` to a WP-CLI command prefix when the expired-link assertion needs to mutate token metadata, for example `wp` or `npm run wp-env run tests-cli -- wp`.
 
 ---
 
