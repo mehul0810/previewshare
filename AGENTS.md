@@ -97,6 +97,14 @@ Before finalizing any patch:
 - Reference relevant issues or tickets
 - Avoid unrelated changes in the same PR
 
+## Discovery Capture
+
+- When agents find behavior that is not working as expected, code that needs improvement, weak or missing comments around non-obvious logic, maintainability gaps, missing tests, repeated validation/tooling friction, or reusable proof/runtime lessons, do not leave the finding only in chat.
+- Duplicate-screen open and recently closed issues and PRs before adding new tracking.
+- If the finding is inside the current issue scope, fix it in the active scoped PR. If it is outside scope, create a focused GitHub issue or product-doc task instead of broadening the active PR.
+- Treat product documentation as living contracts. Update or create focused tasks for `AGENTS.md`, `DESIGN.md`, `TESTING.md`, `RELEASE.md`, architecture docs, README, and docs when discoveries change future worker behavior.
+- Issue bodies for these findings should include the observed symptom, why it matters, suspected source, affected files or surfaces, acceptance criteria, validation or proof expectation, risk, and whether docs need updating.
+
 ## Release Branch Strategy
 
 - `develop` is the ongoing integration branch.
