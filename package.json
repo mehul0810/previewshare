@@ -44,7 +44,7 @@
     "test:js": "wp-scripts test-unit-js"
   },
   "devDependencies": {
-    "@babel/core": "^7.28.5",
+    "@babel/core": "^7.29.6",
     "@babel/preset-env": "^7.28.5",
     "@babel/preset-react": "^7.28.5",
     "@wordpress/components": "^30.9.0",
