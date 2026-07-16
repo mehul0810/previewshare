@@ -133,7 +133,13 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	expect( generated.url ).toContain( '/preview/' );
 	await expectPreviewUrlVisible( page, generated.url );
 
-	const anonymous = await request.newContext( { baseURL } );
+	const anonymous = await request.newContext( {
+		baseURL,
+		storageState: {
+			cookies: [],
+			origins: [],
+		},
+	} );
 	const directDraftResponse = await anonymous.get( `/?p=${ post.id }` );
 	expect( await directDraftResponse.text() ).not.toContain( postContent );
 
