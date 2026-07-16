@@ -6,7 +6,9 @@ const postTitle = `PreviewShare e2e draft ${ Date.now() }`;
 const postContent = 'PreviewShare e2e draft content must stay unpublished.';
 
 async function expectPreviewUrlVisible( page, url ) {
-	await expect( page.getByLabel( 'Preview URL' ) ).toHaveValue( url );
+	await expect(
+		page.getByRole( 'textbox', { name: 'Preview URL' } )
+	).toHaveValue( url );
 	await expect( page.getByText( 'Preview link generated.' ) ).toBeVisible();
 }
 
