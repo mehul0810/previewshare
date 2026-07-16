@@ -10,6 +10,19 @@ async function expectPreviewUrlVisible( page, url ) {
 	await expect( page.getByText( 'Preview link generated.' ) ).toBeVisible();
 }
 
+async function ensurePreviewSharePanelOpen( page ) {
+	const panelToggle = page.getByRole( 'button', {
+		name: 'PreviewShare',
+		exact: true,
+	} );
+
+	await expect( panelToggle ).toBeVisible();
+
+	if ( ( await panelToggle.getAttribute( 'aria-expanded' ) ) === 'false' ) {
+		await panelToggle.click();
+	}
+}
+
 async function expirePreviewLinkIfConfigured( { postId, previewUrl } ) {
 	const wpCli = process.env.PREVIEWSHARE_E2E_WP_CLI;
 
@@ -85,7 +98,7 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	await expect( page.getByText( 'Default expiry', { exact: true } ) ).toBeVisible();
 
 	await admin.editPost( post.id );
-	await expect( page.getByText( 'PreviewShare' ) ).toBeVisible();
+	await ensurePreviewSharePanelOpen( page );
 	await expect(
 		page.getByRole( 'checkbox', { name: 'Enable Public Preview' } )
 	).toBeVisible();
