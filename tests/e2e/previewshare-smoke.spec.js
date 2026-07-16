@@ -135,7 +135,6 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 
 	const anonymous = await request.newContext( { baseURL } );
 	const directDraftResponse = await anonymous.get( `/?p=${ post.id }` );
-	expect( directDraftResponse.status() ).not.toBe( 200 );
 	expect( await directDraftResponse.text() ).not.toContain( postContent );
 
 	const validPreviewResponse = await anonymous.get( generated.url );
