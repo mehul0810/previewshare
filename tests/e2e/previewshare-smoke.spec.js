@@ -23,6 +23,15 @@ async function ensurePreviewSharePanelOpen( page ) {
 	}
 }
 
+function isGeneratePreviewResponse( response ) {
+	const responseUrl = decodeURIComponent( response.url() );
+
+	return (
+		response.request().method() === 'POST' &&
+		responseUrl.includes( '/previewshare/v1/v2/generate' )
+	);
+}
+
 async function expirePreviewLinkIfConfigured( { postId, previewUrl } ) {
 	const wpCli = process.env.PREVIEWSHARE_E2E_WP_CLI;
 
@@ -104,13 +113,13 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	).toBeVisible();
 	await page.getByRole( 'textbox', { name: 'Link label' } ).fill( 'E2E smoke' );
 
-	const generateResponse = page.waitForResponse(
-		( response ) =>
-			response.url().includes( '/previewshare/v1/v2/generate' ) &&
-			response.request().method() === 'POST'
-	);
-	await page.getByRole( 'button', { name: 'Generate & copy' } ).click();
-	const response = await generateResponse;
+	const generateButton = page.getByRole( 'button', { name: 'Generate & copy' } );
+	await expect( generateButton ).toBeEnabled();
+
+	const [ response ] = await Promise.all( [
+		page.waitForResponse( isGeneratePreviewResponse ),
+		generateButton.click(),
+	] );
 	expect( response.status() ).toBe( 200 );
 	const generated = await response.json();
 	expect( generated.url ).toContain( '/preview/' );
