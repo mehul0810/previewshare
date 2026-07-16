@@ -82,7 +82,7 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	);
 	await expect( page.locator( '#previewshare-settings-app' ) ).toBeVisible();
 	await expect( page.getByText( 'Active links' ) ).toBeVisible();
-	await expect( page.getByText( 'Default expiry' ) ).toBeVisible();
+	await expect( page.getByText( 'Default expiry', { exact: true } ) ).toBeVisible();
 
 	await admin.editPost( post.id );
 	await expect( page.getByText( 'PreviewShare' ) ).toBeVisible();
