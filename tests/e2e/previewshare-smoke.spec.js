@@ -75,11 +75,22 @@ wp_cache_delete( $hash, 'previewshare_tokens' );
 	return true;
 }
 
+function flushRewriteRulesIfConfigured() {
+	const wpCli = process.env.PREVIEWSHARE_E2E_WP_CLI;
+
+	if ( wpCli ) {
+		execSync( `${ wpCli } rewrite flush`, {
+			stdio: 'inherit',
+		} );
+	}
+}
+
 test.beforeEach( async ( { requestUtils } ) => {
 	await requestUtils.activatePlugin( 'previewshare' );
 	await requestUtils.updateSiteSettings( {
 		permalink_structure: '/%postname%/',
 	} );
+	flushRewriteRulesIfConfigured();
 	await requestUtils.deleteAllPosts();
 	await requestUtils.rest( {
 		method: 'POST',
