@@ -9,7 +9,13 @@ async function expectPreviewUrlVisible( page, url ) {
 	await expect(
 		page.getByRole( 'textbox', { name: 'Preview URL' } )
 	).toHaveValue( url );
-	await expect( page.getByText( 'Preview link generated.' ) ).toBeVisible();
+	await expect(
+		page
+			.locator( '.components-snackbar__content', {
+				hasText: 'Preview link generated.',
+			} )
+			.last()
+	).toBeVisible();
 }
 
 async function ensurePreviewSharePanelOpen( page ) {
