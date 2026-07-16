@@ -10,6 +10,10 @@ npm ci
 npm run test:e2e
 ```
 
+Use this local command as the default e2e validation route; the hosted
+Playwright e2e job is manual-only through the CI workflow dispatch
+`run_e2e` input.
+
 The command installs Composer dependencies if needed, builds the admin assets,
 starts `wp-env`, points Playwright at `http://localhost:8889`, and sets
 `PREVIEWSHARE_E2E_WP_CLI` to `wp-env run cli wp` so the smoke test can mutate
