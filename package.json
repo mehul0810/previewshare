@@ -41,7 +41,8 @@
     "audit:prod": "npm audit --omit=dev --audit-level=moderate",
     "lint:css": "wp-scripts lint-style \"assets/src/css/**/*.css\"",
     "lint:js": "wp-scripts lint-js assets/src/js webpack.config.js wp-textdomain.js",
-    "test:e2e": "wp-scripts test-playwright --config=playwright.config.js",
+    "test:e2e": "bash scripts/run-e2e-wp-env.sh",
+    "test:e2e:playwright": "wp-scripts test-playwright --config=playwright.config.js",
     "test:js": "wp-scripts test-unit-js"
   },
   "devDependencies": {
@@ -53,6 +54,7 @@
     "@wordpress/edit-post": "^8.36.0",
     "@wordpress/editor": "^14.36.0",
     "@wordpress/element": "^6.36.0",
+    "@wordpress/env": "^10.39.0",
     "@wordpress/i18n": "^6.9.0",
     "@wordpress/icons": "11.3.0",
     "@wordpress/plugins": "^7.36.0",

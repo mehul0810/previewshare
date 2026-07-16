@@ -1,3 +1,16 @@
 # PreviewShare
 PreviewShare lets you securely share preview links for draft, pending, or scheduled content without publishing it publicly.
 
+## End-to-end smoke test
+
+Run the no-secret WordPress fixture and Playwright smoke test with:
+
+```sh
+npm ci
+npm run test:e2e
+```
+
+The command installs Composer dependencies if needed, builds the admin assets,
+starts `wp-env`, points Playwright at `http://localhost:8889`, and sets
+`PREVIEWSHARE_E2E_WP_CLI` to `wp-env run cli wp` so the smoke test can mutate
+the generated token into an expired state and assert the public 410 boundary.
