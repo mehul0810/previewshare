@@ -5,6 +5,16 @@ const { request } = require( '@playwright/test' );
 const postTitle = `PreviewShare e2e draft ${ Date.now() }`;
 const postContent = 'PreviewShare e2e draft content must stay unpublished.';
 
+function resolvePreviewUrlForTestServer( previewUrl, baseURL ) {
+	const url = new URL( previewUrl );
+	const testBase = new URL( baseURL );
+
+	url.protocol = testBase.protocol;
+	url.host = testBase.host;
+
+	return url.toString();
+}
+
 async function expectPreviewUrlVisible( page, url ) {
 	await expect(
 		page.getByRole( 'textbox', { name: 'Preview URL' } )
@@ -143,6 +153,7 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	const generated = await response.json();
 	expect( generated.url ).toContain( '/preview/' );
 	await expectPreviewUrlVisible( page, generated.url );
+	const previewUrl = resolvePreviewUrlForTestServer( generated.url, baseURL );
 
 	const anonymous = await request.newContext( {
 		baseURL,
@@ -154,7 +165,7 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	const directDraftResponse = await anonymous.get( `/?p=${ post.id }` );
 	expect( await directDraftResponse.text() ).not.toContain( postContent );
 
-	const validPreviewResponse = await anonymous.get( generated.url );
+	const validPreviewResponse = await anonymous.get( previewUrl );
 	expect( validPreviewResponse.status() ).toBe( 200 );
 	expect( await validPreviewResponse.text() ).toContain( postContent );
 
@@ -167,10 +178,10 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	if (
 		await expirePreviewLinkIfConfigured( {
 			postId: post.id,
-			previewUrl: generated.url,
+			previewUrl,
 		} )
 	) {
-		const expiredPreviewResponse = await anonymous.get( generated.url );
+		const expiredPreviewResponse = await anonymous.get( previewUrl );
 		expect( expiredPreviewResponse.status() ).toBe( 410 );
 		expect( await expiredPreviewResponse.text() ).toContain(
 			'Preview link is invalid or has expired.'
