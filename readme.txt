@@ -2,9 +2,9 @@
 Contributors: mehul0810
 Tags: preview, draft preview, preview link, share draft, public preview
 Requires at least: 5.8
-Tested up to: 7.0
+Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -121,6 +121,11 @@ Production ZIP files are built from the source repository with:
 The release artifact includes compiled assets, Composer autoload files, `composer.json`, plugin PHP, languages, readme, and license files. Development files such as `node_modules`, source assets, CI configuration, tests, and build tooling are excluded from production ZIP files.
 
 == Changelog ==
+
+= 1.0.2 =
+* Updated runtime and package version metadata for the 1.0.2 maintenance release.
+* Validated preview-link editor and admin workflows with WordPress 7.1.
+* Prepared editor controls for the WordPress 7.1 component API.
 
 = 1.0.1 =
 * Added safer diagnostics and recovery guidance for invalid preview links.

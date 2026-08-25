@@ -336,7 +336,6 @@ const PreviewSharePanel = () => {
 					) }
 					<div className="previewshare-panel__field">
 						<TextControl
-							__next40pxDefaultSize
 							label={ __(
 								'Public Preview expires in (hours)',
 								'previewshare'
@@ -354,7 +353,6 @@ const PreviewSharePanel = () => {
 					</div>
 					<div className="previewshare-panel__field">
 						<TextControl
-							__next40pxDefaultSize
 							label={ __( 'Link label', 'previewshare' ) }
 							value={ linkLabel }
 							onChange={ setLinkLabel }
@@ -388,7 +386,6 @@ const PreviewSharePanel = () => {
 					{ previewUrl && (
 						<div className="previewshare-panel__url">
 							<TextControl
-								__next40pxDefaultSize
 								value={ previewUrl }
 								onFocus={ ( e ) => e.target.select() }
 								readOnly={ true }
