@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 // Define plugin version in SemVer format.
 if ( ! defined( 'PREVIEWSHARE_VERSION' ) ) {
-	define( 'PREVIEWSHARE_VERSION', '1.0.0' );
+	define( 'PREVIEWSHARE_VERSION', '1.0.2' );
 }
 
 // Define plugin root File.

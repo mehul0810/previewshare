@@ -17,7 +17,7 @@
  * Plugin Name: PreviewShare
  * Plugin URI: https://github.com/mehul0810/previewshare
  * Description: This plugin lets you securely share preview links for draft, pending, or scheduled content without publishing it publicly.
- * Version: 1.0.1
+ * Version: 1.0.2
  * Requires at least: 5.8
  * Requires PHP: 8.0
  * Author: Mehul Gohil

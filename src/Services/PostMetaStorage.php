@@ -729,7 +729,7 @@ class PostMetaStorage {
 		foreach ( $rows as $row ) {
 			$meta_key = isset( $row['meta_key'] ) ? (string) $row['meta_key'] : '';
 
-			if ( ! str_starts_with( $meta_key, self::DETAIL_META_PREFIX ) ) {
+			if ( 0 !== strpos( $meta_key, self::DETAIL_META_PREFIX ) ) {
 				continue;
 			}
 
