@@ -123,7 +123,6 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 == Changelog ==
 
 = 1.0.2 =
-* Updated runtime and package version metadata for the 1.0.2 maintenance release.
 * Validated preview-link editor and admin workflows with WordPress 7.1.
 * Prepared editor controls for the WordPress 7.1 component API.
 
