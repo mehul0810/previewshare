@@ -7,9 +7,11 @@ must be checked when changing preview behavior or preparing a release.
 
 ## Support Boundary
 
-- Preview links support post types enabled in PreviewShare settings. Public
-  `post` and `page` types are enabled by default; a site can enable an eligible
-  public custom post type.
+- Preview links support post types enabled in PreviewShare settings. On a fresh
+  install, PreviewShare enables every public, viewable, non-attachment type
+  registered when it initializes, including eligible public custom post types.
+  A type registered later must be enabled in settings or added through the
+  supported-post-types filter.
 - A valid link can serve `draft`, `pending`, `future`, and `private` content.
   A published post redirects to its canonical public permalink.
 - A preview URL is private to the holder of that URL. It is not a substitute
