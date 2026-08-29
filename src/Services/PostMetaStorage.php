@@ -152,6 +152,71 @@ class PostMetaStorage {
 	}
 
 	/**
+	 * Inspect a token for diagnostics without exposing token material.
+	 *
+	 * @param string $token Raw token.
+	 * @return array{reason_code:string,post_id:int|null,status:string|null}
+	 */
+	public function get_token_diagnostic( string $token ): array {
+		if ( '' === trim( $token ) ) {
+			return [
+				'reason_code' => 'missing_token',
+				'post_id'     => null,
+				'status'      => null,
+			];
+		}
+
+		$hash    = $this->token_service->hash( $token );
+		$post_id = $this->get_post_id_by_hash( $hash );
+
+		if ( ! $post_id ) {
+			return [
+				'reason_code' => 'token_not_found',
+				'post_id'     => null,
+				'status'      => null,
+			];
+		}
+
+		$link = $this->get_link_record( $post_id, $hash );
+
+		if ( ! $link ) {
+			$this->delete_cache( $hash );
+
+			return [
+				'reason_code' => 'token_not_found',
+				'post_id'     => $post_id,
+				'status'      => null,
+			];
+		}
+
+		if ( ! empty( $link['revoked'] ) ) {
+			$this->delete_cache( $hash );
+
+			return [
+				'reason_code' => 'token_revoked',
+				'post_id'     => $post_id,
+				'status'      => 'revoked',
+			];
+		}
+
+		if ( $this->is_link_expired( $link ) ) {
+			$this->delete_cache( $hash );
+
+			return [
+				'reason_code' => 'token_expired',
+				'post_id'     => $post_id,
+				'status'      => 'expired',
+			];
+		}
+
+		return [
+			'reason_code' => 'active',
+			'post_id'     => $post_id,
+			'status'      => 'active',
+		];
+	}
+
+	/**
 	 * Record a successful preview view.
 	 *
 	 * @param string $token Raw token.
@@ -664,7 +729,7 @@ class PostMetaStorage {
 		foreach ( $rows as $row ) {
 			$meta_key = isset( $row['meta_key'] ) ? (string) $row['meta_key'] : '';
 
-			if ( ! str_starts_with( $meta_key, self::DETAIL_META_PREFIX ) ) {
+			if ( 0 !== strpos( $meta_key, self::DETAIL_META_PREFIX ) ) {
 				continue;
 			}
 
