@@ -74,6 +74,7 @@ class Actions {
 		// Use pre_get_posts to safely alter the main query for preview URLs.
 		add_action( 'pre_get_posts', [ $this, 'maybe_handle_preview_request' ], 1 );
 		add_action( 'send_headers', [ $this, 'send_preview_robots_header' ] );
+		add_action( 'send_headers', [ $this, 'send_preview_cache_headers' ] );
 		add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_preview_bar_styles' ] );
 		add_action( 'wp_body_open', [ $this, 'render_preview_bar' ], 0 );
 		add_action( 'wp_footer', [ $this, 'render_preview_bar' ], 0 );
@@ -330,6 +331,7 @@ class Actions {
 			return;
 		}
 
+		$this->send_preview_cache_headers();
 		$this->send_preview_robots_header();
 
 		$diagnostic = $this->storage->get_token_diagnostic( $token );
@@ -349,19 +351,6 @@ class Actions {
 
 		if ( ! get_post_meta( $post_id, '_previewshare_enabled', true ) ) {
 			$this->fail_preview_request( self::FAILURE_LINK_DISABLED, $post_id );
-		}
-
-		$meta = $this->storage->get_token_meta( $post_id );
-		if ( empty( $meta ) ) {
-			$this->fail_preview_request( self::FAILURE_TOKEN_NOT_FOUND, $post_id );
-		}
-
-		if ( ! empty( $meta['revoked'] ) ) {
-			$this->fail_preview_request( self::FAILURE_TOKEN_REVOKED, $post_id );
-		}
-
-		if ( ! empty( $meta['expired'] ) ) {
-			$this->fail_preview_request( self::FAILURE_TOKEN_EXPIRED, $post_id );
 		}
 
 		$post = get_post( $post_id );
@@ -769,6 +758,28 @@ class Actions {
 		}
 
 		header( 'X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex', true );
+	}
+
+	/**
+	 * Keep tokenized preview responses out of shared and persistent caches.
+	 *
+	 * @return void
+	 */
+	public function send_preview_cache_headers(): void {
+		if ( ! $this->is_previewshare_request() ) {
+			return;
+		}
+
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			define( 'DONOTCACHEPAGE', true );
+		}
+
+		if ( headers_sent() ) {
+			return;
+		}
+
+		nocache_headers();
+		header( 'Cache-Control: private, no-store, max-age=0', true );
 	}
 
 	/**
