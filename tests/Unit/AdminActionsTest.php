@@ -76,6 +76,56 @@ class AdminActionsTest extends TestCase {
 		$this->assertTrue( $robots['noimageindex'] );
 	}
 
+	public function test_registers_preview_cache_headers_on_send_headers(): void {
+		$registered_hooks = [];
+
+		Functions\when( 'add_action' )->alias(
+			static function( string $hook, array $callback, ...$args ) use ( &$registered_hooks ): bool {
+				$registered_hooks[ $hook ][] = $callback[1];
+
+				return true;
+			}
+		);
+		Functions\when( 'add_filter' )->justReturn( true );
+
+		new Actions( Mockery::mock( PostMetaStorage::class ) );
+
+		$this->assertContains( 'send_preview_cache_headers', $registered_hooks['send_headers'] );
+	}
+
+	public function test_preview_cache_headers_keep_tokenized_preview_private_and_non_cacheable(): void {
+		$actions = $this->make_actions();
+
+		Functions\expect( 'get_query_var' )
+			->once()
+			->with( 'previewshare_token' )
+			->andReturn( 'preview-token' );
+		Functions\when( 'PreviewShare\\Admin\\headers_sent' )->justReturn( false );
+		Functions\expect( 'PreviewShare\\Admin\\nocache_headers' )->once();
+		Functions\expect( 'PreviewShare\\Admin\\header' )
+			->once()
+			->with( 'Cache-Control: private, no-store, max-age=0', true );
+
+		$actions->send_preview_cache_headers();
+
+		$this->assertTrue( defined( 'DONOTCACHEPAGE' ) && DONOTCACHEPAGE );
+	}
+
+	public function test_preview_cache_headers_skip_non_preview_requests(): void {
+		$actions = $this->make_actions();
+
+		Functions\expect( 'get_query_var' )
+			->once()
+			->with( 'previewshare_token' )
+			->andReturn( '' );
+		Functions\expect( 'PreviewShare\\Admin\\nocache_headers' )->never();
+		Functions\expect( 'PreviewShare\\Admin\\header' )->never();
+
+		$actions->send_preview_cache_headers();
+
+		$this->assertTrue( true );
+	}
+
 	public function test_maybe_handle_preview_request_sets_main_query_for_valid_draft(): void {
 		$storage = Mockery::mock( PostMetaStorage::class );
 		$actions = $this->make_actions( $storage );
@@ -106,18 +156,18 @@ class AdminActionsTest extends TestCase {
 		$this->mock_supported_post_types();
 
 		$storage->shouldReceive( 'get_post_id_by_token' )
+			->never();
+		$storage->shouldReceive( 'get_token_diagnostic' )
 			->once()
 			->with( 'preview-token' )
-			->andReturn( 42 );
-		$storage->shouldReceive( 'get_token_meta' )
-			->once()
-			->with( 42 )
 			->andReturn(
 				[
-					'revoked' => false,
-					'expired' => false,
+					'reason_code' => 'active',
+					'post_id'     => 42,
+					'status'      => 'active',
 				]
 			);
+		$storage->shouldNotReceive( 'get_token_meta' );
 		$storage->shouldReceive( 'record_token_view' )
 			->once()
 			->with( 'preview-token' )
@@ -136,6 +186,156 @@ class AdminActionsTest extends TestCase {
 		$this->assertSame( 42, $query->queried_object_id );
 		$this->assertSame( 1, $query->found_posts );
 		$this->assertSame( 1, $query->post_count );
+	}
+
+	public function test_maybe_handle_preview_request_maps_revoked_token_to_internal_failure_reason(): void {
+		$storage = Mockery::mock( PostMetaStorage::class );
+		$actions = $this->make_actions( $storage );
+		$query   = new WP_Query();
+
+		Functions\expect( 'is_admin' )->once()->andReturn( false );
+		Functions\when( 'get_query_var' )->alias(
+			static function( string $key ) {
+				return 'previewshare_token' === $key ? 'revoked-token' : null;
+			}
+		);
+		Functions\when( 'PreviewShare\Admin\headers_sent' )->justReturn( true );
+		$this->mock_preview_failure_functions( 'token_revoked', 42 );
+
+		$storage->shouldReceive( 'get_token_diagnostic' )
+			->once()
+			->with( 'revoked-token' )
+			->andReturn(
+				[
+					'reason_code' => 'token_revoked',
+					'post_id'     => 42,
+					'status'      => 'revoked',
+				]
+			);
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'preview failed' );
+
+		$actions->maybe_handle_preview_request( $query );
+	}
+
+	public function test_maybe_handle_preview_request_maps_disabled_link_to_internal_failure_reason(): void {
+		$storage = Mockery::mock( PostMetaStorage::class );
+		$actions = $this->make_actions( $storage );
+		$query   = new WP_Query();
+
+		Functions\expect( 'is_admin' )->once()->andReturn( false );
+		Functions\when( 'get_query_var' )->alias(
+			static function( string $key ) {
+				return 'previewshare_token' === $key ? 'disabled-token' : null;
+			}
+		);
+		Functions\when( 'PreviewShare\Admin\headers_sent' )->justReturn( true );
+		Functions\expect( 'get_post_meta' )
+			->once()
+			->with( 43, '_previewshare_enabled', true )
+			->andReturn( false );
+		$this->mock_preview_failure_functions( 'link_disabled', 43 );
+
+		$storage->shouldReceive( 'get_token_diagnostic' )
+			->once()
+			->with( 'disabled-token' )
+			->andReturn(
+				[
+					'reason_code' => 'active',
+					'post_id'     => 43,
+					'status'      => 'active',
+				]
+			);
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'preview failed' );
+
+		$actions->maybe_handle_preview_request( $query );
+	}
+
+	public function test_maybe_handle_preview_request_maps_missing_post_to_internal_failure_reason(): void {
+		$storage = Mockery::mock( PostMetaStorage::class );
+		$actions = $this->make_actions( $storage );
+		$query   = new WP_Query();
+
+		Functions\expect( 'is_admin' )->once()->andReturn( false );
+		Functions\when( 'get_query_var' )->alias(
+			static function( string $key ) {
+				return 'previewshare_token' === $key ? 'missing-post-token' : null;
+			}
+		);
+		Functions\when( 'PreviewShare\Admin\headers_sent' )->justReturn( true );
+		Functions\expect( 'get_post_meta' )
+			->once()
+			->with( 44, '_previewshare_enabled', true )
+			->andReturn( true );
+		Functions\expect( 'get_post' )
+			->once()
+			->with( 44 )
+			->andReturn( null );
+		$this->mock_preview_failure_functions( 'missing_post', 44 );
+
+		$storage->shouldReceive( 'get_token_diagnostic' )
+			->once()
+			->with( 'missing-post-token' )
+			->andReturn(
+				[
+					'reason_code' => 'active',
+					'post_id'     => 44,
+					'status'      => 'active',
+				]
+			);
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'preview failed' );
+
+		$actions->maybe_handle_preview_request( $query );
+	}
+
+	public function test_maybe_handle_preview_request_maps_unsupported_status_to_internal_failure_reason(): void {
+		$storage = Mockery::mock( PostMetaStorage::class );
+		$actions = $this->make_actions( $storage );
+		$query   = new WP_Query();
+		$post    = new WP_Post(
+			[
+				'ID'          => 45,
+				'post_type'   => 'post',
+				'post_status' => 'trash',
+			]
+		);
+
+		Functions\expect( 'is_admin' )->once()->andReturn( false );
+		Functions\when( 'get_query_var' )->alias(
+			static function( string $key ) {
+				return 'previewshare_token' === $key ? 'trash-token' : null;
+			}
+		);
+		Functions\when( 'PreviewShare\Admin\headers_sent' )->justReturn( true );
+		Functions\expect( 'get_post_meta' )
+			->once()
+			->with( 45, '_previewshare_enabled', true )
+			->andReturn( true );
+		Functions\expect( 'get_post' )
+			->once()
+			->with( 45 )
+			->andReturn( $post );
+		$this->mock_supported_post_types();
+		$this->mock_preview_failure_functions( 'unsupported_post_status', 45 );
+
+		$storage->shouldReceive( 'get_token_diagnostic' )
+			->once()
+			->with( 'trash-token' )
+			->andReturn(
+				[
+					'reason_code' => 'active',
+					'post_id'     => 45,
+					'status'      => 'active',
+				]
+			);
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'preview failed' );
+
+		$actions->maybe_handle_preview_request( $query );
 	}
 
 	private function make_actions( ?PostMetaStorage $storage = null ): Actions {
@@ -170,5 +370,36 @@ class AdminActionsTest extends TestCase {
 				return $values[ $option ] ?? $default;
 			}
 		);
+	}
+
+	private function mock_preview_failure_functions( string $reason_code, int $post_id ): void {
+		Functions\when( 'esc_html__' )->returnArg( 1 );
+		Functions\when( 'get_option' )->alias(
+			static function( string $option, $default = false ) {
+				$values = [
+					'previewshare_enable_logging'    => false,
+					'previewshare_post_types'        => [ 'post' ],
+					'previewshare_default_ttl_hours' => 6,
+					'previewshare_enable_caching'    => true,
+				];
+
+				return $values[ $option ] ?? $default;
+			}
+		);
+		Functions\expect( 'do_action' )
+			->once()
+			->with( 'previewshare_preview_request_failed', $reason_code, $post_id )
+			->andReturn( null );
+		Functions\expect( 'wp_die' )
+			->once()
+			->withArgs(
+				static function( string $message, string $title, array $args ): bool {
+					return str_contains( $message, 'Preview link unavailable' )
+						&& ! str_contains( $message, 'revoked-token' )
+						&& 'Preview link unavailable' === $title
+						&& [ 'response' => 410 ] === $args;
+				}
+			)
+			->andThrow( new \RuntimeException( 'preview failed' ) );
 	}
 }

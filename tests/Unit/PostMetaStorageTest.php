@@ -165,6 +165,95 @@ class PostMetaStorageTest extends TestCase {
 		$this->assertNull( $storage->get_link_by_token( $token ) );
 	}
 
+	public function test_get_token_diagnostic_maps_missing_token(): void {
+		$storage = $this->make_storage();
+
+		$this->assertSame(
+			[
+				'reason_code' => 'missing_token',
+				'post_id'     => null,
+				'status'      => null,
+			],
+			$storage->get_token_diagnostic( '' )
+		);
+	}
+
+	public function test_get_token_diagnostic_maps_token_not_found(): void {
+		$storage = $this->make_storage();
+		$token   = 'unknown-token';
+
+		Functions\expect( 'get_option' )
+			->once()
+			->with( 'previewshare_enable_caching', true )
+			->andReturn( false );
+		Functions\expect( 'get_posts' )->once()->andReturn( [] );
+
+		$diagnostic = $storage->get_token_diagnostic( $token );
+
+		$this->assertSame( 'token_not_found', $diagnostic['reason_code'] );
+		$this->assertNull( $diagnostic['post_id'] );
+		$this->assertNull( $diagnostic['status'] );
+	}
+
+	public function test_get_token_diagnostic_maps_revoked_and_expired_links(): void {
+		$revoked_storage = $this->make_storage();
+		$revoked_token   = 'diagnostic-revoked';
+		$revoked_hash    = hash_hmac( 'sha256', $revoked_token, self::HASH_KEY );
+		$revoked_post_id = 654;
+
+		Functions\when( 'get_option' )->alias(
+			static function( string $option, $default = false ) {
+				return 'previewshare_enable_caching' === $option ? false : $default;
+			}
+		);
+		Functions\expect( 'get_posts' )->once()->andReturn( [ $revoked_post_id ] );
+		Functions\expect( 'get_post_meta' )
+			->once()
+			->with( $revoked_post_id, '_previewshare_token:' . $revoked_hash, true )
+			->andReturn(
+				[
+					'hash'       => $revoked_hash,
+					'label'      => 'Revoked',
+					'created_at' => time() - 60,
+					'created_by' => 1,
+					'expires_at' => null,
+					'revoked'    => 1,
+				]
+			);
+
+		$revoked = $revoked_storage->get_token_diagnostic( $revoked_token );
+
+		$this->assertSame( 'token_revoked', $revoked['reason_code'] );
+		$this->assertSame( $revoked_post_id, $revoked['post_id'] );
+		$this->assertSame( 'revoked', $revoked['status'] );
+
+		$expired_storage = $this->make_storage();
+		$expired_token   = 'diagnostic-expired';
+		$expired_hash    = hash_hmac( 'sha256', $expired_token, self::HASH_KEY );
+		$expired_post_id = 655;
+
+		Functions\expect( 'get_posts' )->once()->andReturn( [ $expired_post_id ] );
+		Functions\expect( 'get_post_meta' )
+			->once()
+			->with( $expired_post_id, '_previewshare_token:' . $expired_hash, true )
+			->andReturn(
+				[
+					'hash'       => $expired_hash,
+					'label'      => 'Expired',
+					'created_at' => time() - 60,
+					'created_by' => 1,
+					'expires_at' => time() - 1,
+					'revoked'    => 0,
+				]
+			);
+
+		$expired = $expired_storage->get_token_diagnostic( $expired_token );
+
+		$this->assertSame( 'token_expired', $expired['reason_code'] );
+		$this->assertSame( $expired_post_id, $expired['post_id'] );
+		$this->assertSame( 'expired', $expired['status'] );
+	}
+
 	public function test_record_token_view_updates_active_link_view_fields(): void {
 		$storage = $this->make_storage();
 		$token   = 'active-token';

@@ -117,7 +117,7 @@ const PreviewSharePanel = () => {
 
 			const res = await wp.apiFetch( options );
 			setTokenMeta( res );
-		} catch ( err ) {
+		} catch {
 			setTokenMeta( null );
 		}
 	};
@@ -204,7 +204,7 @@ const PreviewSharePanel = () => {
 			}
 
 			setPreviewUrl( '' );
-		} catch ( error ) {
+		} catch {
 			setPreviewUrl( '' );
 			notify(
 				'error',
@@ -242,7 +242,7 @@ const PreviewSharePanel = () => {
 			await wp.apiFetch( fetchOptions );
 			await fetchTokenMeta();
 			notify( 'success', __( 'Preview links revoked.', 'previewshare' ) );
-		} catch ( error ) {
+		} catch {
 			notify(
 				'error',
 				__( 'Preview links could not be revoked.', 'previewshare' )
@@ -258,7 +258,7 @@ const PreviewSharePanel = () => {
 		try {
 			await window.navigator.clipboard.writeText( url );
 			notify( 'success', __( 'Preview URL copied.', 'previewshare' ) );
-		} catch ( error ) {
+		} catch {
 			notify(
 				'error',
 				__(
@@ -285,6 +285,8 @@ const PreviewSharePanel = () => {
 			: [];
 	const activeCount =
 		tokenMeta && tokenMeta.meta ? tokenMeta.meta.active_count || 0 : 0;
+	const diagnostic =
+		tokenMeta && tokenMeta.diagnostic ? tokenMeta.diagnostic : null;
 
 	return (
 		<Fragment>
@@ -326,9 +328,14 @@ const PreviewSharePanel = () => {
 								  ) }
 						</p>
 					) }
+					{ diagnostic && diagnostic.reason_code !== 'active' && (
+						<p className="description previewshare-panel__notice">
+							<strong>{ diagnostic.message }</strong>{ ' ' }
+							{ diagnostic.action }
+						</p>
+					) }
 					<div className="previewshare-panel__field">
 						<TextControl
-							__next40pxDefaultSize
 							label={ __(
 								'Public Preview expires in (hours)',
 								'previewshare'
@@ -346,7 +353,6 @@ const PreviewSharePanel = () => {
 					</div>
 					<div className="previewshare-panel__field">
 						<TextControl
-							__next40pxDefaultSize
 							label={ __( 'Link label', 'previewshare' ) }
 							value={ linkLabel }
 							onChange={ setLinkLabel }
@@ -380,7 +386,6 @@ const PreviewSharePanel = () => {
 					{ previewUrl && (
 						<div className="previewshare-panel__url">
 							<TextControl
-								__next40pxDefaultSize
 								value={ previewUrl }
 								onFocus={ ( e ) => e.target.select() }
 								readOnly={ true }
