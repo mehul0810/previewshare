@@ -1,6 +1,16 @@
 name: CI
 
 on:
+  workflow_dispatch:
+    inputs:
+      run_abilities_runtime:
+        description: 'Run the native Abilities API wp-env proof matrix'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
   push:
     branches:
       - main
@@ -89,3 +99,35 @@ jobs:
         run: npm run plugin-zip
       - name: Validate plugin zip
         run: npm run validate:zip
+
+  abilities-runtime:
+    name: Abilities API runtime (${{ matrix.wordpress }})
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_abilities_runtime == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        wordpress:
+          - '6.8.7'
+          - '6.9.7'
+          - '7.1'
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: mbstring
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+      - name: Install Composer deps
+        run: composer install --no-progress --prefer-dist
+      - name: Install JS dependencies
+        run: npm ci
+      - name: Run Abilities API runtime proof
+        env:
+          PREVIEWSHARE_WP_VERSION: ${{ matrix.wordpress }}
+        run: npm run test:abilities:runtime

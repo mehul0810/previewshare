@@ -50,6 +50,7 @@
     "audit:prod": "npm audit --omit=dev --audit-level=moderate",
     "lint:css": "wp-scripts lint-style \"assets/src/css/**/*.css\"",
     "lint:js": "wp-scripts lint-js assets/src/js webpack.config.js wp-textdomain.js",
+    "test:abilities:runtime": "bash scripts/run-abilities-api-wp-env.sh",
     "test:js": "wp-scripts test-unit-js"
   },
   "devDependencies": {
