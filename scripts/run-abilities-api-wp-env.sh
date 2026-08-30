@@ -22,6 +22,14 @@ run_wp_env() {
 	local command="$1"
 	shift
 
+	if [ "${command}" = "run" ]; then
+		local container="$1"
+		shift
+
+		"${WP_ENV_COMMAND[@]}" "${command}" "${container}" "--config=${CONFIG_PATH}" "$@"
+		return
+	fi
+
 	"${WP_ENV_COMMAND[@]}" "${command}" "--config=${CONFIG_PATH}" "$@"
 }
 
