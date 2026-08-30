@@ -23,6 +23,10 @@ fi
 npm run build
 
 wp-env start
+
+# The wp-env Apache container does not enable .htaccess rewrites by default.
+# The settings app and generated preview links use WordPress's normal pretty URLs.
+wp-env run wordpress bash -c "a2enmod rewrite >/dev/null && sed -ri 's/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf && apache2ctl -k graceful"
 wp-env run cli wp plugin activate previewshare
 
 export PREVIEWSHARE_E2E_BASE_URL="${PREVIEWSHARE_E2E_BASE_URL:-http://localhost:8889}"
