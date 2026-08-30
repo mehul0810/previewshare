@@ -57,6 +57,10 @@ if ( ! class_exists( 'WP_Error' ) ) {
 	}
 }
 
+if ( ! class_exists( 'WP_Ability' ) ) {
+	class WP_Ability {}
+}
+
 if ( ! class_exists( 'WP_REST_Response' ) ) {
 	class WP_REST_Response {
 		/** @var mixed */
