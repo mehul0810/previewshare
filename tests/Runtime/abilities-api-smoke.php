@@ -132,7 +132,7 @@ $admins = get_users(
 previewshare_abilities_runtime_assert( ! empty( $admins ), 'Fixture has no administrator.' );
 
 $admin_id      = (int) $admins[0]->ID;
-$run_identifier = wp_generate_uuid4();
+$run_identifier = wp_generate_password( 12, false, false );
 $editor_id     = wp_create_user(
 	'previewshare-runtime-editor-' . $run_identifier,
 	wp_generate_password( 32, true, true ),
