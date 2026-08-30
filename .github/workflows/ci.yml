@@ -127,3 +127,11 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
         run: npm run test:e2e
+      - name: Upload e2e screenshot proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: previewshare-e2e-screenshots-${{ github.run_id }}
+          path: artifacts/test-results/**/*.png
+          if-no-files-found: warn
+          retention-days: 7

@@ -89,6 +89,9 @@ function flushRewriteRulesIfConfigured() {
 	const wpCli = process.env.PREVIEWSHARE_E2E_WP_CLI;
 
 	if ( wpCli ) {
+		execSync( `${ wpCli } option update permalink_structure '/%postname%/'`, {
+			stdio: 'inherit',
+		} );
 		execSync( `${ wpCli } rewrite flush`, {
 			stdio: 'inherit',
 		} );
@@ -116,7 +119,7 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	admin,
 	requestUtils,
 	baseURL,
-} ) => {
+}, testInfo ) => {
 	const post = await requestUtils.createPost( {
 		title: postTitle,
 		content: postContent,
@@ -134,6 +137,10 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	await expect( page.locator( '#previewshare-settings-app' ) ).toBeVisible();
 	await expect( page.getByText( 'Active links' ) ).toBeVisible();
 	await expect( page.getByText( 'Default expiry', { exact: true } ) ).toBeVisible();
+	await page.screenshot( {
+		path: testInfo.outputPath( 'previewshare-settings.png' ),
+		fullPage: true,
+	} );
 
 	await admin.editPost( post.id );
 	await ensurePreviewSharePanelOpen( page );
