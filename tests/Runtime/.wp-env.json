@@ -2,6 +2,6 @@
   "$schema": "https://schemas.wp.org/trunk/wp-env.json",
   "core": null,
   "plugins": [
-    "."
+    "../.."
   ]
 }

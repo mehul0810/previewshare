@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG_PATH="${ROOT_DIR}/tests/Runtime/.wp-env.abilities.json"
+RUNTIME_DIR="${ROOT_DIR}/tests/Runtime"
 WORDPRESS_VERSION="${PREVIEWSHARE_WP_VERSION:?Set PREVIEWSHARE_WP_VERSION to an official WordPress ref.}"
 
 WP_ENV_HOME="${WP_ENV_HOME:-${RUNNER_TEMP:-/tmp}/previewshare-abilities-${WORDPRESS_VERSION}}"
@@ -19,21 +19,10 @@ else
 fi
 
 run_wp_env() {
-	local command="$1"
-	shift
-
-	if [ "${command}" = "run" ]; then
-		local container="$1"
-		shift
-
-		"${WP_ENV_COMMAND[@]}" "${command}" "${container}" "--config=${CONFIG_PATH}" "$@"
-		return
-	fi
-
-	"${WP_ENV_COMMAND[@]}" "${command}" "--config=${CONFIG_PATH}" "$@"
+	"${WP_ENV_COMMAND[@]}" "$@"
 }
 
-cd "${ROOT_DIR}"
+cd "${RUNTIME_DIR}"
 
 run_wp_env start
 run_wp_env run cli wp plugin activate previewshare
