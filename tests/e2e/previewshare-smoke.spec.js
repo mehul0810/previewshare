@@ -150,12 +150,14 @@ test.beforeEach( async ( { requestUtils } ) => {
 
 const createdPostIds = new Set();
 
-test.afterEach( async ( { requestUtils } ) => {
+test.afterEach( () => {
 	for ( const postId of createdPostIds ) {
-		await requestUtils.rest( {
-			method: 'DELETE',
-			path: `/wp/v2/posts/${ postId }?force=true`,
-		} );
+		runWpCli( FIXTURE_WP_CLI, [
+			'post',
+			'delete',
+			String( postId ),
+			'--force',
+		] );
 	}
 
 	createdPostIds.clear();
