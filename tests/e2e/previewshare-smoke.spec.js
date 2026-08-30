@@ -4,6 +4,20 @@ const { request } = require( '@playwright/test' );
 
 const postTitle = `PreviewShare e2e draft ${ Date.now() }`;
 const postContent = 'PreviewShare e2e draft content must stay unpublished.';
+const previewShareRoutes = [
+	'/previewshare/v1/v2/generate',
+	'/previewshare/v1/settings',
+	'/previewshare/v1/post-meta',
+];
+
+async function expectSuccessfulResponse( responsePromise, name ) {
+	const response = await responsePromise;
+
+	expect(
+		response.status(),
+		`${ name } returned ${ response.status() } at ${ response.url() }`
+	).toBe( 200 );
+}
 
 function resolvePreviewUrlForTestServer( previewUrl, baseURL ) {
 	const url = new URL( previewUrl );
@@ -100,6 +114,12 @@ function flushRewriteRulesIfConfigured() {
 
 test.beforeEach( async ( { requestUtils } ) => {
 	await requestUtils.activatePlugin( 'previewshare' );
+	const restIndex = await requestUtils.rest( { path: '/' } );
+
+	for ( const route of previewShareRoutes ) {
+		expect( restIndex.routes ).toHaveProperty( route );
+	}
+
 	await requestUtils.updateSiteSettings( {
 		permalink_structure: '/%postname%/',
 	} );
@@ -130,10 +150,23 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 		},
 	} );
 
+	const settingsResponse = page.waitForResponse(
+		( response ) =>
+			response.request().method() === 'GET' &&
+			response.url().includes( '/previewshare/v1/settings' )
+	);
+	const tokensResponse = page.waitForResponse(
+		( response ) =>
+			response.request().method() === 'GET' &&
+			response.url().includes( '/previewshare/v1/tokens' )
+	);
+
 	await admin.visitAdminPage(
 		'options-general.php',
 		'page=previewshare_settings'
 	);
+	await expectSuccessfulResponse( settingsResponse, 'PreviewShare settings request' );
+	await expectSuccessfulResponse( tokensResponse, 'PreviewShare tokens request' );
 	await expect( page.locator( '#previewshare-settings-app' ) ).toBeVisible();
 	await expect( page.getByText( 'Active links' ) ).toBeVisible();
 	await expect( page.getByText( 'Default expiry', { exact: true } ) ).toBeVisible();
@@ -142,7 +175,14 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 		fullPage: true,
 	} );
 
+	const postMetaResponse = page.waitForResponse(
+		( response ) =>
+			response.request().method() === 'GET' &&
+			response.url().includes( '/previewshare/v1/post-meta' )
+	);
+
 	await admin.editPost( post.id );
+	await expectSuccessfulResponse( postMetaResponse, 'PreviewShare post-meta request' );
 	await ensurePreviewSharePanelOpen( page );
 	await expect(
 		page.getByRole( 'checkbox', { name: 'Enable Public Preview' } )

@@ -23,6 +23,7 @@ fi
 npm run build
 
 wp-env start
+wp-env run cli wp plugin activate previewshare
 
 export PREVIEWSHARE_E2E_BASE_URL="${PREVIEWSHARE_E2E_BASE_URL:-http://localhost:8889}"
 export PREVIEWSHARE_E2E_WP_CLI="${PREVIEWSHARE_E2E_WP_CLI:-wp-env run cli wp}"
