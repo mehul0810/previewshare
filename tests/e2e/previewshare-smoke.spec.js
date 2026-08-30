@@ -1,4 +1,4 @@
-const { execSync } = require( 'child_process' );
+const { execFileSync, execSync } = require( 'child_process' );
 const { test, expect } = require( '@wordpress/e2e-test-utils-playwright' );
 const { request } = require( '@playwright/test' );
 
@@ -61,6 +61,17 @@ async function expectPreviewUrlVisible( page, url ) {
 	).toBeVisible();
 }
 
+function runWpCli( command, args ) {
+	const [ executable, ...commandArgs ] = command
+		.trim()
+		.split( /\s+/ )
+		.filter( Boolean );
+
+	execFileSync( executable, [ ...commandArgs, ...args ], {
+		stdio: 'inherit',
+	} );
+}
+
 async function ensurePreviewSharePanelOpen( page ) {
 	const panelToggle = page.getByRole( 'button', {
 		name: 'PreviewShare',
@@ -111,9 +122,7 @@ update_post_meta( $post_id, '_previewshare_token:' . $hash, $links[ $hash ] );
 wp_cache_delete( $hash, 'previewshare_tokens' );
 `;
 
-	execSync( `${ wpCli } eval ${ JSON.stringify( php ) }`, {
-		stdio: 'inherit',
-	} );
+	runWpCli( wpCli, [ 'eval', php ] );
 
 	return true;
 }
