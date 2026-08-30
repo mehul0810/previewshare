@@ -104,7 +104,13 @@ if ( version_compare( get_bloginfo( 'version' ), '6.9', '<' ) ) {
 		'Absent Abilities API endpoint'
 	);
 
-	echo "PreviewShare Abilities compatibility passed without the Core API.\n";
+	echo 'PREVIEWSHARE_ABILITIES_RUNTIME_RECEIPT=' . wp_json_encode(
+		[
+			'assertions' => [ 'core_api_absent', 'abilities_route_404' ],
+			'mode'       => 'compatibility',
+			'wordpress'  => get_bloginfo( 'version' ),
+		]
+	) . "\n";
 	return;
 }
 
@@ -290,4 +296,19 @@ previewshare_abilities_runtime_assert(
 	'Revocation response exposes the raw preview token.'
 );
 
-echo "PreviewShare Abilities runtime proof passed on WordPress " . get_bloginfo( 'version' ) . ".\n";
+echo 'PREVIEWSHARE_ABILITIES_RUNTIME_RECEIPT=' . wp_json_encode(
+	[
+		'assertions' => [
+			'anonymous_denied',
+			'insufficient_user_denied',
+			'category_discovered',
+			'ability_schema_discovered',
+			'editor_generated_preview',
+			'editor_inventory_denied',
+			'administrator_inventory_redacted',
+			'administrator_revocation_redacted',
+		],
+		'mode'       => 'native',
+		'wordpress'  => get_bloginfo( 'version' ),
+	]
+) . "\n";

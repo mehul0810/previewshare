@@ -19,12 +19,38 @@ else
 fi
 
 run_wp_env() {
-	"${WP_ENV_COMMAND[@]}" --config "${CONFIG_PATH}" "$@"
+	local command="$1"
+	shift
+
+	"${WP_ENV_COMMAND[@]}" "${command}" "--config=${CONFIG_PATH}" "$@"
 }
 
 cd "${ROOT_DIR}"
 
 run_wp_env start
 run_wp_env run cli wp plugin activate previewshare
-run_wp_env run cli --env-cwd=/var/www/html/wp-content/plugins/previewshare \
-	wp eval-file tests/Runtime/abilities-api-smoke.php
+
+runtime_output="$(
+	run_wp_env run cli --env-cwd=/var/www/html/wp-content/plugins/previewshare \
+		wp eval-file tests/Runtime/abilities-api-smoke.php
+)"
+printf '%s\n' "${runtime_output}"
+
+receipt="$(
+	printf '%s\n' "${runtime_output}" |
+		sed -n 's/^PREVIEWSHARE_ABILITIES_RUNTIME_RECEIPT=//p'
+)"
+
+if [ -z "${receipt}" ]; then
+	echo 'PreviewShare Abilities runtime proof did not emit a receipt.' >&2
+	exit 1
+fi
+
+node -e '
+const expectedVersion = process.argv[1];
+const receipt = JSON.parse( process.argv[2] );
+const expectedMode = expectedVersion.startsWith( "6.8." ) ? "compatibility" : "native";
+if ( receipt.wordpress !== expectedVersion || receipt.mode !== expectedMode || ! Array.isArray( receipt.assertions ) || receipt.assertions.length === 0 ) {
+	throw new Error( "PreviewShare Abilities runtime receipt is incomplete or does not match the requested WordPress version." );
+}
+' "${WORDPRESS_VERSION}" "${receipt}"
