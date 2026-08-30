@@ -244,7 +244,7 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 
 	const invalidPreviewResponse = await anonymous.get(
 		resolvePreviewUrlForTestServer(
-			new URL( '/preview/not-a-real-token', baseURL ).toString(),
+			new URL( '/preview/invalidpreviewtokenabc123', baseURL ).toString(),
 			baseURL
 		)
 	);
