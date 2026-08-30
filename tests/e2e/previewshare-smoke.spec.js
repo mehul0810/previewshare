@@ -4,6 +4,7 @@ const { request } = require( '@playwright/test' );
 
 const postTitle = `PreviewShare e2e draft ${ Date.now() }`;
 const postContent = 'PreviewShare e2e draft content must stay unpublished.';
+const unavailablePreviewMessage = 'This preview link can no longer be opened.';
 const previewShareRoutes = [
 	'/previewshare/v1/v2/generate',
 	'/previewshare/v1/settings',
@@ -242,7 +243,7 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	);
 	expect( invalidPreviewResponse.status() ).toBe( 410 );
 	expect( await invalidPreviewResponse.text() ).toContain(
-		'Preview link is invalid or has expired.'
+		unavailablePreviewMessage
 	);
 
 	if (
@@ -254,7 +255,7 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 		const expiredPreviewResponse = await anonymous.get( previewUrl );
 		expect( expiredPreviewResponse.status() ).toBe( 410 );
 		expect( await expiredPreviewResponse.text() ).toContain(
-			'Preview link is invalid or has expired.'
+			unavailablePreviewMessage
 		);
 	} else {
 		test.info().annotations.push( {
