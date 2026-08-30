@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+node "${ROOT_DIR}/scripts/e2e-fixture.js" assert-no-target-overrides
+
 if ! command -v wp-env >/dev/null 2>&1; then
 	if [ -x "./node_modules/.bin/wp-env" ]; then
 		PATH="$(pwd)/node_modules/.bin:${PATH}"
@@ -24,9 +28,11 @@ npm run build
 
 wp-env start
 wp-env run cli wp plugin activate previewshare
+node "${ROOT_DIR}/scripts/e2e-fixture.js" assert-cli-binding
 
-export PREVIEWSHARE_E2E_BASE_URL="${PREVIEWSHARE_E2E_BASE_URL:-http://localhost:8889}"
-export PREVIEWSHARE_E2E_WP_CLI="${PREVIEWSHARE_E2E_WP_CLI:-wp-env run cli wp}"
-export PREVIEWSHARE_E2E_QUERY_ROUTES="${PREVIEWSHARE_E2E_QUERY_ROUTES:-1}"
+export WP_BASE_URL="http://localhost:8889"
+export PREVIEWSHARE_E2E_BASE_URL="http://localhost:8889"
+export PREVIEWSHARE_E2E_WP_CLI="wp-env run cli wp"
+export PREVIEWSHARE_E2E_QUERY_ROUTES="1"
 
 npm run test:e2e:playwright

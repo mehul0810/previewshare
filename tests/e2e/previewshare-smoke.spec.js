@@ -1,6 +1,10 @@
-const { execFileSync, execSync } = require( 'child_process' );
+const { execFileSync } = require( 'child_process' );
 const { test, expect } = require( '@wordpress/e2e-test-utils-playwright' );
 const { request } = require( '@playwright/test' );
+const {
+	FIXTURE_WP_CLI,
+	assertFixtureConfiguration,
+} = require( '../../scripts/e2e-fixture' );
 
 const postTitle = `PreviewShare e2e draft ${ Date.now() }`;
 const postContent = 'PreviewShare e2e draft content must stay unpublished.';
@@ -95,12 +99,6 @@ function isGeneratePreviewResponse( response ) {
 }
 
 async function expirePreviewLinkIfConfigured( { postId, previewUrl } ) {
-	const wpCli = process.env.PREVIEWSHARE_E2E_WP_CLI;
-
-	if ( ! wpCli ) {
-		return false;
-	}
-
 	const token = getPreviewToken( new URL( previewUrl ) );
 
 	if ( ! token ) {
@@ -122,25 +120,21 @@ update_post_meta( $post_id, '_previewshare_token:' . $hash, $links[ $hash ] );
 wp_cache_delete( $hash, 'previewshare_tokens' );
 `;
 
-	runWpCli( wpCli, [ 'eval', php ] );
-
-	return true;
+	runWpCli( FIXTURE_WP_CLI, [ 'eval', php ] );
 }
 
-function configureQueryRoutesIfConfigured() {
-	const wpCli = process.env.PREVIEWSHARE_E2E_WP_CLI;
-
-	if ( wpCli ) {
-		execSync( `${ wpCli } option update permalink_structure ''`, {
-			stdio: 'inherit',
-		} );
-		execSync( `${ wpCli } rewrite flush`, {
-			stdio: 'inherit',
-		} );
-	}
+function configureFixtureQueryRoutes() {
+	runWpCli( FIXTURE_WP_CLI, [
+		'option',
+		'update',
+		'permalink_structure',
+		'',
+	] );
+	runWpCli( FIXTURE_WP_CLI, [ 'rewrite', 'flush' ] );
 }
 
 test.beforeEach( async ( { requestUtils } ) => {
+	assertFixtureConfiguration();
 	await requestUtils.activatePlugin( 'previewshare' );
 	const restIndex = await requestUtils.rest( { path: '/' } );
 
@@ -151,15 +145,20 @@ test.beforeEach( async ( { requestUtils } ) => {
 	await requestUtils.updateSiteSettings( {
 		permalink_structure: '',
 	} );
-	configureQueryRoutesIfConfigured();
-	await requestUtils.deleteAllPosts();
-	await requestUtils.rest( {
-		method: 'POST',
-		path: '/previewshare/v1/settings',
-		data: {
-			reset_defaults: true,
-		},
-	} );
+	configureFixtureQueryRoutes();
+} );
+
+const createdPostIds = new Set();
+
+test.afterEach( async ( { requestUtils } ) => {
+	for ( const postId of createdPostIds ) {
+		await requestUtils.rest( {
+			method: 'DELETE',
+			path: `/wp/v2/posts/${ postId }?force=true`,
+		} );
+	}
+
+	createdPostIds.clear();
 } );
 
 test( 'preview link admin, editor, public, invalid, expired, and unpublished boundaries smoke test', async ( {
@@ -177,6 +176,7 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 			_previewshare_ttl_hours: 1,
 		},
 	} );
+	createdPostIds.add( post.id );
 
 	const settingsResponse = page.waitForResponse(
 		( response ) =>
@@ -255,24 +255,15 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 		unavailablePreviewMessage
 	);
 
-	if (
-		await expirePreviewLinkIfConfigured( {
-			postId: post.id,
-			previewUrl,
-		} )
-	) {
-		const expiredPreviewResponse = await anonymous.get( previewUrl );
-		expect( expiredPreviewResponse.status() ).toBe( 410 );
-		expect( await expiredPreviewResponse.text() ).toContain(
-			unavailablePreviewMessage
-		);
-	} else {
-		test.info().annotations.push( {
-			type: 'proof-gap',
-			description:
-				'Set PREVIEWSHARE_E2E_WP_CLI to enable the true expired-token assertion.',
-		} );
-	}
+	await expirePreviewLinkIfConfigured( {
+		postId: post.id,
+		previewUrl,
+	} );
+	const expiredPreviewResponse = await anonymous.get( previewUrl );
+	expect( expiredPreviewResponse.status() ).toBe( 410 );
+	expect( await expiredPreviewResponse.text() ).toContain(
+		unavailablePreviewMessage
+	);
 
 	await anonymous.dispose();
 } );

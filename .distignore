@@ -40,6 +40,7 @@
 .huskyrc.json
 .lintstagedrc.json
 .distignore
+/.wp-env*.json
 .stylelintignore
 AGENTS.md
 
