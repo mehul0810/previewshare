@@ -51,11 +51,14 @@ Include this file in the project’s root so AI agents can understand the plugin
 
 ## Testing Instructions
 
-*(Define tests here once they exist)*  
-If the project adds unit tests:
-- Use the WordPress PHPUnit test framework
-- Run tests locally before submitting pull requests
-- Use `vendor/bin/phpunit` or WP-CLI test commands
+PHP unit tests:
+- Use the WordPress PHPUnit test framework.
+- Run `composer test` locally before submitting pull requests when PHP behavior changes.
+
+Browser smoke tests:
+- Run `npm run test:e2e` only with its owned local wp-env fixture. The runner starts the fixture, binds Playwright and WP-CLI to `http://localhost:8889`, and removes only posts created by that test run.
+- Do not point the harness at a Studio site, a shared local install, or any caller-supplied target. It rejects `WP_BASE_URL`, `PREVIEWSHARE_E2E_BASE_URL`, and `PREVIEWSHARE_E2E_WP_CLI` overrides before setup.
+- The fixture enables and flushes `/%postname%/` permalinks before each smoke case so it exercises the canonical `/preview/<token>` route.
 
 ---
 

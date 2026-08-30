@@ -46,3 +46,22 @@ export function getRestBase( localized = {} ) {
 		? localized.rest_url.replace( /\/$/, '' )
 		: '/wp-json/previewshare/v1';
 }
+
+export function buildRestRequestUrl( restBase, path, baseUrl ) {
+	const url = new URL( restBase, baseUrl );
+	const [ endpoint, query = '' ] = path.split( '?' );
+
+	if ( url.searchParams.has( 'rest_route' ) ) {
+		const route = url.searchParams.get( 'rest_route' ).replace( /\/$/, '' );
+
+		url.searchParams.set( 'rest_route', `${ route }${ endpoint }` );
+	} else {
+		url.pathname = `${ url.pathname.replace( /\/$/, '' ) }${ endpoint }`;
+	}
+
+	for ( const [ key, value ] of new URLSearchParams( query ) ) {
+		url.searchParams.set( key, value );
+	}
+
+	return url.toString();
+}
