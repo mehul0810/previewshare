@@ -33,6 +33,5 @@ node "${ROOT_DIR}/scripts/e2e-fixture.js" assert-cli-binding
 export WP_BASE_URL="http://localhost:8889"
 export PREVIEWSHARE_E2E_BASE_URL="http://localhost:8889"
 export PREVIEWSHARE_E2E_WP_CLI="wp-env run cli wp"
-export PREVIEWSHARE_E2E_QUERY_ROUTES="1"
 
 npm run test:e2e:playwright

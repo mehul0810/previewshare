@@ -31,13 +31,6 @@ function responseMatchesRoute( response, route ) {
 function resolvePreviewUrlForTestServer( previewUrl, baseURL ) {
 	const url = new URL( previewUrl );
 	const testBase = new URL( baseURL );
-	const token = getPreviewToken( url );
-
-	if ( process.env.PREVIEWSHARE_E2E_QUERY_ROUTES === '1' && token ) {
-		testBase.searchParams.set( 'previewshare_token', token );
-
-		return testBase.toString();
-	}
 
 	url.protocol = testBase.protocol;
 	url.host = testBase.host;
@@ -123,12 +116,12 @@ wp_cache_delete( $hash, 'previewshare_tokens' );
 	runWpCli( FIXTURE_WP_CLI, [ 'eval', php ] );
 }
 
-function configureFixtureQueryRoutes() {
+function configureFixturePrettyRoutes() {
 	runWpCli( FIXTURE_WP_CLI, [
 		'option',
 		'update',
 		'permalink_structure',
-		'',
+		'/%postname%/',
 	] );
 	runWpCli( FIXTURE_WP_CLI, [ 'rewrite', 'flush' ] );
 }
@@ -143,9 +136,9 @@ test.beforeEach( async ( { requestUtils } ) => {
 	}
 
 	await requestUtils.updateSiteSettings( {
-		permalink_structure: '',
+		permalink_structure: '/%postname%/',
 	} );
-	configureFixtureQueryRoutes();
+	configureFixturePrettyRoutes();
 } );
 
 const createdPostIds = new Set();
@@ -231,6 +224,9 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	expect( generated.url ).toContain( '/preview/' );
 	await expectPreviewUrlVisible( page, generated.url );
 	const previewUrl = resolvePreviewUrlForTestServer( generated.url, baseURL );
+	expect( new URL( previewUrl ).pathname ).toMatch(
+		/^\/preview\/[a-zA-Z0-9]+\/?$/
+	);
 
 	const anonymous = await request.newContext( {
 		baseURL,

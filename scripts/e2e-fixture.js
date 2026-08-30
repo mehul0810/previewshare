@@ -27,7 +27,6 @@ function assertFixtureConfiguration( environment = process.env ) {
 		WP_BASE_URL: FIXTURE_BASE_URL,
 		PREVIEWSHARE_E2E_BASE_URL: FIXTURE_BASE_URL,
 		PREVIEWSHARE_E2E_WP_CLI: FIXTURE_WP_CLI,
-		PREVIEWSHARE_E2E_QUERY_ROUTES: '1',
 	};
 
 	for ( const [ name, value ] of Object.entries( expected ) ) {
