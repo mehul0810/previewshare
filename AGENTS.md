@@ -56,9 +56,9 @@ PHP unit tests:
 - Run `composer test` locally before submitting pull requests when PHP behavior changes.
 
 Browser smoke tests:
-- Run `npm run test:e2e` against a WordPress test install with PreviewShare installed.
-- The Playwright harness reads `WP_BASE_URL`, `WP_USERNAME`, and `WP_PASSWORD`; defaults are `http://localhost:8889`, `admin`, and `password`.
-- Set `PREVIEWSHARE_E2E_WP_CLI` to a WP-CLI command prefix when the expired-link assertion needs to mutate token metadata, for example `wp` or `npm run wp-env run tests-cli -- wp`.
+- Run `npm run test:e2e` only with its owned local wp-env fixture. The runner starts the fixture, binds Playwright and WP-CLI to `http://localhost:8889`, and removes only posts created by that test run.
+- Do not point the harness at a Studio site, a shared local install, or any caller-supplied target. It rejects `WP_BASE_URL`, `PREVIEWSHARE_E2E_BASE_URL`, and `PREVIEWSHARE_E2E_WP_CLI` overrides before setup.
+- The fixture uses query routes for its rewrite-independent smoke assertions. Canonical `/preview/<token>` proof still requires a separate rewrite-capable environment.
 
 ---
 
