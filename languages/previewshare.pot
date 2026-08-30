@@ -7,7 +7,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Language-Team: Mehul Gohil <hello@mehulgohil.com>\n"
-"POT-Creation-Date: 2026-08-29 06:59+0000\n"
+"POT-Creation-Date: 2026-08-30 03:54+0000\n"
 "Report-Msgid-Bugs-To: https://github.com/mehul0810/previewshare/issues/new\n"
 "X-Poedit-Basepath: ..\n"
 "X-Poedit-KeywordsList: __;_e;_ex:1,2c;_n:1,2;_n_noop:1,2;_nx:1,2,4c;_nx_noop:1,2,3c;_x:1,2c;esc_attr__;esc_attr_e;esc_attr_x:1,2c;esc_html__;esc_html_e;esc_html_x:1,2c\n"
@@ -15,6 +15,118 @@ msgstr ""
 "X-Poedit-SearchPathExcluded-0: *.js\n"
 "X-Poedit-SourceCharset: UTF-8\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: src/Abilities/PreviewAbilities.php:88, src/Admin/Actions.php:571, src/Admin/Settings.php:41, src/Admin/Settings.php:42
+msgid "PreviewShare"
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:89
+msgid "Generate, inventory, and revoke secure PreviewShare links."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:107, src/Admin/Actions.php:604, src/Admin/Actions.php:625
+msgid "Generate Preview Link"
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:108
+msgid "Generates a secure PreviewShare link for an enabled post type."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:128
+msgid "List Preview Links"
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:129
+msgid "Lists PreviewShare links available in the administrator inventory."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:148
+msgid "Revoke Preview Link"
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:149
+msgid "Revokes a PreviewShare link using its opaque inventory identifier."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:178, src/Abilities/PreviewAbilities.php:224
+msgid "A valid post ID is required."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:182
+msgid "You cannot generate a preview link for this post."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:188
+msgid "The requested post does not exist."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:192
+msgid "PreviewShare is not enabled for this post type."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:211
+msgid "You cannot manage PreviewShare links."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:240
+msgid "The generated preview link could not be verified."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:261
+msgid "Preview link list input must be an object."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:298
+msgid "A preview link identifier is required."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:304
+msgid "The preview link identifier is invalid."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:310
+msgid "The preview link could not be found."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:314
+msgid "The preview link could not be revoked."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:337
+msgid "ID of the post to share."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:342
+msgid "Hours before expiry. Zero means no expiry."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:346
+msgid "Optional label for the preview link."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:368
+msgid "Secure preview URL."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:494
+msgid "Opaque PreviewShare link identifier."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:499
+msgid "ID of the post associated with the link."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:503
+msgid "Preview link label."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:508
+msgid "Unix timestamp when the link was created."
+msgstr ""
+
+#: src/Abilities/PreviewAbilities.php:512
+msgid "Unix expiry timestamp, or null when the link does not expire."
+msgstr ""
 
 #: src/Admin/Actions.php:440, src/Admin/Actions.php:451
 msgid "Preview link unavailable"
@@ -68,10 +180,6 @@ msgstr ""
 msgid "Copy an active link or generate a fresh one when reviewers need access."
 msgstr ""
 
-#: src/Admin/Actions.php:571, src/Admin/Settings.php:41, src/Admin/Settings.php:42
-msgid "PreviewShare"
-msgstr ""
-
 #: src/Admin/Actions.php:588
 msgid "Preview sharing is unavailable for this content."
 msgstr ""
@@ -82,10 +190,6 @@ msgid "%d active preview link."
 msgid_plural "%d active preview links."
 msgstr[0] ""
 msgstr[1] ""
-
-#: src/Admin/Actions.php:604, src/Admin/Actions.php:625
-msgid "Generate Preview Link"
-msgstr ""
 
 #: src/Admin/Actions.php:609
 msgid "The latest preview link is no longer usable. Generate a new link before sharing this content again."
