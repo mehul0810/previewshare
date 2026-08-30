@@ -123,7 +123,7 @@ function configureFixturePrettyRoutes() {
 		'permalink_structure',
 		'/%postname%/',
 	] );
-	runWpCli( FIXTURE_WP_CLI, [ 'rewrite', 'flush' ] );
+	runWpCli( FIXTURE_WP_CLI, [ 'rewrite', 'flush', '--hard' ] );
 }
 
 test.beforeEach( async ( { requestUtils } ) => {
