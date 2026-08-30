@@ -19,9 +19,20 @@ async function expectSuccessfulResponse( responsePromise, name ) {
 	).toBe( 200 );
 }
 
+function responseMatchesRoute( response, route ) {
+	return decodeURIComponent( response.url() ).includes( route );
+}
+
 function resolvePreviewUrlForTestServer( previewUrl, baseURL ) {
 	const url = new URL( previewUrl );
 	const testBase = new URL( baseURL );
+	const token = url.pathname.split( '/' ).filter( Boolean ).pop();
+
+	if ( process.env.PREVIEWSHARE_E2E_QUERY_ROUTES === '1' && token ) {
+		testBase.searchParams.set( 'previewshare_token', token );
+
+		return testBase.toString();
+	}
 
 	url.protocol = testBase.protocol;
 	url.host = testBase.host;
@@ -99,11 +110,11 @@ wp_cache_delete( $hash, 'previewshare_tokens' );
 	return true;
 }
 
-function flushRewriteRulesIfConfigured() {
+function configureQueryRoutesIfConfigured() {
 	const wpCli = process.env.PREVIEWSHARE_E2E_WP_CLI;
 
 	if ( wpCli ) {
-		execSync( `${ wpCli } option update permalink_structure '/%postname%/'`, {
+		execSync( `${ wpCli } option update permalink_structure ''`, {
 			stdio: 'inherit',
 		} );
 		execSync( `${ wpCli } rewrite flush`, {
@@ -121,9 +132,9 @@ test.beforeEach( async ( { requestUtils } ) => {
 	}
 
 	await requestUtils.updateSiteSettings( {
-		permalink_structure: '/%postname%/',
+		permalink_structure: '',
 	} );
-	flushRewriteRulesIfConfigured();
+	configureQueryRoutesIfConfigured();
 	await requestUtils.deleteAllPosts();
 	await requestUtils.rest( {
 		method: 'POST',
@@ -153,12 +164,12 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	const settingsResponse = page.waitForResponse(
 		( response ) =>
 			response.request().method() === 'GET' &&
-			response.url().includes( '/previewshare/v1/settings' )
+			responseMatchesRoute( response, '/previewshare/v1/settings' )
 	);
 	const tokensResponse = page.waitForResponse(
 		( response ) =>
 			response.request().method() === 'GET' &&
-			response.url().includes( '/previewshare/v1/tokens' )
+			responseMatchesRoute( response, '/previewshare/v1/tokens' )
 	);
 
 	await admin.visitAdminPage(
@@ -178,7 +189,7 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	const postMetaResponse = page.waitForResponse(
 		( response ) =>
 			response.request().method() === 'GET' &&
-			response.url().includes( '/previewshare/v1/post-meta' )
+			responseMatchesRoute( response, '/previewshare/v1/post-meta' )
 	);
 
 	await admin.editPost( post.id );
