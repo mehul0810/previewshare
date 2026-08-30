@@ -26,7 +26,7 @@ function responseMatchesRoute( response, route ) {
 function resolvePreviewUrlForTestServer( previewUrl, baseURL ) {
 	const url = new URL( previewUrl );
 	const testBase = new URL( baseURL );
-	const token = url.pathname.split( '/' ).filter( Boolean ).pop();
+	const token = getPreviewToken( url );
 
 	if ( process.env.PREVIEWSHARE_E2E_QUERY_ROUTES === '1' && token ) {
 		testBase.searchParams.set( 'previewshare_token', token );
@@ -38,6 +38,13 @@ function resolvePreviewUrlForTestServer( previewUrl, baseURL ) {
 	url.host = testBase.host;
 
 	return url.toString();
+}
+
+function getPreviewToken( url ) {
+	return (
+		url.searchParams.get( 'previewshare_token' ) ||
+		url.pathname.split( '/' ).filter( Boolean ).pop()
+	);
 }
 
 async function expectPreviewUrlVisible( page, url ) {
@@ -82,7 +89,7 @@ async function expirePreviewLinkIfConfigured( { postId, previewUrl } ) {
 		return false;
 	}
 
-	const token = new URL( previewUrl ).pathname.split( '/' ).filter( Boolean ).pop();
+	const token = getPreviewToken( new URL( previewUrl ) );
 
 	if ( ! token ) {
 		throw new Error( `Could not resolve preview token from ${ previewUrl }` );
@@ -227,7 +234,12 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	expect( validPreviewResponse.status() ).toBe( 200 );
 	expect( await validPreviewResponse.text() ).toContain( postContent );
 
-	const invalidPreviewResponse = await anonymous.get( '/preview/not-a-real-token' );
+	const invalidPreviewResponse = await anonymous.get(
+		resolvePreviewUrlForTestServer(
+			new URL( '/preview/not-a-real-token', baseURL ).toString(),
+			baseURL
+		)
+	);
 	expect( invalidPreviewResponse.status() ).toBe( 410 );
 	expect( await invalidPreviewResponse.text() ).toContain(
 		'Preview link is invalid or has expired.'
