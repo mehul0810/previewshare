@@ -1,4 +1,5 @@
 import {
+	buildRestRequestUrl,
 	fallbackSettings,
 	getRestBase,
 	normalizeSettings,
@@ -52,5 +53,21 @@ describe( 'PreviewShare settings utils', () => {
 			} )
 		).toBe( 'https://example.test/wp-json/previewshare/v1' );
 		expect( getRestBase( {} ) ).toBe( '/wp-json/previewshare/v1' );
+	} );
+
+	it( 'keeps endpoint query parameters outside a plain-permalink REST route', () => {
+		const url = new URL(
+			buildRestRequestUrl(
+				'https://example.test/index.php?rest_route=/previewshare/v1',
+				'/tokens?per_page=25&page=1',
+				'https://example.test'
+			)
+		);
+
+		expect( url.searchParams.get( 'rest_route' ) ).toBe(
+			'/previewshare/v1/tokens'
+		);
+		expect( url.searchParams.get( 'per_page' ) ).toBe( '25' );
+		expect( url.searchParams.get( 'page' ) ).toBe( '1' );
 	} );
 } );
