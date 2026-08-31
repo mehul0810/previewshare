@@ -32,24 +32,28 @@ body.previewshare-settings-screen #wpbody-content .update-nag:not(.previewshare-
 }
 
 body.previewshare-settings-screen #wpcontent {
-	padding-inline-end: 20px;
+	padding-inline: 0 !important;
+}
+
+body.previewshare-settings-screen #wpbody-content {
+	padding-bottom: 0;
 }
 
 .previewshare-admin-wrap {
 	max-width: none;
-	margin: 20px 0 0;
+	margin: 0;
 	padding: 0;
 }
 
 .previewshare-settings {
-	max-width: 1440px;
-	margin: 0 auto;
+	max-width: none;
+	margin: 0;
 	overflow: hidden;
-	border: 1px solid var(--previewshare-border);
-	border-radius: 6px;
+	border-block: 1px solid var(--previewshare-border);
+	border-inline: 0;
+	border-radius: 0;
 	background: var(--previewshare-surface);
 	color: var(--previewshare-ink);
-	box-shadow: 0 1px 2px rgb(16 24 40 / 4%);
 }
 
 .previewshare-product-header {
@@ -693,12 +697,11 @@ body.previewshare-settings-screen #wpcontent {
 @media screen and (max-width: 782px) {
 
 	body.previewshare-settings-screen #wpcontent {
-		padding-inline-end: 10px;
-		padding-inline-start: 10px;
+		padding-inline: 0 !important;
 	}
 
 	.previewshare-admin-wrap {
-		margin-top: 10px;
+		margin-top: 0;
 	}
 
 	.previewshare-product-header {
