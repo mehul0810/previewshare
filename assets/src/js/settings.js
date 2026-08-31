@@ -356,6 +356,7 @@ import {
 		const saveTimerRef = useRef( null );
 		const saveRequestIdRef = useRef( 0 );
 		const saveQueueRef = useRef( Promise.resolve() );
+		const saveErrorRef = useRef( false );
 		const tokenRequestIdRef = useRef( 0 );
 		const mountedRef = useRef( false );
 
@@ -532,6 +533,10 @@ import {
 					setSettings( normalized );
 					setSavingSettings( false );
 					setSaveState( 'saved' );
+					if ( saveErrorRef.current ) {
+						saveErrorRef.current = false;
+						setNotice( null );
+					}
 
 					if ( options.notice ) {
 						notify(
@@ -553,6 +558,7 @@ import {
 
 					setSavingSettings( false );
 					setSaveState( 'error' );
+					saveErrorRef.current = true;
 					notify(
 						'error',
 						__( 'Settings could not be saved.', 'previewshare' )
@@ -613,6 +619,10 @@ import {
 					setSettings( normalized );
 					setSavingSettings( false );
 					setSaveState( 'saved' );
+					if ( saveErrorRef.current ) {
+						saveErrorRef.current = false;
+						setNotice( null );
+					}
 					notify(
 						'success',
 						__( 'Default settings restored.', 'previewshare' )
@@ -628,6 +638,7 @@ import {
 
 					setSavingSettings( false );
 					setSaveState( 'error' );
+					saveErrorRef.current = true;
 					notify(
 						'error',
 						__(
