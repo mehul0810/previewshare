@@ -30,6 +30,7 @@ class Settings {
 	public function __construct() {
 		add_action( 'admin_menu', [ $this, 'register_menu' ] );
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
+		add_filter( 'admin_body_class', [ $this, 'add_body_class' ] );
 	}
 
 	/**
@@ -52,7 +53,7 @@ class Settings {
 	 * @param string $hook Current admin page hook.
 	 */
 	public function enqueue_assets( $hook ): void {
-		if ( $this->hook_suffix && $hook !== $this->hook_suffix ) {
+		if ( ! $this->hook_suffix || $hook !== $this->hook_suffix ) {
 			return;
 		}
 
@@ -87,17 +88,37 @@ class Settings {
 			'previewshare_settings',
 			[
 				// Base REST namespace for the plugin.
-				'rest_url' => rest_url( 'previewshare/v1' ),
-				'nonce'    => wp_create_nonce( 'wp_rest' ),
-				'settings' => \previewshare_get_settings(),
+				'rest_url'          => rest_url( 'previewshare/v1' ),
+				'nonce'             => wp_create_nonce( 'wp_rest' ),
+				'settings'          => \previewshare_get_settings(),
+				'version'           => defined( 'PREVIEWSHARE_VERSION' ) ? (string) constant( 'PREVIEWSHARE_VERSION' ) : '1.0.0',
+				'icon_url'          => $plugin_url . 'assets/images/previewshare-icon.png',
+				'documentation_url' => defined( 'PREVIEWSHARE_PLUGIN_DOCS_URL' ) ? (string) constant( 'PREVIEWSHARE_PLUGIN_DOCS_URL' ) : 'https://github.com/mehul0810/previewshare#readme',
+				'support_url'       => 'https://wordpress.org/support/plugin/previewshare/',
 			]
 		);
+	}
+
+	/**
+	 * Add a page-scoped body class for settings-only styling.
+	 *
+	 * @param string $classes Existing admin body classes.
+	 * @return string
+	 */
+	public function add_body_class( $classes ): string {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+
+		if ( $screen && $this->hook_suffix === $screen->id ) {
+			$classes .= ' previewshare-settings-screen';
+		}
+
+		return $classes;
 	}
 
 	/**
 	 * Render the settings page container; the React app will mount here.
 	 */
 	public function render_page(): void {
-		echo '<div class="wrap"><div id="previewshare-settings-app"></div></div>';
+		echo '<div class="wrap previewshare-admin-wrap"><div id="previewshare-settings-app"></div></div>';
 	}
 }
