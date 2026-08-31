@@ -48,7 +48,10 @@ function deferred() {
 }
 
 function flushPromises() {
-	return Promise.resolve().then( () => Promise.resolve() );
+	return Promise.resolve()
+		.then( () => Promise.resolve() )
+		.then( () => Promise.resolve() )
+		.then( () => Promise.resolve() );
 }
 
 function setupWordPressMocks() {
@@ -126,9 +129,9 @@ function setupWordPressMocks() {
 	};
 }
 
-function setupFetch() {
+function setupFetch( settingsOverride = null ) {
 	const posts = [];
-	const initialSettings = {
+	const initialSettings = settingsOverride || {
 		default_ttl_hours: 6,
 		enable_logging: false,
 		enable_caching: true,
@@ -404,6 +407,80 @@ describe( 'PreviewShare settings autosave', () => {
 			await flushPromises();
 		} );
 		expect( findInput( 'Default expiry in hours' ).value ).toBe( '12' );
+	} );
+
+	it( 'rebases edits made during reset onto the authoritative defaults', async () => {
+		const customSettings = {
+			default_ttl_hours: 8,
+			enable_logging: true,
+			enable_caching: false,
+			post_types: [ 'page' ],
+			available_post_types: { post: 'Post', page: 'Page' },
+			defaults: {
+				default_ttl_hours: 6,
+				enable_logging: false,
+				enable_caching: true,
+				post_types: [ 'post' ],
+			},
+		};
+		const { posts } = setupFetch( customSettings );
+		await mountSettingsApp( customSettings );
+
+		await act( async () => {
+			findButton( 'Restore defaults' ).click();
+			await flushPromises();
+		} );
+		expect( posts[ 0 ].body ).toEqual( { reset_defaults: true } );
+
+		await act( async () => {
+			Simulate.change( findInput( 'Default expiry in hours' ), {
+				target: { value: '12' },
+			} );
+		} );
+		await act( async () => {
+			posts[ 0 ].request.resolve(
+				response( {
+					...customSettings,
+					default_ttl_hours: 6,
+					enable_logging: false,
+					enable_caching: true,
+					post_types: [ 'post' ],
+				} )
+			);
+			await flushPromises();
+		} );
+
+		expect( posts ).toHaveLength( 2 );
+		expect( posts[ 1 ].body ).toEqual( {
+			default_ttl_hours: 12,
+			enable_logging: false,
+			enable_caching: true,
+			post_types: [ 'post' ],
+		} );
+
+		await act( async () => {
+			posts[ 1 ].request.resolve(
+				response( {
+					...customSettings,
+					default_ttl_hours: 12,
+					enable_logging: false,
+					enable_caching: true,
+					post_types: [ 'post' ],
+				} )
+			);
+			await flushPromises();
+		} );
+
+		expect( findInput( 'Default expiry in hours' ).value ).toBe( '12' );
+		expect( findInput( 'Enable diagnostic logging' ).checked ).toBe(
+			false
+		);
+		expect( findInput( 'Enable token lookup caching' ).checked ).toBe(
+			true
+		);
+		expect(
+			document.querySelector( '.previewshare-save-state' ).textContent
+		).toContain( 'Saved' );
 	} );
 
 	it( 'queues cancel after an in-flight autosave and restores the acknowledged snapshot', async () => {

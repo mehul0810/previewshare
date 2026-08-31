@@ -361,6 +361,7 @@ import {
 		const editRevisionRef = useRef( 0 );
 		const saveQueueRef = useRef( Promise.resolve() );
 		const saveErrorRef = useRef( false );
+		const resetContextRef = useRef( null );
 		const tokenRequestIdRef = useRef( 0 );
 		const tokensRef = useRef( [] );
 		const nextInventoryPageRef = useRef( 1 );
@@ -513,12 +514,18 @@ import {
 			setSaveState( 'pending' );
 			saveTimerRef.current = window.setTimeout( () => {
 				saveTimerRef.current = null;
+				if ( resetContextRef.current?.pending ) {
+					return;
+				}
 				persistSettings( nextSettings, { revision } );
 			}, AUTOSAVE_DELAY );
 		}
 
 		function updateSetting( key, value ) {
 			const revision = ++editRevisionRef.current;
+			if ( resetContextRef.current?.pending ) {
+				resetContextRef.current.changes[ key ] = value;
+			}
 			const nextSettings = normalizeSettings(
 				Object.assign( {}, latestSettingsRef.current, {
 					[ key ]: value,
@@ -531,6 +538,14 @@ import {
 		}
 
 		function persistSettings( values, options = {} ) {
+			if ( resetContextRef.current?.pending ) {
+				if ( options.notice ) {
+					resetContextRef.current.manualSave = true;
+				}
+
+				return Promise.resolve( null );
+			}
+
 			const requestId = ++saveRequestIdRef.current;
 			const revision = Number.isInteger( options.revision )
 				? options.revision
@@ -612,6 +627,14 @@ import {
 				saveTimerRef.current = null;
 			}
 
+			if ( resetContextRef.current?.pending ) {
+				if ( options.notice ) {
+					resetContextRef.current.manualSave = true;
+				}
+
+				return Promise.resolve( null );
+			}
+
 			return persistSettings( latestSettingsRef.current, options );
 		}
 
@@ -630,6 +653,12 @@ import {
 
 			const revision = ++editRevisionRef.current;
 			const requestId = ++saveRequestIdRef.current;
+			resetContextRef.current = {
+				pending: true,
+				revision,
+				changes: {},
+				manualSave: false,
+			};
 			setSavingSettings( true );
 			setSaveState( 'saving' );
 
@@ -652,11 +681,39 @@ import {
 
 					const normalized = normalizeSettings( data );
 					persistedSettingsRef.current = normalized;
+					const resetContext = resetContextRef.current;
 
 					if (
-						revision !== editRevisionRef.current ||
-						requestId !== saveRequestIdRef.current
+						requestId !== saveRequestIdRef.current ||
+						! resetContext ||
+						resetContext.revision !== revision
 					) {
+						return;
+					}
+
+					resetContextRef.current = null;
+					const changedKeys = Object.keys( resetContext.changes );
+
+					if ( changedKeys.length ) {
+						if ( saveTimerRef.current ) {
+							window.clearTimeout( saveTimerRef.current );
+							saveTimerRef.current = null;
+						}
+
+						const rebased = normalizeSettings(
+							Object.assign(
+								{},
+								normalized,
+								resetContext.changes
+							)
+						);
+						latestSettingsRef.current = rebased;
+						setSettings( rebased );
+						persistSettings( rebased, {
+							revision: editRevisionRef.current,
+							notice: resetContext.manualSave,
+							message: __( 'Settings saved.', 'previewshare' ),
+						} );
 						return;
 					}
 
@@ -674,11 +731,36 @@ import {
 					);
 				} )
 				.catch( () => {
+					const resetContext = resetContextRef.current;
 					if (
 						! mountedRef.current ||
-						revision !== editRevisionRef.current ||
-						requestId !== saveRequestIdRef.current
+						requestId !== saveRequestIdRef.current ||
+						! resetContext ||
+						resetContext.revision !== revision
 					) {
+						return;
+					}
+
+					resetContextRef.current = null;
+					if ( Object.keys( resetContext.changes ).length ) {
+						if ( saveTimerRef.current ) {
+							window.clearTimeout( saveTimerRef.current );
+							saveTimerRef.current = null;
+						}
+
+						setSavingSettings( false );
+						setSaveState( 'error' );
+						saveErrorRef.current = true;
+						notify(
+							'error',
+							__(
+								'Default settings could not be restored.',
+								'previewshare'
+							)
+						);
+						persistSettings( latestSettingsRef.current, {
+							revision: editRevisionRef.current,
+						} );
 						return;
 					}
 
@@ -700,6 +782,8 @@ import {
 				window.clearTimeout( saveTimerRef.current );
 				saveTimerRef.current = null;
 			}
+
+			resetContextRef.current = null;
 
 			const revision = ++editRevisionRef.current;
 			const reverted = normalizeSettings( persistedSettingsRef.current );
