@@ -13,6 +13,10 @@ import {
 import {
 	fallbackSettings,
 	getRestBase,
+	getInventoryBatchState,
+	mergeInventoryItems,
+	INVENTORY_BATCH_PAGES,
+	INVENTORY_PAGE_SIZE,
 	normalizeSettings,
 } from './settings-utils';
 
@@ -30,8 +34,6 @@ import {
 		wp.components;
 
 	const AUTOSAVE_DELAY = 450;
-	const INVENTORY_PAGE_SIZE = 100;
-	const MAX_INVENTORY_ITEMS = 1000;
 	const DAY_IN_SECONDS = 24 * 60 * 60;
 	const localized = window.previewshare_settings || {};
 	const restBase = getRestBase( localized );
@@ -320,7 +322,8 @@ import {
 		const [ activeTab, setActiveTab ] = useState( 'overview' );
 		const [ tokens, setTokens ] = useState( [] );
 		const [ totalTokens, setTotalTokens ] = useState( 0 );
-		const [ inventoryTruncated, setInventoryTruncated ] = useState( false );
+		const [ hasMoreTokens, setHasMoreTokens ] = useState( false );
+		const [ loadingMoreTokens, setLoadingMoreTokens ] = useState( false );
 		const [ view, setView ] = useState( {
 			type: 'table',
 			search: '',
@@ -355,9 +358,12 @@ import {
 		const latestSettingsRef = useRef( initialSettings );
 		const saveTimerRef = useRef( null );
 		const saveRequestIdRef = useRef( 0 );
+		const editRevisionRef = useRef( 0 );
 		const saveQueueRef = useRef( Promise.resolve() );
 		const saveErrorRef = useRef( false );
 		const tokenRequestIdRef = useRef( 0 );
+		const tokensRef = useRef( [] );
+		const nextInventoryPageRef = useRef( 1 );
 		const mountedRef = useRef( false );
 
 		useEffect( () => {
@@ -380,10 +386,16 @@ import {
 		}
 
 		function fetchSettings() {
+			const revisionAtRequest = editRevisionRef.current;
 			setLoadingSettings( true );
 			apiFetch( '/settings', { method: 'GET' } )
 				.then( ( data ) => {
 					if ( ! mountedRef.current ) {
+						return;
+					}
+
+					if ( revisionAtRequest !== editRevisionRef.current ) {
+						setLoadingSettings( false );
 						return;
 					}
 
@@ -407,19 +419,26 @@ import {
 				} );
 		}
 
-		async function fetchTokens() {
+		async function fetchTokens( { append = false } = {} ) {
 			const requestId = ++tokenRequestIdRef.current;
-			let nextPage = 1;
+			const firstPage = append ? nextInventoryPageRef.current : 1;
+			const existingItems = append ? tokensRef.current : [];
+			let nextPage = firstPage;
 			let reportedTotal = 0;
+			let pagesFetched = 0;
+			let hasMore = true;
 			const items = [];
 
-			setLoadingTokens( true );
+			if ( ! append ) {
+				tokensRef.current = [];
+				setHasMoreTokens( false );
+				setLoadingTokens( true );
+			} else {
+				setLoadingMoreTokens( true );
+			}
 
 			try {
-				while (
-					nextPage <=
-					Math.ceil( MAX_INVENTORY_ITEMS / INVENTORY_PAGE_SIZE )
-				) {
+				while ( pagesFetched < INVENTORY_BATCH_PAGES ) {
 					const data = await apiFetch(
 						'/tokens?per_page=' +
 							INVENTORY_PAGE_SIZE +
@@ -435,16 +454,20 @@ import {
 
 					reportedTotal = Number( data.total ) || 0;
 					items.push( ...pageItems );
+					pagesFetched += 1;
+					nextPage += 1;
+					const batchState = getInventoryBatchState( {
+						existingCount: existingItems.length,
+						loadedCount: items.length,
+						pageItemsCount: pageItems.length,
+						reportedTotal,
+						pagesFetched,
+					} );
 
-					if (
-						pageItems.length < INVENTORY_PAGE_SIZE ||
-						items.length >= reportedTotal ||
-						items.length >= MAX_INVENTORY_ITEMS
-					) {
+					hasMore = batchState.hasMore;
+					if ( ! batchState.shouldFetchNextPage ) {
 						break;
 					}
-
-					nextPage += 1;
 				}
 
 				if (
@@ -454,12 +477,16 @@ import {
 					return;
 				}
 
-				setTokens( items.slice( 0, MAX_INVENTORY_ITEMS ) );
-				setTotalTokens( reportedTotal || items.length );
-				setInventoryTruncated(
-					( reportedTotal || items.length ) > MAX_INVENTORY_ITEMS
-				);
+				const mergedItems = mergeInventoryItems( existingItems, items );
+				const total = reportedTotal || mergedItems.length;
+
+				tokensRef.current = mergedItems;
+				setTokens( mergedItems );
+				setTotalTokens( total );
+				setHasMoreTokens( hasMore && mergedItems.length < total );
+				nextInventoryPageRef.current = nextPage;
 				setLoadingTokens( false );
+				setLoadingMoreTokens( false );
 			} catch {
 				if (
 					! mountedRef.current ||
@@ -469,6 +496,7 @@ import {
 				}
 
 				setLoadingTokens( false );
+				setLoadingMoreTokens( false );
 				notify(
 					'error',
 					__( 'Preview links could not be loaded.', 'previewshare' )
@@ -476,19 +504,21 @@ import {
 			}
 		}
 
-		function scheduleAutoSave( nextSettings ) {
+		function scheduleAutoSave( nextSettings, revision ) {
 			if ( saveTimerRef.current ) {
 				window.clearTimeout( saveTimerRef.current );
 			}
 
+			setSavingSettings( false );
 			setSaveState( 'pending' );
 			saveTimerRef.current = window.setTimeout( () => {
 				saveTimerRef.current = null;
-				persistSettings( nextSettings );
+				persistSettings( nextSettings, { revision } );
 			}, AUTOSAVE_DELAY );
 		}
 
 		function updateSetting( key, value ) {
+			const revision = ++editRevisionRef.current;
 			const nextSettings = normalizeSettings(
 				Object.assign( {}, latestSettingsRef.current, {
 					[ key ]: value,
@@ -497,11 +527,14 @@ import {
 
 			latestSettingsRef.current = nextSettings;
 			setSettings( nextSettings );
-			scheduleAutoSave( nextSettings );
+			scheduleAutoSave( nextSettings, revision );
 		}
 
 		function persistSettings( values, options = {} ) {
 			const requestId = ++saveRequestIdRef.current;
+			const revision = Number.isInteger( options.revision )
+				? options.revision
+				: editRevisionRef.current;
 			const payload = getSettingsPayload( values );
 
 			setSavingSettings( true );
@@ -520,15 +553,20 @@ import {
 
 			return request
 				.then( ( data ) => {
-					if (
-						! mountedRef.current ||
-						requestId !== saveRequestIdRef.current
-					) {
+					if ( ! mountedRef.current ) {
 						return data;
 					}
 
 					const normalized = normalizeSettings( data );
 					persistedSettingsRef.current = normalized;
+
+					if (
+						revision !== editRevisionRef.current ||
+						requestId !== saveRequestIdRef.current
+					) {
+						return data;
+					}
+
 					latestSettingsRef.current = normalized;
 					setSettings( normalized );
 					setSavingSettings( false );
@@ -551,6 +589,7 @@ import {
 				.catch( () => {
 					if (
 						! mountedRef.current ||
+						revision !== editRevisionRef.current ||
 						requestId !== saveRequestIdRef.current
 					) {
 						return null;
@@ -589,6 +628,7 @@ import {
 				saveTimerRef.current = null;
 			}
 
+			const revision = ++editRevisionRef.current;
 			const requestId = ++saveRequestIdRef.current;
 			setSavingSettings( true );
 			setSaveState( 'saving' );
@@ -606,15 +646,20 @@ import {
 
 			request
 				.then( ( data ) => {
-					if (
-						! mountedRef.current ||
-						requestId !== saveRequestIdRef.current
-					) {
+					if ( ! mountedRef.current ) {
 						return;
 					}
 
 					const normalized = normalizeSettings( data );
 					persistedSettingsRef.current = normalized;
+
+					if (
+						revision !== editRevisionRef.current ||
+						requestId !== saveRequestIdRef.current
+					) {
+						return;
+					}
+
 					latestSettingsRef.current = normalized;
 					setSettings( normalized );
 					setSavingSettings( false );
@@ -631,6 +676,7 @@ import {
 				.catch( () => {
 					if (
 						! mountedRef.current ||
+						revision !== editRevisionRef.current ||
 						requestId !== saveRequestIdRef.current
 					) {
 						return;
@@ -655,10 +701,11 @@ import {
 				saveTimerRef.current = null;
 			}
 
+			const revision = ++editRevisionRef.current;
 			const reverted = normalizeSettings( persistedSettingsRef.current );
 			latestSettingsRef.current = reverted;
 			setSettings( reverted );
-			persistSettings( reverted );
+			persistSettings( reverted, { revision } );
 		}
 
 		function handleGenerateAndCopy( postId ) {
@@ -803,7 +850,6 @@ import {
 							Button,
 							{
 								variant: 'tertiary',
-								disabled: savingSettings,
 								onClick: cancelSettings,
 							},
 							__( 'Cancel', 'previewshare' )
@@ -889,13 +935,18 @@ import {
 						icon: grid,
 					} )
 				),
-				inventoryTruncated
+				hasMoreTokens
 					? el(
 							'p',
 							{ className: 'previewshare-inline-note' },
-							__(
-								'Showing the first 1,000 links. Narrow the inventory or archive older links before reviewing the rest.',
-								'previewshare'
+							sprintf(
+								/* translators: 1: Number of loaded links. 2: Total links. */
+								__(
+									'Showing %1$d of %2$d links in these summaries. Load more in Preview links to include older links.',
+									'previewshare'
+								),
+								tokens.length,
+								totalTokens
 							)
 					  )
 					: null,
@@ -1282,7 +1333,7 @@ import {
 									perPageSizes: [ 20, 50, 100 ],
 								},
 								actions,
-								isLoading: loadingTokens,
+								isLoading: loadingTokens || loadingMoreTokens,
 								getItemId: ( item ) => item.id,
 								searchLabel: __(
 									'Search preview links',
@@ -1298,13 +1349,36 @@ import {
 								),
 							} )
 					  ),
-				inventoryTruncated
+				hasMoreTokens
 					? el(
-							'p',
-							{ className: 'previewshare-inline-note' },
-							__(
-								'The inventory is capped at 1,000 links for this screen. Storage remains unchanged.',
-								'previewshare'
+							'div',
+							{
+								className:
+									'previewshare-inventory-continuation',
+							},
+							el(
+								'p',
+								{ className: 'previewshare-inline-note' },
+								sprintf(
+									/* translators: 1: Number of loaded links. 2: Total links. */
+									__(
+										'%1$d of %2$d links loaded. Load more to search older links.',
+										'previewshare'
+									),
+									tokens.length,
+									totalTokens
+								)
+							),
+							el(
+								Button,
+								{
+									variant: 'secondary',
+									isBusy: loadingMoreTokens,
+									disabled: loadingMoreTokens,
+									onClick: () =>
+										fetchTokens( { append: true } ),
+								},
+								__( 'Load more links', 'previewshare' )
 							)
 					  )
 					: null
@@ -1675,6 +1749,7 @@ import {
 				'nav',
 				{
 					className: 'previewshare-tabs',
+					role: 'tablist',
 					'aria-label': __( 'PreviewShare settings', 'previewshare' ),
 				},
 				tabDefinitions.map( ( tab ) =>
@@ -1682,6 +1757,7 @@ import {
 						'button',
 						{
 							id: 'previewshare-tab-' + tab.name,
+							key: tab.name,
 							className:
 								'previewshare-tab' +
 								( activeTab === tab.name ? ' is-active' : '' ),
@@ -1716,7 +1792,6 @@ import {
 								Button,
 								{
 									variant: 'secondary',
-									disabled: savingSettings,
 									onClick: restoreDefaults,
 								},
 								__( 'Restore defaults', 'previewshare' )

@@ -465,6 +465,20 @@ body.previewshare-settings-screen #wpcontent {
 	border-top: 1px solid var(--previewshare-border);
 }
 
+.previewshare-inventory-continuation {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	margin-top: 16px;
+	padding-top: 16px;
+	border-top: 1px solid var(--previewshare-border);
+}
+
+.previewshare-inventory-continuation .previewshare-inline-note {
+	margin: 0;
+}
+
 .previewshare-content-cell {
 	min-width: 180px;
 }
@@ -724,6 +738,11 @@ body.previewshare-settings-screen #wpcontent {
 
 	.previewshare-content-type-footer {
 		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.previewshare-inventory-continuation {
+		align-items: stretch;
 		flex-direction: column;
 	}
 
