@@ -14,6 +14,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: prerelease-${{ github.workflow }}-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
 env:
   PLUGIN_SLUG: previewshare
 
@@ -21,6 +29,7 @@ jobs:
   build:
     name: Build prerelease artifact
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Resolve prerelease context
         id: release
@@ -52,7 +61,7 @@ jobs:
           echo "zip_file=${PLUGIN_SLUG}-${TAG_NAME}.zip" >> "${GITHUB_OUTPUT}"
           echo "artifact_name=${PLUGIN_SLUG}-prerelease-${TAG_NAME}" >> "${GITHUB_OUTPUT}"
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ steps.release.outputs.tag }}
           fetch-depth: 0
@@ -74,16 +83,18 @@ jobs:
           fi
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '8.1'
           extensions: mbstring
+          coverage: pcov
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '20'
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install Composer dependencies
         run: composer install --no-progress --prefer-dist
@@ -91,8 +102,20 @@ jobs:
       - name: Validate Composer metadata
         run: composer validate --no-check-publish --no-interaction
 
+      - name: Audit Composer dependencies
+        run: composer audit:php
+
       - name: Run PHP syntax checks
         run: find . -path ./vendor -prune -o -path ./node_modules -prune -o -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Run PHP coding standards
+        run: composer check-cs
+
+      - name: Run PHPUnit
+        run: composer test
+
+      - name: Run PHPUnit coverage smoke
+        run: composer test:coverage
 
       - name: Run PHPStan
         run: vendor/bin/phpstan analyse -c phpstan.neon
@@ -100,17 +123,32 @@ jobs:
       - name: Install JS dependencies
         run: npm ci
 
+      - name: Audit production npm dependencies
+        run: npm run audit:prod
+
+      - name: Lint JavaScript
+        run: npm run lint:js
+
+      - name: Lint CSS
+        run: npm run lint:css
+
+      - name: Run JavaScript unit tests
+        run: npm run test:js
+
       - name: Build production zip
         run: npm run plugin-zip
 
       - name: Validate production zip
         run: npm run validate:zip
 
+      - name: Validate WordPress.org assets
+        run: npm run validate:wporg
+
       - name: Rename artifact
         run: mv previewshare.zip "${{ steps.release.outputs.zip_file }}"
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ steps.release.outputs.artifact_name }}
           path: ${{ steps.release.outputs.zip_file }}
