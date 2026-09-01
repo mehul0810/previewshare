@@ -11,10 +11,14 @@ jest.mock( '@wordpress/dataviews/wp', () => {
 	const { createElement } = require( '@wordpress/element' );
 
 	return {
-		DataViews: ( { data = [] } ) =>
+		DataViews: ( { data = [], view = {} } ) =>
 			createElement(
 				'div',
-				{ 'data-testid': 'previewshare-dataviews' },
+				{
+					'data-testid': 'previewshare-dataviews',
+					'data-title-field': view.titleField,
+					'data-fields': ( view.fields || [] ).join( ',' ),
+				},
 				data.map( ( item ) =>
 					createElement( 'span', { key: item.id }, item.id )
 				)
@@ -210,6 +214,39 @@ afterEach( () => {
 } );
 
 describe( 'PreviewShare settings autosave', () => {
+	it( 'shows restore defaults only on tabs that contain settings', async () => {
+		const { initialSettings } = setupFetch();
+		await mountSettingsApp( initialSettings );
+
+		expect( findButton( 'Restore defaults' ) ).toBeDefined();
+
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		expect( findButton( 'Restore defaults' ) ).toBeUndefined();
+		expect(
+			document.querySelector( '[data-testid="previewshare-dataviews"]' )
+		).toMatchObject( {
+			dataset: expect.objectContaining( {
+				titleField: 'content',
+				fields: 'label,status,view_count,expires_at,last_viewed_at',
+			} ),
+		} );
+
+		await act( async () => {
+			findButton( 'Content types' ).click();
+			await flushPromises();
+		} );
+		expect( findButton( 'Restore defaults' ) ).toBeDefined();
+
+		await act( async () => {
+			findButton( 'Changelog' ).click();
+			await flushPromises();
+		} );
+		expect( findButton( 'Restore defaults' ) ).toBeUndefined();
+	} );
+
 	it( 'keeps a newer draft when an older save resolves first', async () => {
 		const { posts, initialSettings } = setupFetch();
 		await mountSettingsApp( initialSettings );
@@ -342,6 +379,11 @@ describe( 'PreviewShare settings autosave', () => {
 		expect(
 			document.querySelector( '.previewshare-app-notice' ).textContent
 		).toContain( 'Settings could not be saved.' );
+		expect(
+			document
+				.querySelector( '.previewshare-app-notice' )
+				.closest( '.previewshare-notice-region' )
+		).not.toBeNull();
 
 		await act( async () => {
 			Simulate.change( findInput( 'Enable token lookup caching' ), {

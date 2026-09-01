@@ -28,7 +28,7 @@ body.previewshare-settings-screen #wpbody-content .notice:not(.previewshare-app-
 body.previewshare-settings-screen #wpbody-content .updated:not(.previewshare-app-notice),
 body.previewshare-settings-screen #wpbody-content .error:not(.previewshare-app-notice),
 body.previewshare-settings-screen #wpbody-content .update-nag:not(.previewshare-app-notice) {
-	display: none;
+	display: none !important;
 }
 
 body.previewshare-settings-screen #wpcontent {
@@ -61,6 +61,7 @@ body.previewshare-settings-screen #wpbody-content {
 	align-items: center;
 	justify-content: space-between;
 	gap: 24px;
+	box-sizing: border-box;
 	min-height: 96px;
 	padding: 20px 32px;
 	border-bottom: 1px solid var(--previewshare-border);
@@ -153,7 +154,11 @@ body.previewshare-settings-screen #wpbody-content {
 	padding: 0 32px;
 	border-bottom: 1px solid var(--previewshare-border);
 	background: var(--previewshare-surface);
-	scrollbar-width: thin;
+	scrollbar-width: none;
+}
+
+.previewshare-tabs::-webkit-scrollbar {
+	display: none;
 }
 
 .previewshare-tab {
@@ -200,16 +205,21 @@ body.previewshare-settings-screen #wpbody-content {
 	background: var(--previewshare-blue);
 }
 
-.previewshare-header-actions {
-	display: flex;
-	justify-content: flex-end;
-	padding: 24px 40px 0;
-	background: var(--previewshare-canvas);
-}
-
 .previewshare-tab-panel {
 	padding: 0 40px 56px;
 	background: var(--previewshare-canvas);
+}
+
+.previewshare-notice-region {
+	padding: 16px 40px 0;
+	background: var(--previewshare-canvas);
+}
+
+.previewshare-notice-region .components-notice {
+	margin: 0;
+	border: 1px solid var(--previewshare-border);
+	border-inline-start-width: 4px;
+	box-shadow: none;
 }
 
 .previewshare-tab-panel:focus {
@@ -217,12 +227,24 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-tab-content {
-	max-width: 1240px;
-	margin: 0 auto;
+	width: 100%;
 }
 
 .previewshare-tab-intro {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 24px;
 	padding: 28px 0 22px;
+}
+
+.previewshare-tab-intro-copy {
+	min-width: 0;
+}
+
+.previewshare-tab-intro .components-button {
+	flex: 0 0 auto;
+	min-height: 36px;
 }
 
 .previewshare-tab-intro h2 {
@@ -249,6 +271,7 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-metric-card {
+	box-sizing: border-box;
 	min-height: 102px;
 	padding: 18px 20px;
 	border: 1px solid var(--previewshare-border);
@@ -721,12 +744,12 @@ body.previewshare-settings-screen #wpbody-content {
 		padding-inline: 20px;
 	}
 
-	.previewshare-header-actions {
-		padding-inline: 20px;
-	}
-
 	.previewshare-tab-panel {
 		padding: 0 20px 36px;
+	}
+
+	.previewshare-notice-region {
+		padding: 14px 20px 0;
 	}
 
 	.previewshare-overview-columns {
@@ -765,6 +788,16 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 @media screen and (max-width: 480px) {
+
+	.previewshare-tab-intro {
+		align-items: stretch;
+		flex-direction: column;
+		gap: 14px;
+	}
+
+	.previewshare-tab-intro .components-button {
+		align-self: flex-start;
+	}
 
 	.previewshare-metrics {
 		grid-template-columns: 1fr;

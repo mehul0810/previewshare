@@ -23,7 +23,6 @@ import {
 ( function ( wp ) {
 	const {
 		createElement: el,
-		Fragment,
 		render,
 		useEffect,
 		useRef,
@@ -336,7 +335,6 @@ import {
 			},
 			titleField: 'content',
 			fields: [
-				'content',
 				'label',
 				'status',
 				'view_count',
@@ -883,23 +881,31 @@ import {
 			}
 
 			return el(
-				Notice,
+				'div',
 				{
-					className: 'previewshare-app-notice',
-					status: notice.status,
-					isDismissible: true,
-					onRemove: () => setNotice( null ),
+					className: 'previewshare-notice-region',
+					role: 'region',
+					'aria-label': __( 'PreviewShare notices', 'previewshare' ),
 				},
-				el( 'p', null, notice.message ),
-				notice.url
-					? el( 'input', {
-							className: 'previewshare-copy-field code',
-							readOnly: true,
-							type: 'url',
-							value: notice.url,
-							onFocus: ( event ) => event.target.select(),
-					  } )
-					: null
+				el(
+					Notice,
+					{
+						className: 'previewshare-app-notice',
+						status: notice.status,
+						isDismissible: true,
+						onRemove: () => setNotice( null ),
+					},
+					el( 'p', null, notice.message ),
+					notice.url
+						? el( 'input', {
+								className: 'previewshare-copy-field code',
+								readOnly: true,
+								type: 'url',
+								value: notice.url,
+								onFocus: ( event ) => event.target.select(),
+						  } )
+						: null
+				)
 			);
 		}
 
@@ -952,6 +958,29 @@ import {
 			);
 		}
 
+		function renderTabIntro( title, description, showRestore = false ) {
+			return el(
+				'div',
+				{ className: 'previewshare-tab-intro' },
+				el(
+					'div',
+					{ className: 'previewshare-tab-intro-copy' },
+					el( 'h2', null, title ),
+					el( 'p', null, description )
+				),
+				showRestore
+					? el(
+							Button,
+							{
+								variant: 'secondary',
+								onClick: restoreDefaults,
+							},
+							__( 'Restore defaults', 'previewshare' )
+					  )
+					: null
+			);
+		}
+
 		function renderOverview() {
 			const dayRange = getDayRange();
 			const now = Math.floor( Date.now() / 1000 );
@@ -980,18 +1009,13 @@ import {
 			return el(
 				'div',
 				{ className: 'previewshare-tab-content' },
-				el(
-					'div',
-					{ className: 'previewshare-tab-intro' },
-					el( 'h2', null, __( 'Overview', 'previewshare' ) ),
-					el(
-						'p',
-						null,
-						__(
-							'Keep preview sharing focused, observable, and ready for review.',
-							'previewshare'
-						)
-					)
+				renderTabIntro(
+					__( 'Overview', 'previewshare' ),
+					__(
+						'Keep preview sharing focused, observable, and ready for review.',
+						'previewshare'
+					),
+					true
 				),
 				el(
 					'div',
@@ -1377,21 +1401,15 @@ import {
 			return el(
 				'div',
 				{ className: 'previewshare-tab-content' },
-				el(
-					'div',
-					{ className: 'previewshare-tab-intro' },
-					el( 'h2', null, __( 'Preview links', 'previewshare' ) ),
-					el(
-						'p',
-						null,
-						sprintf(
-							/* translators: %d: Number of links. */
-							__(
-								'%d links in this site inventory.',
-								'previewshare'
-							),
-							totalTokens
-						)
+				renderTabIntro(
+					__( 'Preview links', 'previewshare' ),
+					sprintf(
+						/* translators: %d: Number of links. */
+						__(
+							'%d links in this site inventory.',
+							'previewshare'
+						),
+						totalTokens
 					)
 				),
 				! DataViews
@@ -1490,18 +1508,13 @@ import {
 			return el(
 				'div',
 				{ className: 'previewshare-tab-content' },
-				el(
-					'div',
-					{ className: 'previewshare-tab-intro' },
-					el( 'h2', null, __( 'Content types', 'previewshare' ) ),
-					el(
-						'p',
-						null,
-						__(
-							'Control where editors can create secure preview links.',
-							'previewshare'
-						)
-					)
+				renderTabIntro(
+					__( 'Content types', 'previewshare' ),
+					__(
+						'Control where editors can create secure preview links.',
+						'previewshare'
+					),
+					true
 				),
 				el( TextControl, {
 					className: 'previewshare-content-type-search',
@@ -1681,17 +1694,11 @@ import {
 			return el(
 				'div',
 				{ className: 'previewshare-tab-content' },
-				el(
-					'div',
-					{ className: 'previewshare-tab-intro' },
-					el( 'h2', null, __( 'Changelog', 'previewshare' ) ),
-					el(
-						'p',
-						null,
-						__(
-							'Release notes for the PreviewShare settings experience.',
-							'previewshare'
-						)
+				renderTabIntro(
+					__( 'Changelog', 'previewshare' ),
+					__(
+						'Release notes for the PreviewShare settings experience.',
+						'previewshare'
 					)
 				),
 				el(
@@ -1866,23 +1873,7 @@ import {
 						{ className: 'previewshare-loading' },
 						el( Spinner )
 				  )
-				: el(
-						Fragment,
-						null,
-						el(
-							'div',
-							{ className: 'previewshare-header-actions' },
-							el(
-								Button,
-								{
-									variant: 'secondary',
-									onClick: restoreDefaults,
-								},
-								__( 'Restore defaults', 'previewshare' )
-							)
-						),
-						renderTabPanel()
-				  )
+				: renderTabPanel()
 		);
 	}
 
