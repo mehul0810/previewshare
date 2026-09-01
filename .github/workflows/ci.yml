@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -12,23 +13,43 @@ on:
       - develop
       - 'release/**'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   php:
-    name: PHP checks
-    runs-on: ubuntu-latest
+    name: PHP checks (PHP ${{ matrix.php }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php: '8.0'
+            os: ubuntu-22.04
+          - php: '8.1'
+            os: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
-          php-version: '8.1'
+          php-version: ${{ matrix.php }}
           extensions: mbstring
           coverage: pcov
       - name: Get Composer Cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: vendor
-          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          key: ${{ matrix.os }}-php-${{ matrix.php }}-composer-${{ hashFiles('**/composer.lock') }}
       - name: Install Composer deps
         run: composer install --no-progress --prefer-dist
       - name: Validate Composer metadata
@@ -49,12 +70,15 @@ jobs:
   js:
     name: JS build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Audit production npm dependencies
@@ -72,20 +96,25 @@ jobs:
     name: Release package smoke
     runs-on: ubuntu-latest
     needs: [ php, js ]
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
         with:
           php-version: '8.1'
           extensions: mbstring
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install JS dependencies
         run: npm ci
       - name: Build plugin zip
         run: npm run plugin-zip
       - name: Validate plugin zip
         run: npm run validate:zip
+      - name: Validate WordPress.org assets
+        run: npm run validate:wporg
