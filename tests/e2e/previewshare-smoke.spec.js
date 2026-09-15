@@ -199,7 +199,9 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 		'PreviewShare tokens request'
 	);
 	await expect( page.locator( '#previewshare-settings-app' ) ).toBeVisible();
-	await expect( page.getByText( 'Active links' ) ).toBeVisible();
+	await expect(
+		page.getByText( 'Active links', { exact: true } )
+	).toBeVisible();
 	await expect(
 		page.getByText( 'Default expiry', { exact: true } )
 	).toBeVisible();
