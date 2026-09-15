@@ -304,11 +304,19 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	] );
 	expect( regeneratedResponse.status() ).toBe( 200 );
 	const regenerated = await regeneratedResponse.json();
+	expect( regenerated.url ).not.toBe( generated.url );
 	await expectPreviewUrlVisible( page, regenerated.url );
 	const regeneratedPreviewUrl = resolvePreviewUrlForTestServer(
 		regenerated.url,
 		baseURL
 	);
+	const regeneratedPreviewResponse = await anonymous.goto(
+		regeneratedPreviewUrl
+	);
+	expect( regeneratedPreviewResponse.status() ).toBe( 200 );
+	await expect(
+		anonymous.getByText( postContent, { exact: true } )
+	).toBeVisible();
 
 	const enablePreviewToggle = page.getByRole( 'checkbox', {
 		name: 'Enable Public Preview',
