@@ -217,6 +217,7 @@ class PreviewController {
 					'id'             => isset( $row['id'] ) ? (string) $row['id'] : '',
 					'post_id'        => (int) $row['post_id'],
 					'post_title'     => $post ? get_the_title( $post ) : '(deleted)',
+					'post_type'      => $post ? (string) $post->post_type : '',
 					'edit_url'       => $edit_url ? $edit_url : '',
 					'label'          => isset( $row['label'] ) ? (string) $row['label'] : '',
 					'created_at'     => isset( $row['created_at'] ) ? (int) $row['created_at'] : 0,

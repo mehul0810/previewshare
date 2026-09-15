@@ -12,6 +12,40 @@ export const fallbackSettings = {
 	},
 };
 
+export const INVENTORY_PAGE_SIZE = 100;
+export const INVENTORY_BATCH_PAGES = 10;
+
+export function getInventoryBatchState( {
+	existingCount = 0,
+	loadedCount = 0,
+	pageItemsCount = 0,
+	reportedTotal = 0,
+	pagesFetched = 0,
+	pageSize = INVENTORY_PAGE_SIZE,
+	batchPages = INVENTORY_BATCH_PAGES,
+} = {} ) {
+	const totalReached =
+		reportedTotal > 0 && existingCount + loadedCount >= reportedTotal;
+	const hasMore = pageItemsCount >= pageSize && ! totalReached;
+
+	return {
+		hasMore,
+		shouldFetchNextPage: hasMore && pagesFetched < batchPages,
+	};
+}
+
+export function mergeInventoryItems( existingItems = [], nextItems = [] ) {
+	const items = new Map();
+
+	existingItems.concat( nextItems ).forEach( ( item ) => {
+		if ( item && item.id !== undefined && item.id !== null ) {
+			items.set( item.id, item );
+		}
+	} );
+
+	return Array.from( items.values() );
+}
+
 export function normalizeSettings( settings = {} ) {
 	const availablePostTypes = settings.available_post_types || {};
 	const defaults = Object.assign(

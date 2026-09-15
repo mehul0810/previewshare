@@ -1,6 +1,5 @@
 const { execFileSync } = require( 'child_process' );
 const { test, expect } = require( '@wordpress/e2e-test-utils-playwright' );
-const { request } = require( '@playwright/test' );
 const {
 	FIXTURE_WP_CLI,
 	assertFixtureConfiguration,
@@ -95,7 +94,9 @@ async function expirePreviewLinkIfConfigured( { postId, previewUrl } ) {
 	const token = getPreviewToken( new URL( previewUrl ) );
 
 	if ( ! token ) {
-		throw new Error( `Could not resolve preview token from ${ previewUrl }` );
+		throw new Error(
+			`Could not resolve preview token from ${ previewUrl }`
+		);
 	}
 
 	const php = `
@@ -160,6 +161,7 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	page,
 	admin,
 	requestUtils,
+	browser,
 	baseURL,
 }, testInfo ) => {
 	const post = await requestUtils.createPost( {
@@ -188,11 +190,19 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 		'options-general.php',
 		'page=previewshare_settings'
 	);
-	await expectSuccessfulResponse( settingsResponse, 'PreviewShare settings request' );
-	await expectSuccessfulResponse( tokensResponse, 'PreviewShare tokens request' );
+	await expectSuccessfulResponse(
+		settingsResponse,
+		'PreviewShare settings request'
+	);
+	await expectSuccessfulResponse(
+		tokensResponse,
+		'PreviewShare tokens request'
+	);
 	await expect( page.locator( '#previewshare-settings-app' ) ).toBeVisible();
 	await expect( page.getByText( 'Active links' ) ).toBeVisible();
-	await expect( page.getByText( 'Default expiry', { exact: true } ) ).toBeVisible();
+	await expect(
+		page.getByText( 'Default expiry', { exact: true } )
+	).toBeVisible();
 	await page.screenshot( {
 		path: testInfo.outputPath( 'previewshare-settings.png' ),
 		fullPage: true,
@@ -205,14 +215,21 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	);
 
 	await admin.editPost( post.id );
-	await expectSuccessfulResponse( postMetaResponse, 'PreviewShare post-meta request' );
+	await expectSuccessfulResponse(
+		postMetaResponse,
+		'PreviewShare post-meta request'
+	);
 	await ensurePreviewSharePanelOpen( page );
 	await expect(
 		page.getByRole( 'checkbox', { name: 'Enable Public Preview' } )
 	).toBeVisible();
-	await page.getByRole( 'textbox', { name: 'Link label' } ).fill( 'E2E smoke' );
+	await page
+		.getByRole( 'textbox', { name: 'Link label' } )
+		.fill( 'E2E smoke' );
 
-	const generateButton = page.getByRole( 'button', { name: 'Generate & copy' } );
+	const generateButton = page.getByRole( 'button', {
+		name: 'Generate & copy',
+	} );
 	await expect( generateButton ).toBeEnabled();
 
 	const [ response ] = await Promise.all( [
@@ -228,40 +245,46 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 		/^\/preview\/[a-zA-Z0-9]+\/?$/
 	);
 
-	const anonymous = await request.newContext( {
+	const anonymousContext = await browser.newContext( {
 		baseURL,
 		storageState: {
 			cookies: [],
 			origins: [],
 		},
 	} );
-	const directDraftResponse = await anonymous.get( `/?p=${ post.id }` );
-	expect( await directDraftResponse.text() ).not.toContain( postContent );
+	const anonymous = await anonymousContext.newPage();
+	const directDraftResponse = await anonymous.goto( `/?p=${ post.id }` );
+	expect( directDraftResponse.status() ).toBe( 404 );
+	await expect(
+		anonymous.getByText( postContent, { exact: true } )
+	).toHaveCount( 0 );
 
-	const validPreviewResponse = await anonymous.get( previewUrl );
+	const validPreviewResponse = await anonymous.goto( previewUrl );
 	expect( validPreviewResponse.status() ).toBe( 200 );
-	expect( await validPreviewResponse.text() ).toContain( postContent );
+	await expect(
+		anonymous.getByText( postContent, { exact: true } )
+	).toBeVisible();
 
-	const invalidPreviewResponse = await anonymous.get(
+	const invalidPreviewResponse = await anonymous.goto(
 		resolvePreviewUrlForTestServer(
 			new URL( '/preview/invalidpreviewtokenabc123', baseURL ).toString(),
 			baseURL
 		)
 	);
 	expect( invalidPreviewResponse.status() ).toBe( 410 );
-	expect( await invalidPreviewResponse.text() ).toContain(
-		unavailablePreviewMessage
-	);
+	await expect(
+		anonymous.getByText( unavailablePreviewMessage )
+	).toBeVisible();
 
 	await expirePreviewLinkIfConfigured( {
 		postId: post.id,
 		previewUrl,
 	} );
-	const expiredPreviewResponse = await anonymous.get( previewUrl );
+	const expiredPreviewResponse = await anonymous.goto( previewUrl );
 	expect( expiredPreviewResponse.status() ).toBe( 410 );
-	expect( await expiredPreviewResponse.text() ).toContain(
-		unavailablePreviewMessage
-	);
+	await expect(
+		anonymous.getByText( unavailablePreviewMessage )
+	).toBeVisible();
 
-	await anonymous.dispose();
+	await anonymousContext.close();
 } );

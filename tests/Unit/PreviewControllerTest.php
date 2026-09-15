@@ -63,6 +63,7 @@ class PreviewControllerTest extends TestCase {
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'Draft post', $response->get_data()['items'][0]['post_title'] );
+		$this->assertSame( 'post', $response->get_data()['items'][0]['post_type'] );
 		$this->assertSame( 'https://example.test/wp-admin/post.php?post=42&action=edit', $response->get_data()['items'][0]['edit_url'] );
 		$this->assertSame( 1, $response->get_data()['total'] );
 	}
