@@ -327,7 +327,13 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		enablePreviewToggle.click(),
 	] );
 	expect( revokeResponse.status() ).toBe( 200 );
-	await expect( page.getByText( 'Preview links revoked.' ) ).toBeVisible();
+	await expect(
+		page
+			.locator( '.components-snackbar__content', {
+				hasText: 'Preview links revoked.',
+			} )
+			.last()
+	).toBeVisible();
 
 	const revokedPreviewResponse = await anonymous.goto(
 		regeneratedPreviewUrl
