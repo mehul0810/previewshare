@@ -7,6 +7,7 @@ const {
 
 const postTitle = `PreviewShare e2e draft ${ Date.now() }`;
 const postContent = 'PreviewShare e2e draft content must stay unpublished.';
+const publishedPostContent = 'Published content remains publicly available.';
 const unavailablePreviewMessage = 'This preview link can no longer be opened.';
 const previewShareRoutes = [
 	'/previewshare/v1/v2/generate',
@@ -90,6 +91,15 @@ function isGeneratePreviewResponse( response ) {
 	);
 }
 
+function isRevokePreviewResponse( response ) {
+	return (
+		response.request().method() === 'POST' &&
+		decodeURIComponent( response.url() ).includes(
+			'/previewshare/v1/v2/revoke'
+		)
+	);
+}
+
 async function expirePreviewLinkIfConfigured( { postId, previewUrl } ) {
 	const token = getPreviewToken( new URL( previewUrl ) );
 
@@ -157,7 +167,7 @@ test.afterEach( () => {
 	createdPostIds.clear();
 } );
 
-test( 'preview link admin, editor, public, invalid, expired, and unpublished boundaries smoke test', async ( {
+test( 'preview link admin, editor, public, invalid, expired, revoked, and post boundaries smoke test', async ( {
 	page,
 	admin,
 	requestUtils,
@@ -286,6 +296,51 @@ test( 'preview link admin, editor, public, invalid, expired, and unpublished bou
 	expect( expiredPreviewResponse.status() ).toBe( 410 );
 	await expect(
 		anonymous.getByText( unavailablePreviewMessage )
+	).toBeVisible();
+
+	const [ regeneratedResponse ] = await Promise.all( [
+		page.waitForResponse( isGeneratePreviewResponse ),
+		page.getByRole( 'button', { name: 'Generate & copy' } ).click(),
+	] );
+	expect( regeneratedResponse.status() ).toBe( 200 );
+	const regenerated = await regeneratedResponse.json();
+	await expectPreviewUrlVisible( page, regenerated.url );
+	const regeneratedPreviewUrl = resolvePreviewUrlForTestServer(
+		regenerated.url,
+		baseURL
+	);
+
+	const enablePreviewToggle = page.getByRole( 'checkbox', {
+		name: 'Enable Public Preview',
+	} );
+	await expect( enablePreviewToggle ).toBeChecked();
+	const [ revokeResponse ] = await Promise.all( [
+		page.waitForResponse( isRevokePreviewResponse ),
+		enablePreviewToggle.click(),
+	] );
+	expect( revokeResponse.status() ).toBe( 200 );
+	await expect( page.getByText( 'Preview links revoked.' ) ).toBeVisible();
+
+	const revokedPreviewResponse = await anonymous.goto(
+		regeneratedPreviewUrl
+	);
+	expect( revokedPreviewResponse.status() ).toBe( 410 );
+	await expect(
+		anonymous.getByText( unavailablePreviewMessage )
+	).toBeVisible();
+
+	const publishedPost = await requestUtils.createPost( {
+		title: `PreviewShare e2e published ${ Date.now() }`,
+		content: publishedPostContent,
+		status: 'publish',
+	} );
+	createdPostIds.add( publishedPost.id );
+	const publishedPostResponse = await anonymous.goto(
+		`/?p=${ publishedPost.id }`
+	);
+	expect( publishedPostResponse.status() ).toBe( 200 );
+	await expect(
+		anonymous.getByText( publishedPostContent, { exact: true } )
 	).toBeVisible();
 
 	await anonymousContext.close();
