@@ -402,18 +402,42 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		const viewport = button.closest( '.dataviews-layout__container' );
 		const viewportBounds = viewport.getBoundingClientRect();
 		const buttonBounds = button.getBoundingClientRect();
-		const horizontalAdjustment =
-			buttonBounds.left < viewportBounds.left
-				? buttonBounds.left - viewportBounds.left
-				: buttonBounds.right > viewportBounds.right
-					? buttonBounds.right - viewportBounds.right
-					: 0;
+		const actionsHeader = viewport.querySelector(
+			'th.dataviews-view-table__actions-column'
+		);
+		const safeLeft = viewportBounds.left + 16;
 
-		viewport.scrollLeft += horizontalAdjustment;
-		return viewport.scrollLeft;
+		viewport.scrollLeft += buttonBounds.left - safeLeft;
+		const visibleButtonBounds = button.getBoundingClientRect();
+		const visibleViewportBounds = viewport.getBoundingClientRect();
+		const actionsWidth = actionsHeader.getBoundingClientRect().width;
+
+		return {
+			scrollLeft: viewport.scrollLeft,
+			buttonLeft: visibleButtonBounds.left,
+			buttonRight: visibleButtonBounds.right,
+			visibleLeft: visibleViewportBounds.left,
+			visibleRight: visibleViewportBounds.right - actionsWidth,
+		};
 	} );
-	expect( mobileScrollLeft ).toBeGreaterThan( 0 );
+	expect( mobileScrollLeft.scrollLeft ).toBeGreaterThan( 0 );
+	expect( mobileScrollLeft.buttonLeft ).toBeGreaterThanOrEqual(
+		mobileScrollLeft.visibleLeft
+	);
+	expect( mobileScrollLeft.buttonRight ).toBeLessThanOrEqual(
+		mobileScrollLeft.visibleRight
+	);
 	await expect( extendButton ).toBeInViewport();
+	const extendButtonIsPainted = await extendButton.evaluate( ( button ) => {
+		const bounds = button.getBoundingClientRect();
+		const visibleElement = document.elementFromPoint(
+			bounds.left + bounds.width / 2,
+			bounds.top + bounds.height / 2
+		);
+
+		return button === visibleElement || button.contains( visibleElement );
+	} );
+	expect( extendButtonIsPainted ).toBe( true );
 	const mobileExtendBounds = await extendButton.boundingBox();
 	expect( mobileExtendBounds ).not.toBeNull();
 	expect(
