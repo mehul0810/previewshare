@@ -194,8 +194,8 @@ class PreviewAbilitiesTest extends TestCase {
 	public function test_global_list_permission_requires_manage_options(): void {
 		$abilities = $this->makeAbilities();
 
-		Functions\\when( '__' )->returnArg( 1 );
-		Functions\\expect( 'current_user_can' )->once()->with( 'manage_options' )->andReturn( false );
+		Functions\when( '__' )->returnArg( 1 );
+		Functions\expect( 'current_user_can' )->once()->with( 'manage_options' )->andReturn( false );
 
 		$permission = $abilities->can_list_preview_links( [] );
 
@@ -208,12 +208,12 @@ class PreviewAbilitiesTest extends TestCase {
 		$abilities = $this->makeAbilities( $storage );
 		$hash      = str_repeat( 'a', 64 );
 
-		Functions\\when( '__' )->returnArg( 1 );
-		Functions\\expect( 'get_post' )
+		Functions\when( '__' )->returnArg( 1 );
+		Functions\expect( 'get_post' )
 			->once()
 			->with( 42 )
 			->andReturn( new WP_Post( [ 'ID' => 42, 'post_type' => 'post' ] ) );
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'edit_post', 42 )
 			->andReturn( true );
@@ -259,12 +259,12 @@ class PreviewAbilitiesTest extends TestCase {
 	public function test_scoped_list_denies_a_user_who_cannot_edit_the_post(): void {
 		$abilities = $this->makeAbilities();
 
-		Functions\\when( '__' )->returnArg( 1 );
-		Functions\\expect( 'get_post' )
+		Functions\when( '__' )->returnArg( 1 );
+		Functions\expect( 'get_post' )
 			->once()
 			->with( 84 )
 			->andReturn( new WP_Post( [ 'ID' => 84, 'post_type' => 'post' ] ) );
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'edit_post', 84 )
 			->andReturn( false );
@@ -280,8 +280,8 @@ class PreviewAbilitiesTest extends TestCase {
 		$abilities = $this->makeAbilities( $storage );
 		$hash      = str_repeat( 'a', 64 );
 
-		Functions\\when( '__' )->returnArg( 1 );
-		Functions\\expect( 'current_user_can' )
+		Functions\when( '__' )->returnArg( 1 );
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'manage_options' )
 			->andReturn( true );
@@ -323,16 +323,16 @@ class PreviewAbilitiesTest extends TestCase {
 			'status'     => 'active',
 		];
 
-		Functions\\when( '__' )->returnArg( 1 );
+		Functions\when( '__' )->returnArg( 1 );
 		$storage->shouldReceive( 'get_token_context_by_id' )
 			->twice()
 			->with( $hash )
 			->andReturn( $link );
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'edit_post', 42 )
 			->andReturn( false );
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'manage_options' )
 			->andReturn( true );
@@ -366,12 +366,12 @@ class PreviewAbilitiesTest extends TestCase {
 			'status'     => 'active',
 		];
 
-		Functions\\when( '__' )->returnArg( 1 );
+		Functions\when( '__' )->returnArg( 1 );
 		$storage->shouldReceive( 'get_token_context_by_id' )
 			->twice()
 			->with( $hash )
 			->andReturn( $link );
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'edit_post', 42 )
 			->andReturn( true );
@@ -391,7 +391,7 @@ class PreviewAbilitiesTest extends TestCase {
 		$abilities = $this->makeAbilities( $storage );
 		$hash      = str_repeat( 'a', 64 );
 
-		Functions\\when( '__' )->returnArg( 1 );
+		Functions\when( '__' )->returnArg( 1 );
 		$storage->shouldReceive( 'get_token_context_by_id' )
 			->once()
 			->with( $hash )
@@ -401,11 +401,11 @@ class PreviewAbilitiesTest extends TestCase {
 					'post_id' => 42,
 				]
 			);
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'edit_post', 42 )
 			->andReturn( false );
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'manage_options' )
 			->andReturn( false );
@@ -420,7 +420,7 @@ class PreviewAbilitiesTest extends TestCase {
 		$storage   = Mockery::mock( PostMetaStorage::class );
 		$abilities = $this->makeAbilities( $storage );
 
-		Functions\\when( '__' )->returnArg( 1 );
+		Functions\when( '__' )->returnArg( 1 );
 		$storage->shouldNotReceive( 'get_token_context_by_id' );
 
 		$result = $abilities->revoke_preview_link( [ 'token_id' => 'not-a-hash' ] );
@@ -581,8 +581,8 @@ class PreviewAbilitiesTest extends TestCase {
 	public function test_global_list_permission_requires_manage_options(): void {
 		$abilities = $this->makeAbilities();
 
-		Functions\\when( '__' )->returnArg( 1 );
-		Functions\\expect( 'current_user_can' )->once()->with( 'manage_options' )->andReturn( false );
+		Functions\when( '__' )->returnArg( 1 );
+		Functions\expect( 'current_user_can' )->once()->with( 'manage_options' )->andReturn( false );
 
 		$permission = $abilities->can_list_preview_links( [] );
 
@@ -595,12 +595,12 @@ class PreviewAbilitiesTest extends TestCase {
 		$abilities = $this->makeAbilities( $storage );
 		$hash      = str_repeat( 'a', 64 );
 
-		Functions\\when( '__' )->returnArg( 1 );
-		Functions\\expect( 'get_post' )
+		Functions\when( '__' )->returnArg( 1 );
+		Functions\expect( 'get_post' )
 			->once()
 			->with( 42 )
 			->andReturn( new WP_Post( [ 'ID' => 42, 'post_type' => 'post' ] ) );
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'edit_post', 42 )
 			->andReturn( true );
@@ -646,12 +646,12 @@ class PreviewAbilitiesTest extends TestCase {
 	public function test_scoped_list_denies_a_user_who_cannot_edit_the_post(): void {
 		$abilities = $this->makeAbilities();
 
-		Functions\\when( '__' )->returnArg( 1 );
-		Functions\\expect( 'get_post' )
+		Functions\when( '__' )->returnArg( 1 );
+		Functions\expect( 'get_post' )
 			->once()
 			->with( 84 )
 			->andReturn( new WP_Post( [ 'ID' => 84, 'post_type' => 'post' ] ) );
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'edit_post', 84 )
 			->andReturn( false );
@@ -667,8 +667,8 @@ class PreviewAbilitiesTest extends TestCase {
 		$abilities = $this->makeAbilities( $storage );
 		$hash      = str_repeat( 'a', 64 );
 
-		Functions\\when( '__' )->returnArg( 1 );
-		Functions\\expect( 'current_user_can' )
+		Functions\when( '__' )->returnArg( 1 );
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'manage_options' )
 			->andReturn( true );
@@ -710,16 +710,16 @@ class PreviewAbilitiesTest extends TestCase {
 			'status'     => 'active',
 		];
 
-		Functions\\when( '__' )->returnArg( 1 );
+		Functions\when( '__' )->returnArg( 1 );
 		$storage->shouldReceive( 'get_token_context_by_id' )
 			->twice()
 			->with( $hash )
 			->andReturn( $link );
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'edit_post', 42 )
 			->andReturn( false );
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'manage_options' )
 			->andReturn( true );
@@ -753,12 +753,12 @@ class PreviewAbilitiesTest extends TestCase {
 			'status'     => 'active',
 		];
 
-		Functions\\when( '__' )->returnArg( 1 );
+		Functions\when( '__' )->returnArg( 1 );
 		$storage->shouldReceive( 'get_token_context_by_id' )
 			->twice()
 			->with( $hash )
 			->andReturn( $link );
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'edit_post', 42 )
 			->andReturn( true );
@@ -778,7 +778,7 @@ class PreviewAbilitiesTest extends TestCase {
 		$abilities = $this->makeAbilities( $storage );
 		$hash      = str_repeat( 'a', 64 );
 
-		Functions\\when( '__' )->returnArg( 1 );
+		Functions\when( '__' )->returnArg( 1 );
 		$storage->shouldReceive( 'get_token_context_by_id' )
 			->once()
 			->with( $hash )
@@ -788,11 +788,11 @@ class PreviewAbilitiesTest extends TestCase {
 					'post_id' => 42,
 				]
 			);
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'edit_post', 42 )
 			->andReturn( false );
-		Functions\\expect( 'current_user_can' )
+		Functions\expect( 'current_user_can' )
 			->once()
 			->with( 'manage_options' )
 			->andReturn( false );
@@ -807,7 +807,7 @@ class PreviewAbilitiesTest extends TestCase {
 		$storage   = Mockery::mock( PostMetaStorage::class );
 		$abilities = $this->makeAbilities( $storage );
 
-		Functions\\when( '__' )->returnArg( 1 );
+		Functions\when( '__' )->returnArg( 1 );
 		$storage->shouldNotReceive( 'get_token_context_by_id' );
 
 		$result = $abilities->revoke_preview_link( [ 'token_id' => 'not-a-hash' ] );
