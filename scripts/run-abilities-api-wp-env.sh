@@ -46,7 +46,11 @@ fi
 node -e '
 const expectedVersion = process.argv[1];
 const receipt = JSON.parse( process.argv[2] );
-const expectedMode = expectedVersion.startsWith( "6.8." ) ? "compatibility" : "native";
+const [ major, minor ] = expectedVersion.split( "." ).map( Number );
+const expectedMode =
+	major < 6 || ( major === 6 && minor < 9 )
+		? "compatibility"
+		: "native";
 if ( receipt.wordpress !== expectedVersion || receipt.mode !== expectedMode || ! Array.isArray( receipt.assertions ) || receipt.assertions.length === 0 ) {
 	throw new Error( "PreviewShare Abilities runtime receipt is incomplete or does not match the requested WordPress version." );
 }
