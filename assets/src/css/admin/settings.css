@@ -904,7 +904,8 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 
-/* Responsive inventory table used on WordPress versions before the DataViews React runtime. */
+/* Responsive inventory table for WordPress versions before the
+   DataViews React runtime. */
 .previewshare-legacy-inventory {
 	display: grid;
 	gap: 16px;
@@ -934,15 +935,15 @@ body.previewshare-settings-screen #wpbody-content {
 	color: var(--previewshare-ink);
 }
 
-.previewshare-legacy-link-table th,
-.previewshare-legacy-link-table td {
+.previewshare-settings .previewshare-legacy-inventory .previewshare-legacy-link-table th,
+.previewshare-settings .previewshare-legacy-inventory .previewshare-legacy-link-table td {
 	padding: 14px 16px;
 	border-bottom: 1px solid var(--previewshare-border);
 	text-align: start;
 	vertical-align: top;
 }
 
-.previewshare-legacy-link-table th {
+.previewshare-settings .previewshare-legacy-inventory .previewshare-legacy-link-table th {
 	background: #f8fafc;
 	color: #475467;
 	font-size: 12px;
