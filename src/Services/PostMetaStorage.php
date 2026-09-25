@@ -338,7 +338,11 @@ class PostMetaStorage {
 	 * @return bool
 	 */
 	public function revoke_token_by_id( string $id ): bool {
-		$hash    = sanitize_key( $id );
+		if ( 1 !== preg_match( '/\\A[a-f0-9]{64}\\z/', $id ) ) {
+			return false;
+		}
+
+		$hash    = $id;
 		$post_id = $this->get_post_id_by_hash( $hash );
 
 		if ( ! $post_id ) {
@@ -358,11 +362,11 @@ class PostMetaStorage {
 	 * @return array{id:string,post_id:int,label:string,expires_at:int|null,status:string}|null Link context, or null when not found.
 	 */
 	public function get_token_context_by_id( string $id ): ?array {
-		$hash = sanitize_key( $id );
-
-		if ( '' === $hash ) {
+		if ( 1 !== preg_match( '/\\A[a-f0-9]{64}\\z/', $id ) ) {
 			return null;
 		}
+
+		$hash = $id;
 
 		$post_id = $this->get_post_id_by_hash( $hash );
 
