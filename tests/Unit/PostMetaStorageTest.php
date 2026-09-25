@@ -476,6 +476,8 @@ class PostMetaStorageTest extends TestCase {
 			'revoked'        => 0,
 			'last_viewed_at' => null,
 			'view_count'     => 1,
+			'responses_enabled' => false,
+			'identity_required' => false,
 		];
 		$write_number = 0;
 		$inventory_after_rollback = [];

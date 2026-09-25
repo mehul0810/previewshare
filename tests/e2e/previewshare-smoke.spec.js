@@ -787,3 +787,177 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 
 	await anonymousContext.close();
 } );
+
+test( 'opted-in reviewer responses stay private, follow content versions, and stop on revoke', async ( {
+	page,
+	admin,
+	requestUtils,
+	browser,
+	baseURL,
+}, testInfo ) => {
+	test.setTimeout( 180000 );
+	const post = await requestUtils.createPost( {
+		title: `PreviewShare review ${ Date.now() }`,
+		content: 'First review draft.',
+		status: 'draft',
+	} );
+	createdPostIds.add( post.id );
+
+	await visitEditor( admin, post.id );
+	await ensurePreviewSharePanelOpen( page );
+	await page
+		.getByRole( 'textbox', { name: 'Link label' } )
+		.fill( 'Reviewer feedback E2E' );
+	await page
+		.getByRole( 'checkbox', { name: 'Allow reviewer responses' } )
+		.check();
+	await page
+		.getByRole( 'checkbox', { name: 'Require name and email' } )
+		.check();
+	const [ generatedResponse ] = await Promise.all( [
+		page.waitForResponse( isGeneratePreviewResponse ),
+		page.getByRole( 'button', { name: 'Generate & copy' } ).click(),
+	] );
+	expect( generatedResponse.status() ).toBe( 200 );
+	const generated = await generatedResponse.json();
+	const previewUrl = resolvePreviewUrlForTestServer(
+		generated.url,
+		baseURL
+	);
+
+	const anonymousContext = await browser.newContext( {
+		baseURL,
+		storageState: { cookies: [], origins: [] },
+	} );
+	const anonymous = await anonymousContext.newPage();
+	const publicResponse = await anonymous.goto( previewUrl );
+	expect( publicResponse.status() ).toBe( 200 );
+	const form = anonymous.locator( '#previewshare-review-form' );
+	await expect( form ).toBeVisible();
+	await expect( form.getByRole( 'textbox', { name: 'Name' } ) ).toHaveAttribute( 'required', '' );
+	await anonymous.screenshot( {
+		path: testInfo.outputPath( 'previewshare-review-desktop.png' ),
+		fullPage: true,
+	} );
+	await anonymous.setViewportSize( { width: 390, height: 844 } );
+	await anonymous.screenshot( {
+		path: testInfo.outputPath( 'previewshare-review-mobile.png' ),
+		fullPage: true,
+	} );
+	const mobileWidth = await anonymous.evaluate(
+		() => document.documentElement.scrollWidth
+	);
+	expect( mobileWidth ).toBeLessThanOrEqual( 390 );
+	await form.getByRole( 'textbox', { name: 'Name' } ).fill( 'Review Tester' );
+	await form
+		.getByRole( 'textbox', { name: 'Email' } )
+		.fill( 'reviewer@example.test' );
+	const [ submitResponse ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute(
+				response,
+				'/previewshare/v1/reviews/submit'
+			)
+		),
+		form.getByRole( 'button', { name: 'Send response' } ).click(),
+	] );
+	expect( submitResponse.status() ).toBe( 201 );
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Your response was received.'
+	);
+	const replay = await anonymousContext.request.post(
+		new URL( '/wp-json/previewshare/v1/reviews/submit', baseURL ).toString(),
+		{ data: submitResponse.request().postDataJSON() }
+	);
+	expect( replay.status() ).toBe( 409 );
+
+	await page.reload();
+	await ensurePreviewSharePanelOpen( page );
+	await page.getByRole( 'button', { name: 'Review settings and history' } ).click();
+	await expect(
+		page.locator( '.previewshare-panel__review-state' )
+	).toHaveText( 'Approved' );
+	await expect( page.getByText( 'Review Tester' ) ).toBeVisible();
+	await expect( page.getByText( 'reviewer@example.test' ) ).toBeVisible();
+
+	runWpCli( FIXTURE_WP_CLI, [
+		'post',
+		'update',
+		String( post.id ),
+		'--post_content=Revised review draft.',
+	] );
+	await page.reload();
+	await ensurePreviewSharePanelOpen( page );
+	await page.getByRole( 'button', { name: 'Review settings and history' } ).click();
+	await expect(
+		page.getByText( 'Approval needs review after edit' )
+	).toBeVisible();
+
+	await anonymous.goto( previewUrl );
+	await form.getByRole( 'radio', { name: 'Request changes' } ).check();
+	await form
+		.getByRole( 'textbox', { name: 'Comment' } )
+		.fill( 'Please revise the opening paragraph.' );
+	await form.getByRole( 'textbox', { name: 'Name' } ).fill( 'Review Tester' );
+	await form
+		.getByRole( 'textbox', { name: 'Email' } )
+		.fill( 'reviewer@example.test' );
+	const [ changeResponse ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute(
+				response,
+				'/previewshare/v1/reviews/submit'
+			)
+		),
+		form.getByRole( 'button', { name: 'Send response' } ).click(),
+	] );
+	expect( changeResponse.status() ).toBe( 201 );
+
+	await page.reload();
+	await ensurePreviewSharePanelOpen( page );
+	await page.getByRole( 'button', { name: 'Review settings and history' } ).click();
+	await expect(
+		page.locator( '.previewshare-panel__review-state' )
+	).toHaveText( 'Changes requested' );
+	await expect(
+		page.getByText( 'Please revise the opening paragraph.' )
+	).toBeVisible();
+	await page.getByRole( 'button', { name: 'Resolve', exact: true } ).click();
+	await expect( page.getByText( 'Resolved', { exact: true } ) ).toBeVisible();
+
+	const [ revokeResponse ] = await Promise.all( [
+		page.waitForResponse( isRevokePreviewResponse ),
+		page
+			.getByRole( 'checkbox', { name: 'Enable Public Preview' } )
+			.uncheck(),
+	] );
+	expect( revokeResponse.status() ).toBe( 200 );
+	await expect(
+		page.locator( '.previewshare-panel__review-history li' )
+	).toHaveCount( 2 );
+	const rejected = await anonymousContext.request.post(
+		new URL( '/wp-json/previewshare/v1/reviews/submit', baseURL ).toString(),
+		{
+			data: {
+				...submitResponse.request().postDataJSON(),
+				request_id: 'new-request-after-revoke-123456',
+			},
+		}
+	);
+	expect( rejected.status() ).toBe( 410 );
+	const retentionProof = `
+$post_id = ${ Number( post.id ) };
+$args = array( 'post_type' => 'previewshare_review', 'post_status' => 'private', 'post_parent' => $post_id, 'fields' => 'ids', 'posts_per_page' => -1 );
+$ids = get_posts( $args );
+if ( count( $ids ) !== 2 ) { fwrite( STDERR, 'Expected two private review records.' ); exit( 1 ); }
+$exporters = apply_filters( 'wp_privacy_personal_data_exporters', array() );
+$export = call_user_func( $exporters['previewshare-reviews']['callback'], 'reviewer@example.test', 1 );
+if ( count( $export['data'] ) !== 2 ) { fwrite( STDERR, 'Privacy exporter missed reviewer responses.' ); exit( 1 ); }
+$old = time() - ( 91 * DAY_IN_SECONDS );
+foreach ( $ids as $id ) { wp_update_post( array( 'ID' => $id, 'post_date' => gmdate( 'Y-m-d H:i:s', $old ), 'post_date_gmt' => gmdate( 'Y-m-d H:i:s', $old ) ) ); }
+do_action( 'previewshare_cleanup_reviews' );
+if ( get_posts( $args ) ) { fwrite( STDERR, 'Expired review records were not removed.' ); exit( 1 ); }
+`;
+	runWpCli( FIXTURE_WP_CLI, [ 'eval', retentionProof ] );
+	await anonymousContext.close();
+} );

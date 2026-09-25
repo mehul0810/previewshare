@@ -10,6 +10,7 @@ namespace PreviewShare\REST;
 use PreviewShare\Container;
 use PreviewShare\Services\TokenService;
 use PreviewShare\Services\PostMetaStorage;
+use PreviewShare\Services\ReviewResponseService;
 
 // Abort if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -76,6 +77,14 @@ class PreviewController {
 					'label' => [
 						'required' => false,
 						'type'     => 'string',
+					],
+					'responses_enabled' => [
+						'required' => false,
+						'type'     => 'boolean',
+					],
+					'identity_required' => [
+						'required' => false,
+						'type'     => 'boolean',
 					],
 				],
 			]
@@ -229,8 +238,12 @@ class PreviewController {
 		// Enrich each token with the related post title.
 		$items = array_map(
 			function ( $row ) {
-				$post     = get_post( $row['post_id'] );
-				$edit_url = $post ? get_edit_post_link( $post->ID, 'raw' ) : '';
+				$post         = get_post( $row['post_id'] );
+				$edit_url     = $post ? get_edit_post_link( $post->ID, 'raw' ) : '';
+				$reviews      = Container::get( 'reviews' );
+				$review_state = $post && ! empty( $row['responses_enabled'] ) && $reviews instanceof ReviewResponseService
+					? $reviews->state( $post, (string) $row['id'] )
+					: null;
 
 				return [
 					'id'             => isset( $row['id'] ) ? (string) $row['id'] : '',
@@ -244,6 +257,7 @@ class PreviewController {
 					'revoked'        => (bool) $row['revoked'],
 					'expired'        => ! empty( $row['expired'] ),
 					'status'         => isset( $row['status'] ) ? (string) $row['status'] : 'active',
+					'review_state'   => $review_state,
 					'view_count'     => isset( $row['view_count'] ) ? (int) $row['view_count'] : 0,
 					'last_viewed_at' => isset( $row['last_viewed_at'] ) ? $row['last_viewed_at'] : null,
 				];
@@ -414,7 +428,9 @@ class PreviewController {
 		$result  = \previewshare_generate_preview_link(
 			$post_id,
 			null === $ttl ? null : absint( $ttl ),
-			(string) $request->get_param( 'label' )
+			(string) $request->get_param( 'label' ),
+			(bool) $request->get_param( 'responses_enabled' ),
+			(bool) $request->get_param( 'identity_required' )
 		);
 
 		if ( $result instanceof \WP_Error ) {

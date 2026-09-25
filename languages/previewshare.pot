@@ -9,17 +9,17 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-25T05:04:34+00:00\n"
+"POT-Creation-Date: 2026-09-25T17:08:43+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: previewshare\n"
 
 #. Plugin Name of the plugin
 #: previewshare.php
-#: src/Admin/Actions.php:571
+#: src/Admin/Actions.php:572
 #: src/Admin/Settings.php:42
 #: src/Admin/Settings.php:43
-#: assets/src/js/admin/main.js:302
+#: assets/src/js/admin/main.js:555
 msgid "PreviewShare"
 msgstr ""
 
@@ -43,205 +43,487 @@ msgstr ""
 msgid "https://mehulgohil.com/"
 msgstr ""
 
-#: src/Admin/Actions.php:440
-#: src/Admin/Actions.php:451
+#: src/Admin/Actions.php:441
+#: src/Admin/Actions.php:452
 msgid "Preview link unavailable"
 msgstr ""
 
-#: src/Admin/Actions.php:452
+#: src/Admin/Actions.php:453
 msgid "This preview link can no longer be opened. It may have expired, been revoked, or no longer match available content."
 msgstr ""
 
-#: src/Admin/Actions.php:453
+#: src/Admin/Actions.php:454
 msgid "Please ask the person who sent the link to generate and share a new PreviewShare link."
 msgstr ""
 
-#: src/Admin/Actions.php:504
+#: src/Admin/Actions.php:505
 msgid "Preview links are unavailable for this content status."
 msgstr ""
 
-#: src/Admin/Actions.php:505
+#: src/Admin/Actions.php:506
 msgid "Move the content to a draft, pending, scheduled, private, or published status before generating a link."
 msgstr ""
 
-#: src/Admin/Actions.php:512
+#: src/Admin/Actions.php:513
 msgid "No active preview link is available for this content."
 msgstr ""
 
-#: src/Admin/Actions.php:513
+#: src/Admin/Actions.php:514
 msgid "Generate a new PreviewShare link and send the new URL to reviewers."
 msgstr ""
 
-#: src/Admin/Actions.php:520
+#: src/Admin/Actions.php:521
 msgid "The latest preview link was revoked."
 msgstr ""
 
-#: src/Admin/Actions.php:521
+#: src/Admin/Actions.php:522
 msgid "Generate a new PreviewShare link before sharing this content again."
 msgstr ""
 
-#: src/Admin/Actions.php:528
+#: src/Admin/Actions.php:529
 msgid "The latest preview link has expired."
 msgstr ""
 
-#: src/Admin/Actions.php:529
+#: src/Admin/Actions.php:530
 msgid "Generate a new PreviewShare link or increase the expiry time before sharing."
 msgstr ""
 
-#: src/Admin/Actions.php:535
+#: src/Admin/Actions.php:536
 msgid "Preview links are available for this content."
 msgstr ""
 
-#: src/Admin/Actions.php:536
+#: src/Admin/Actions.php:537
 msgid "Copy an active link or generate a fresh one when reviewers need access."
 msgstr ""
 
-#: src/Admin/Actions.php:588
+#: src/Admin/Actions.php:589
 msgid "Preview sharing is unavailable for this content."
 msgstr ""
 
 #. translators: %d: Number of active preview links.
-#: src/Admin/Actions.php:600
+#: src/Admin/Actions.php:601
 #, php-format
 msgid "%d active preview link."
 msgid_plural "%d active preview links."
 msgstr[0] ""
 msgstr[1] ""
 
-#: src/Admin/Actions.php:604
-#: src/Admin/Actions.php:625
+#: src/Admin/Actions.php:605
+#: src/Admin/Actions.php:626
 msgid "Generate Preview Link"
 msgstr ""
 
-#: src/Admin/Actions.php:607
+#: src/Admin/Actions.php:608
 msgid "Revoke Active Links"
 msgstr ""
 
-#: src/Admin/Actions.php:609
+#: src/Admin/Actions.php:610
 msgid "The latest preview link is no longer usable. Generate a new link before sharing this content again."
 msgstr ""
 
-#: src/Admin/Actions.php:643
+#: src/Admin/Actions.php:644
 msgid "Admin generated link"
 msgstr ""
 
-#: src/Admin/Actions.php:660
-#: assets/src/js/admin/main.js:211
+#: src/Admin/Actions.php:661
+#: assets/src/js/admin/main.js:460
 msgid "Preview link could not be generated."
 msgstr ""
 
-#: src/Admin/Actions.php:685
-#: assets/src/js/admin/main.js:244
+#: src/Admin/Actions.php:686
+#: assets/src/js/admin/main.js:495
 msgid "Preview links revoked."
 msgstr ""
 
-#: src/Admin/Actions.php:685
+#: src/Admin/Actions.php:686
 msgid "No active preview links were found."
 msgstr ""
 
-#: src/Admin/Actions.php:715
-#: assets/src/js/admin/main.js:201
+#: src/Admin/Actions.php:716
+#: assets/src/js/admin/main.js:450
 msgid "Preview link generated."
 msgstr ""
 
-#: src/Admin/Actions.php:830
+#: src/Admin/Actions.php:831
 msgid "Draft preview"
 msgstr ""
 
-#: src/Admin/Actions.php:831
+#: src/Admin/Actions.php:832
 msgid "This content is shared privately. Search engines are blocked from indexing this preview link."
 msgstr ""
 
-#: src/Admin/Actions.php:928
+#: src/Admin/Actions.php:929
 msgid "Invalid post."
 msgstr ""
 
-#: src/Admin/Actions.php:934
+#: src/Admin/Actions.php:935
 msgid "PreviewShare is not available for this content."
 msgstr ""
 
-#: src/Admin/Actions.php:938
+#: src/Admin/Actions.php:939
 msgid "You are not allowed to manage preview links for this content."
 msgstr ""
 
-#: assets/src/js/admin/main.js:248
+#: src/Includes/ReviewForm.php:61
+msgid "This browser cannot send a response securely."
+msgstr ""
+
+#: src/Includes/ReviewForm.php:62
+msgid "Sending your response…"
+msgstr ""
+
+#: src/Includes/ReviewForm.php:63
+msgid "Your response could not be sent. Please try again."
+msgstr ""
+
+#: src/Includes/ReviewForm.php:64
+msgid "Your response was already received."
+msgstr ""
+
+#: src/Includes/ReviewForm.php:65
+msgid "Your response was received."
+msgstr ""
+
+#: src/Includes/ReviewForm.php:86
+msgid "PREVIEWSHARE REVIEW"
+msgstr ""
+
+#: src/Includes/ReviewForm.php:87
+msgid "Share your feedback"
+msgstr ""
+
+#: src/Includes/ReviewForm.php:88
+msgid "Your response is shared with the editor of this draft. It does not publish the content."
+msgstr ""
+
+#: src/Includes/ReviewForm.php:91
+msgid "Your response"
+msgstr ""
+
+#: src/Includes/ReviewForm.php:92
+msgid "Approve"
+msgstr ""
+
+#: src/Includes/ReviewForm.php:93
+msgid "Request changes"
+msgstr ""
+
+#: src/Includes/ReviewForm.php:94
+#: src/Includes/ReviewForm.php:96
+#: src/Services/ReviewResponseService.php:371
+msgid "Comment"
+msgstr ""
+
+#: src/Includes/ReviewForm.php:98
+msgid "Required when requesting changes or leaving a comment."
+msgstr ""
+
+#: src/Includes/ReviewForm.php:101
+#: src/Services/ReviewResponseService.php:363
+msgid "Name"
+msgstr ""
+
+#: src/Includes/ReviewForm.php:105
+#: src/Services/ReviewResponseService.php:367
+msgid "Email"
+msgstr ""
+
+#: src/Includes/ReviewForm.php:109
+msgid "Responses and any identity you provide are removed after 90 days."
+msgstr ""
+
+#: src/Includes/ReviewForm.php:110
+msgid "Send response"
+msgstr ""
+
+#: src/REST/ReviewController.php:137
+#: src/REST/ReviewController.php:149
+msgid "This preview link is unavailable."
+msgstr ""
+
+#: src/REST/ReviewController.php:144
+msgid "This preview link has expired."
+msgstr ""
+
+#: src/REST/ReviewController.php:147
+msgid "This preview link has been revoked."
+msgstr ""
+
+#: src/REST/ReviewController.php:163
+msgid "Review responses are unavailable for this preview."
+msgstr ""
+
+#: src/REST/ReviewController.php:167
+msgid "Review responses are disabled for this link."
+msgstr ""
+
+#: src/REST/ReviewController.php:175
+msgid "This response could not be accepted."
+msgstr ""
+
+#: src/REST/ReviewController.php:179
+msgid "Too many responses. Please try again later."
+msgstr ""
+
+#: src/REST/ReviewController.php:190
+msgid "Choose a valid response."
+msgstr ""
+
+#: src/REST/ReviewController.php:193
+msgid "Please refresh the page and try again."
+msgstr ""
+
+#: src/REST/ReviewController.php:196
+msgid "Your response is too long. Shorten it and try again."
+msgstr ""
+
+#: src/REST/ReviewController.php:199
+msgid "Enter a valid email address."
+msgstr ""
+
+#: src/REST/ReviewController.php:202
+msgid "Enter your name and email to respond."
+msgstr ""
+
+#: src/REST/ReviewController.php:205
+msgid "Add a comment for this response."
+msgstr ""
+
+#: src/REST/ReviewController.php:248
+msgid "Choose valid review settings."
+msgstr ""
+
+#: src/REST/ReviewController.php:252
+msgid "Only active links can accept responses."
+msgstr ""
+
+#: src/REST/ReviewController.php:255
+#: assets/src/js/admin/main.js:109
+msgid "Review settings could not be saved."
+msgstr ""
+
+#: src/REST/ReviewController.php:281
+msgid "This post is unavailable."
+msgstr ""
+
+#: src/REST/ReviewController.php:308
+msgid "This change request could not be resolved."
+msgstr ""
+
+#: src/REST/ReviewController.php:324
+msgid "This preview link was not found."
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:46
+msgid "PreviewShare reviews"
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:96
+msgid "This response was already received."
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:104
+msgid "PreviewShare review response"
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:114
+#: src/Services/ReviewResponseService.php:129
+msgid "The response could not be saved. Please try again."
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:310
+#: src/Services/ReviewResponseService.php:324
+#: src/Services/ReviewResponseService.php:351
+msgid "PreviewShare reviewer responses"
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:355
+msgid "Post ID"
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:359
+msgid "Response"
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:375
+msgid "Submitted (UTC)"
+msgstr ""
+
+#: assets/src/js/admin/main.js:32
+#: assets/src/js/settings.js:243
+msgid "Awaiting response"
+msgstr ""
+
+#: assets/src/js/admin/main.js:33
+#: assets/src/js/admin/main.js:40
+#: assets/src/js/settings.js:244
+msgid "Approved"
+msgstr ""
+
+#: assets/src/js/admin/main.js:34
+msgid "Approval needs review after edit"
+msgstr ""
+
+#: assets/src/js/admin/main.js:35
+#: assets/src/js/settings.js:246
+msgid "Changes requested"
+msgstr ""
+
+#: assets/src/js/admin/main.js:36
+#: assets/src/js/settings.js:247
+msgid "Comment received"
+msgstr ""
+
+#: assets/src/js/admin/main.js:41
+msgid "Requested changes"
+msgstr ""
+
+#: assets/src/js/admin/main.js:42
+msgid "Commented"
+msgstr ""
+
+#: assets/src/js/admin/main.js:82
+msgid "Review history could not be loaded."
+msgstr ""
+
+#: assets/src/js/admin/main.js:105
+msgid "Review settings saved."
+msgstr ""
+
+#: assets/src/js/admin/main.js:127
+msgid "Change request resolved."
+msgstr ""
+
+#: assets/src/js/admin/main.js:132
+msgid "Change request could not be resolved."
+msgstr ""
+
+#: assets/src/js/admin/main.js:152
+msgid "Hide review"
+msgstr ""
+
+#: assets/src/js/admin/main.js:153
+msgid "Review settings and history"
+msgstr ""
+
+#: assets/src/js/admin/main.js:158
+#: assets/src/js/admin/main.js:620
+msgid "Allow reviewer responses"
+msgstr ""
+
+#: assets/src/js/admin/main.js:170
+#: assets/src/js/admin/main.js:633
+msgid "Require name and email"
+msgstr ""
+
+#: assets/src/js/admin/main.js:189
+msgid "Responses and reviewer identity are removed after 90 days. Revoking the link stops new responses and keeps existing history until then."
+msgstr ""
+
+#: assets/src/js/admin/main.js:207
+msgid "Anonymous reviewer"
+msgstr ""
+
+#: assets/src/js/admin/main.js:237
+msgid "Resolve"
+msgstr ""
+
+#: assets/src/js/admin/main.js:245
+msgid "Resolved"
+msgstr ""
+
+#: assets/src/js/admin/main.js:252
+msgid "No responses yet."
+msgstr ""
+
+#: assets/src/js/admin/main.js:259
+msgid "Load more responses"
+msgstr ""
+
+#: assets/src/js/admin/main.js:499
 msgid "Preview links could not be revoked."
 msgstr ""
 
-#: assets/src/js/admin/main.js:260
-#: assets/src/js/settings.js:927
+#: assets/src/js/admin/main.js:511
+#: assets/src/js/settings.js:952
 msgid "Preview URL copied."
 msgstr ""
 
-#: assets/src/js/admin/main.js:264
+#: assets/src/js/admin/main.js:515
 msgid "Preview URL generated, but could not be copied."
 msgstr ""
 
-#: assets/src/js/admin/main.js:298
+#: assets/src/js/admin/main.js:550
 msgid "Generate public preview link"
 msgstr ""
 
-#: assets/src/js/admin/main.js:309
+#: assets/src/js/admin/main.js:562
 msgid "Enable Public Preview"
 msgstr ""
 
-#: assets/src/js/admin/main.js:321
+#: assets/src/js/admin/main.js:574
 msgid "PreviewShare will be available after the draft finishes saving."
 msgstr ""
 
-#: assets/src/js/admin/main.js:325
+#: assets/src/js/admin/main.js:578
 msgid "Save this content as a draft before generating a preview link."
 msgstr ""
 
-#: assets/src/js/admin/main.js:339
+#: assets/src/js/admin/main.js:592
 msgid "Public Preview expires in (hours)"
 msgstr ""
 
-#: assets/src/js/admin/main.js:348
+#: assets/src/js/admin/main.js:601
 msgid "Leave empty to use the site default from Settings. Use 0 for no automatic expiry."
 msgstr ""
 
-#: assets/src/js/admin/main.js:356
+#: assets/src/js/admin/main.js:609
 msgid "Link label"
 msgstr ""
 
-#: assets/src/js/admin/main.js:359
+#: assets/src/js/admin/main.js:612
 msgid "Client review, legal approval, etc."
 msgstr ""
 
-#: assets/src/js/admin/main.js:374
-#: assets/src/js/settings.js:1416
+#: assets/src/js/admin/main.js:626
+msgid "Reviewers can approve, request changes, or comment on this link. Responses are kept for 90 days."
+msgstr ""
+
+#: assets/src/js/admin/main.js:651
+#: assets/src/js/settings.js:1724
+#: assets/src/js/settings.js:1849
 msgid "Generate & copy"
 msgstr ""
 
-#: assets/src/js/admin/main.js:382
+#: assets/src/js/admin/main.js:659
 msgid "Revoke all"
 msgstr ""
 
-#: assets/src/js/admin/main.js:392
+#: assets/src/js/admin/main.js:669
 msgid "Preview URL"
 msgstr ""
 
-#: assets/src/js/admin/main.js:400
+#: assets/src/js/admin/main.js:677
 msgid "Copy preview URL"
 msgstr ""
 
 #. translators: %d: Number of preview links.
-#: assets/src/js/admin/main.js:415
+#: assets/src/js/admin/main.js:692
 #, js-format
 msgid "%d preview link"
 msgid_plural "%d preview links"
 msgstr[0] ""
 msgstr[1] ""
 
-#: assets/src/js/admin/main.js:432
-#: assets/src/js/settings.js:326
-#: assets/src/js/settings.js:328
+#: assets/src/js/admin/main.js:709
+#: assets/src/js/settings.js:343
+#: assets/src/js/settings.js:345
+#: assets/src/js/settings.js:1613
 msgid "Preview link"
 msgstr ""
 
 #. translators: %d: Number of preview link views.
-#: assets/src/js/admin/main.js:449
+#: assets/src/js/admin/main.js:726
 #, js-format
 msgid "%d view"
 msgid_plural "%d views"
@@ -249,495 +531,549 @@ msgstr[0] ""
 msgstr[1] ""
 
 #: assets/src/js/admin/utils.js:47
-#: assets/src/js/settings.js:202
-#: assets/src/js/settings.js:274
+#: assets/src/js/settings.js:207
+#: assets/src/js/settings.js:291
+#: assets/src/js/settings.js:1474
 msgid "Active"
 msgstr ""
 
 #: assets/src/js/admin/utils.js:49
-#: assets/src/js/settings.js:210
-#: assets/src/js/settings.js:282
+#: assets/src/js/settings.js:215
+#: assets/src/js/settings.js:299
+#: assets/src/js/settings.js:1478
 msgid "Expired"
 msgstr ""
 
 #: assets/src/js/admin/utils.js:51
-#: assets/src/js/settings.js:206
-#: assets/src/js/settings.js:286
+#: assets/src/js/settings.js:211
+#: assets/src/js/settings.js:303
+#: assets/src/js/settings.js:1482
 msgid "Revoked"
 msgstr ""
 
 #: assets/src/js/admin/utils.js:53
-#: assets/src/js/settings.js:213
+#: assets/src/js/settings.js:218
 msgid "Unknown"
 msgstr ""
 
-#: assets/src/js/settings.js:43
-#: assets/src/js/settings.js:1141
+#: assets/src/js/settings.js:51
+#: assets/src/js/settings.js:1166
 msgid "Overview"
 msgstr ""
 
-#: assets/src/js/settings.js:47
-#: assets/src/js/settings.js:1444
+#: assets/src/js/settings.js:55
+#: assets/src/js/settings.js:1877
 msgid "Preview links"
 msgstr ""
 
-#: assets/src/js/settings.js:51
-#: assets/src/js/settings.js:1586
+#: assets/src/js/settings.js:59
+#: assets/src/js/settings.js:2012
 msgid "Content types"
 msgstr ""
 
-#: assets/src/js/settings.js:55
-#: assets/src/js/settings.js:1789
+#: assets/src/js/settings.js:63
+#: assets/src/js/settings.js:2219
 msgid "Changelog"
 msgstr ""
 
-#: assets/src/js/settings.js:59
-#: assets/src/js/settings.js:1358
+#: assets/src/js/settings.js:67
+#: assets/src/js/settings.js:1383
 msgid "More plugins"
 msgstr ""
 
-#: assets/src/js/settings.js:65
-msgid "Preview, test, and assign installed themes to individual pages, posts, or taxonomy archives."
-msgstr ""
-
 #: assets/src/js/settings.js:73
-msgid "Optimize WordPress performance with asset controls, page caching, CDN rewriting, and cleanup tools."
+msgid "Preview installed themes privately and route ready WordPress content to them in controlled stages."
 msgstr ""
 
 #: assets/src/js/settings.js:81
-msgid "Create branded short links, manage redirects, cloak affiliate URLs, and export links via CSV."
+msgid "Optimize WordPress performance with asset controls, page caching, CDN rewriting, and cleanup tools."
 msgstr ""
 
 #: assets/src/js/settings.js:89
-msgid "Use MCP-compatible AI apps to manage WordPress content, internal links, media, comments, and site workflows."
+msgid "Create branded short links, manage redirects, cloak affiliate URLs, and export links via CSV."
 msgstr ""
 
 #: assets/src/js/settings.js:97
-msgid "Route transactional WordPress email through configured providers, with failover, retries, logs, and resending."
+msgid "Use MCP-compatible AI apps to manage WordPress content, internal links, media, comments, and site workflows."
 msgstr ""
 
 #: assets/src/js/settings.js:105
-msgid "Enhance WordPress core blocks with portable styles, practical patterns, and optional structured data from visible content."
+msgid "Route transactional WordPress email through configured providers, with failover, retries, logs, and resending."
 msgstr ""
 
 #: assets/src/js/settings.js:113
-msgid "Add Heroicons, Bootstrap Icons, Font Awesome Free, and custom SVG icons to the native WordPress Icon block."
+msgid "Enhance WordPress core blocks with portable styles, practical patterns, and optional structured data from visible content."
 msgstr ""
 
 #: assets/src/js/settings.js:121
-msgid "Give visitors a focused Reader Mode for posts, pages, and selected public post types."
+msgid "Add Heroicons, Bootstrap Icons, Font Awesome Free, and custom SVG icons to the native WordPress Icon block."
 msgstr ""
 
 #: assets/src/js/settings.js:129
-msgid "Manage WordPress metadata, canonical and robots output, social cards, JSON-LD, and sitemaps."
+msgid "Give visitors a focused Reader Mode for posts, pages, and selected public post types."
 msgstr ""
 
 #: assets/src/js/settings.js:137
 msgid "Protect WordPress forms and sign-in flows with reCAPTCHA, Cloudflare Turnstile, and hCaptcha."
 msgstr ""
 
-#: assets/src/js/settings.js:172
-#: assets/src/js/settings.js:178
-#: assets/src/js/settings.js:193
+#: assets/src/js/settings.js:177
+#: assets/src/js/settings.js:183
+#: assets/src/js/settings.js:198
 msgid "Never"
 msgstr ""
 
 #. translators: %d: Number of hours.
-#: assets/src/js/settings.js:188
+#: assets/src/js/settings.js:193
 #, js-format
 msgid "%d hours"
 msgstr ""
 
-#: assets/src/js/settings.js:198
-#: assets/src/js/settings.js:278
+#: assets/src/js/settings.js:203
+#: assets/src/js/settings.js:295
 msgid "Expiring soon"
 msgstr ""
 
-#: assets/src/js/settings.js:252
-#: assets/src/js/settings.js:294
-#: assets/src/js/settings.js:306
+#: assets/src/js/settings.js:245
+msgid "Approval needs review"
+msgstr ""
+
+#: assets/src/js/settings.js:269
+#: assets/src/js/settings.js:311
+#: assets/src/js/settings.js:323
+#: assets/src/js/settings.js:1522
+#: assets/src/js/settings.js:1561
+#: assets/src/js/settings.js:1577
 msgid "Content"
 msgstr ""
 
-#: assets/src/js/settings.js:298
-#: assets/src/js/settings.js:302
+#: assets/src/js/settings.js:315
+#: assets/src/js/settings.js:319
+#: assets/src/js/settings.js:1550
 msgid "Untitled content"
 msgstr ""
 
 #. translators: 1: Content type. 2: Post ID.
-#: assets/src/js/settings.js:305
+#: assets/src/js/settings.js:322
+#: assets/src/js/settings.js:1556
 #, js-format
 msgid "%1$s - ID %2$d"
 msgstr ""
 
-#: assets/src/js/settings.js:323
+#: assets/src/js/settings.js:340
+#: assets/src/js/settings.js:1523
+#: assets/src/js/settings.js:1608
 msgid "Label"
 msgstr ""
 
-#: assets/src/js/settings.js:333
+#: assets/src/js/settings.js:350
+#: assets/src/js/settings.js:1466
+#: assets/src/js/settings.js:1524
+#: assets/src/js/settings.js:1619
 msgid "Status"
 msgstr ""
 
-#: assets/src/js/settings.js:362
+#: assets/src/js/settings.js:386
+#: assets/src/js/settings.js:1663
 msgid "Extend"
 msgstr ""
 
-#: assets/src/js/settings.js:371
+#: assets/src/js/settings.js:395
+#: assets/src/js/settings.js:1525
+#: assets/src/js/settings.js:1672
 msgid "Views"
 msgstr ""
 
-#: assets/src/js/settings.js:377
+#: assets/src/js/settings.js:401
+#: assets/src/js/settings.js:1526
+#: assets/src/js/settings.js:1680
 msgid "Expires"
 msgstr ""
 
-#: assets/src/js/settings.js:384
+#: assets/src/js/settings.js:408
+#: assets/src/js/settings.js:1527
+#: assets/src/js/settings.js:1689
 msgid "Last viewed"
 msgstr ""
 
-#: assets/src/js/settings.js:391
+#: assets/src/js/settings.js:415
 msgid "Created"
 msgstr ""
 
-#: assets/src/js/settings.js:529
+#: assets/src/js/settings.js:554
 msgid "Settings could not be loaded."
 msgstr ""
 
-#: assets/src/js/settings.js:614
+#: assets/src/js/settings.js:639
 msgid "Preview links could not be loaded."
 msgstr ""
 
-#: assets/src/js/settings.js:709
-#: assets/src/js/settings.js:755
-#: assets/src/js/settings.js:826
+#: assets/src/js/settings.js:734
+#: assets/src/js/settings.js:780
+#: assets/src/js/settings.js:851
 msgid "Settings saved."
 msgstr ""
 
-#: assets/src/js/settings.js:729
+#: assets/src/js/settings.js:754
 msgid "Settings could not be saved."
 msgstr ""
 
-#: assets/src/js/settings.js:841
+#: assets/src/js/settings.js:866
 msgid "Default settings restored."
 msgstr ""
 
-#: assets/src/js/settings.js:867
-#: assets/src/js/settings.js:883
+#: assets/src/js/settings.js:892
+#: assets/src/js/settings.js:908
 msgid "Default settings could not be restored."
 msgstr ""
 
-#: assets/src/js/settings.js:933
-#: assets/src/js/settings.js:943
+#: assets/src/js/settings.js:958
+#: assets/src/js/settings.js:968
 msgid "Preview URL generated. Copy it from the field below."
 msgstr ""
 
-#: assets/src/js/settings.js:956
+#: assets/src/js/settings.js:981
 msgid "Preview URL could not be generated."
 msgstr ""
 
-#: assets/src/js/settings.js:975
+#: assets/src/js/settings.js:1000
 msgid "Preview link revoked."
 msgstr ""
 
-#: assets/src/js/settings.js:982
+#: assets/src/js/settings.js:1007
 msgid "Preview link could not be revoked."
 msgstr ""
 
 #. translators: %s: New preview-link expiry date and time.
-#: assets/src/js/settings.js:1003
+#: assets/src/js/settings.js:1028
 #, js-format
 msgid "Access extended by 24 hours. New expiry: %s."
 msgstr ""
 
-#: assets/src/js/settings.js:1015
+#: assets/src/js/settings.js:1040
 msgid "Preview link could not be extended. Its expiry is unchanged."
 msgstr ""
 
-#: assets/src/js/settings.js:1034
+#: assets/src/js/settings.js:1059
 msgid "PreviewShare notices"
 msgstr ""
 
-#: assets/src/js/settings.js:1060
+#: assets/src/js/settings.js:1085
 msgid "Unsaved changes"
 msgstr ""
 
-#: assets/src/js/settings.js:1061
+#: assets/src/js/settings.js:1086
 msgid "Saving changes…"
 msgstr ""
 
-#: assets/src/js/settings.js:1062
+#: assets/src/js/settings.js:1087
 msgid "Saved"
 msgstr ""
 
-#: assets/src/js/settings.js:1063
+#: assets/src/js/settings.js:1088
 msgid "Save failed"
 msgstr ""
 
-#: assets/src/js/settings.js:1091
+#: assets/src/js/settings.js:1116
 msgid "Cancel"
 msgstr ""
 
-#: assets/src/js/settings.js:1102
+#: assets/src/js/settings.js:1127
 msgid "Save changes"
 msgstr ""
 
-#: assets/src/js/settings.js:1124
+#: assets/src/js/settings.js:1149
 msgid "Restore defaults"
 msgstr ""
 
-#: assets/src/js/settings.js:1142
+#: assets/src/js/settings.js:1167
 msgid "Share unpublished work. Keep control of access."
 msgstr ""
 
-#: assets/src/js/settings.js:1153
+#: assets/src/js/settings.js:1178
 msgid "Loaded active links"
 msgstr ""
 
-#: assets/src/js/settings.js:1154
+#: assets/src/js/settings.js:1179
 msgid "Active links"
 msgstr ""
 
-#: assets/src/js/settings.js:1159
+#: assets/src/js/settings.js:1184
 msgid "Default expiry"
 msgstr ""
 
-#: assets/src/js/settings.js:1164
+#: assets/src/js/settings.js:1189
 msgid "Token cache"
 msgstr ""
 
-#: assets/src/js/settings.js:1166
+#: assets/src/js/settings.js:1191
 msgid "Enabled"
 msgstr ""
 
-#: assets/src/js/settings.js:1167
+#: assets/src/js/settings.js:1192
 msgid "Disabled"
 msgstr ""
 
 #. translators: 1: Number of loaded links. 2: Total links.
-#: assets/src/js/settings.js:1177
+#: assets/src/js/settings.js:1202
 #, js-format
 msgid "%1$d of %2$d links loaded."
 msgstr ""
 
-#: assets/src/js/settings.js:1199
+#: assets/src/js/settings.js:1224
 msgid "Enabled content types"
 msgstr ""
 
-#: assets/src/js/settings.js:1204
+#: assets/src/js/settings.js:1229
 msgid "Choose which public content can receive a preview link."
 msgstr ""
 
-#: assets/src/js/settings.js:1227
+#: assets/src/js/settings.js:1252
 msgid "No content types are enabled."
 msgstr ""
 
-#: assets/src/js/settings.js:1238
+#: assets/src/js/settings.js:1263
 msgid "Manage content types"
 msgstr ""
 
-#: assets/src/js/settings.js:1250
+#: assets/src/js/settings.js:1275
 msgid "Protection summary"
 msgstr ""
 
-#: assets/src/js/settings.js:1255
+#: assets/src/js/settings.js:1280
 msgid "Preview links grant read-only access to unpublished items without requiring an account."
 msgstr ""
 
-#: assets/src/js/settings.js:1264
+#: assets/src/js/settings.js:1289
 msgid "Tokens are stored as hashes"
 msgstr ""
 
-#: assets/src/js/settings.js:1268
+#: assets/src/js/settings.js:1293
 msgid "Search engines are asked not to index shared previews"
 msgstr ""
 
-#: assets/src/js/settings.js:1272
+#: assets/src/js/settings.js:1297
 msgid "Revoke access at any time"
 msgstr ""
 
-#: assets/src/js/settings.js:1297
+#: assets/src/js/settings.js:1322
 msgid "Site defaults"
 msgstr ""
 
-#: assets/src/js/settings.js:1302
+#: assets/src/js/settings.js:1327
 msgid "Changes save automatically after each field update."
 msgstr ""
 
-#: assets/src/js/settings.js:1308
+#: assets/src/js/settings.js:1333
 msgid "Default expiry in hours"
 msgstr ""
 
-#: assets/src/js/settings.js:1312
+#: assets/src/js/settings.js:1337
 msgid "Use 0 for links that do not expire automatically."
 msgstr ""
 
-#: assets/src/js/settings.js:1323
+#: assets/src/js/settings.js:1348
 msgid "Enable token lookup caching"
 msgstr ""
 
-#: assets/src/js/settings.js:1328
+#: assets/src/js/settings.js:1353
 msgid "Recommended when the site has a persistent object cache."
 msgstr ""
 
-#: assets/src/js/settings.js:1336
+#: assets/src/js/settings.js:1361
 msgid "Enable diagnostic logging"
 msgstr ""
 
-#: assets/src/js/settings.js:1341
+#: assets/src/js/settings.js:1366
 msgid "Enable this while troubleshooting. Diagnostic events are made available to site integrations; PreviewShare does not store or display a log here."
 msgstr ""
 
-#: assets/src/js/settings.js:1359
+#: assets/src/js/settings.js:1384
 msgid "Explore more tools from the PreviewShare team."
 msgstr ""
 
 #. translators: %s: Plugin name.
-#: assets/src/js/settings.js:1388
+#: assets/src/js/settings.js:1413
 #, js-format
 msgid "Learn more about %s"
 msgstr ""
 
-#: assets/src/js/settings.js:1395
+#: assets/src/js/settings.js:1420
 msgid "Learn more"
 msgstr ""
 
-#: assets/src/js/settings.js:1428
+#: assets/src/js/settings.js:1452
+#: assets/src/js/settings.js:1940
+msgid "Search preview links"
+msgstr ""
+
+#: assets/src/js/settings.js:1454
+msgid "Search by content or label"
+msgstr ""
+
+#: assets/src/js/settings.js:1470
+msgid "All statuses"
+msgstr ""
+
+#: assets/src/js/settings.js:1510
+msgid "Preview link inventory"
+msgstr ""
+
+#: assets/src/js/settings.js:1531
+#: assets/src/js/settings.js:1698
+msgid "Actions"
+msgstr ""
+
+#: assets/src/js/settings.js:1746
+#: assets/src/js/settings.js:1861
 msgid "Revoke link"
 msgstr ""
 
+#: assets/src/js/settings.js:1763
+#: assets/src/js/settings.js:1947
+msgid "No preview links match this view."
+msgstr ""
+
+#. translators: 1: Current page. 2: Number of pages.
+#: assets/src/js/settings.js:1777
+#, js-format
+msgid "Page %1$d of %2$d"
+msgstr ""
+
+#: assets/src/js/settings.js:1793
+msgid "Previous"
+msgstr ""
+
+#: assets/src/js/settings.js:1806
+msgid "Next"
+msgstr ""
+
 #. translators: %d: Number of links.
-#: assets/src/js/settings.js:1447
+#: assets/src/js/settings.js:1880
 #, js-format
 msgid "%d links in this site inventory."
 msgstr ""
 
 #. translators: %d: Number of loaded expiring links.
-#: assets/src/js/settings.js:1472
+#: assets/src/js/settings.js:1905
 #, js-format
 msgid "Expiring soon (%d)"
 msgstr ""
 
-#: assets/src/js/settings.js:1483
+#: assets/src/js/settings.js:1916
 msgid "Only loaded links are included. Load more links to include the rest of the inventory."
 msgstr ""
 
-#: assets/src/js/settings.js:1493
-msgid "The preview link listing is unavailable in this WordPress version."
-msgstr ""
-
-#: assets/src/js/settings.js:1514
-msgid "Search preview links"
-msgstr ""
-
-#: assets/src/js/settings.js:1521
-msgid "No preview links match this view."
-msgstr ""
-
 #. translators: 1: Number of loaded links. 2: Total links.
-#: assets/src/js/settings.js:1540
+#: assets/src/js/settings.js:1966
 #, js-format
 msgid "%1$d of %2$d links loaded. Load more to search older links."
 msgstr ""
 
-#: assets/src/js/settings.js:1557
+#: assets/src/js/settings.js:1983
 msgid "Load more links"
 msgstr ""
 
-#: assets/src/js/settings.js:1587
+#: assets/src/js/settings.js:2013
 msgid "Control where editors can create secure preview links."
 msgstr ""
 
-#: assets/src/js/settings.js:1595
+#: assets/src/js/settings.js:2021
 msgid "Search content types"
 msgstr ""
 
-#: assets/src/js/settings.js:1598
+#: assets/src/js/settings.js:2024
 msgid "Search by name or key"
 msgstr ""
 
-#: assets/src/js/settings.js:1645
+#: assets/src/js/settings.js:2071
 msgid "Built-in"
 msgstr ""
 
-#: assets/src/js/settings.js:1649
+#: assets/src/js/settings.js:2075
 msgid "Custom"
 msgstr ""
 
 #. translators: %s: Content type label.
-#: assets/src/js/settings.js:1657
+#: assets/src/js/settings.js:2083
 #, js-format
 msgid "Enable %s"
 msgstr ""
 
-#: assets/src/js/settings.js:1684
+#: assets/src/js/settings.js:2110
 msgid "No matching content types found."
 msgstr ""
 
 #. translators: 1: Enabled count. 2: Total count.
-#: assets/src/js/settings.js:1698
+#: assets/src/js/settings.js:2124
 #, js-format
 msgid "%1$d of %2$d content types enabled"
 msgstr ""
 
-#: assets/src/js/settings.js:1710
+#: assets/src/js/settings.js:2136
 msgid "PreviewShare is disabled until at least one content type is selected."
 msgstr ""
 
-#: assets/src/js/settings.js:1726
+#: assets/src/js/settings.js:2152
 msgid "Redesigned the settings workspace across all five tabs."
 msgstr ""
 
-#: assets/src/js/settings.js:1730
+#: assets/src/js/settings.js:2156
 msgid "Added expiring-link status and a fixed 24-hour extension action."
 msgstr ""
 
-#: assets/src/js/settings.js:1734
+#: assets/src/js/settings.js:2160
 msgid "Added verified plugin cards in More plugins."
 msgstr ""
 
-#: assets/src/js/settings.js:1743
+#: assets/src/js/settings.js:2164
+msgid "Added optional reviewer responses with approval tracking and 90-day retention."
+msgstr ""
+
+#: assets/src/js/settings.js:2173
 msgid "Validated preview-link editor and admin workflows with WordPress 7.1."
 msgstr ""
 
-#: assets/src/js/settings.js:1747
+#: assets/src/js/settings.js:2177
 msgid "Prepared editor controls for the WordPress 7.1 component API."
 msgstr ""
 
-#: assets/src/js/settings.js:1756
+#: assets/src/js/settings.js:2186
 msgid "Improved diagnostics, dependency audit coverage, and release automation."
 msgstr ""
 
-#: assets/src/js/settings.js:1760
+#: assets/src/js/settings.js:2190
 msgid "Refined WordPress.org metadata and plugin discoverability copy."
 msgstr ""
 
-#: assets/src/js/settings.js:1769
+#: assets/src/js/settings.js:2199
 msgid "Added secure preview links for draft, pending, and scheduled content."
 msgstr ""
 
-#: assets/src/js/settings.js:1773
+#: assets/src/js/settings.js:2203
 msgid "Added editor controls, multiple links, views, noindex directives, and revocation."
 msgstr ""
 
-#: assets/src/js/settings.js:1777
+#: assets/src/js/settings.js:2207
 msgid "Added global settings and hashed token storage in post meta."
 msgstr ""
 
-#: assets/src/js/settings.js:1790
+#: assets/src/js/settings.js:2220
 msgid "Release notes for the PreviewShare settings experience."
 msgstr ""
 
-#: assets/src/js/settings.js:1893
+#: assets/src/js/settings.js:2323
 msgid "PreviewShare icon"
 msgstr ""
 
-#: assets/src/js/settings.js:1918
+#: assets/src/js/settings.js:2348
 msgid "View documentation"
 msgstr ""
 
-#: assets/src/js/settings.js:1928
+#: assets/src/js/settings.js:2358
 msgid "Support"
 msgstr ""
 
-#: assets/src/js/settings.js:1937
+#: assets/src/js/settings.js:2367
 msgid "PreviewShare settings"
 msgstr ""

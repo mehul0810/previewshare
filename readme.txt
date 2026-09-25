@@ -34,6 +34,8 @@ PreviewShare stores token hashes instead of plain-text tokens, adds noindex/nofo
 * Set a default expiration time for preview links from the PreviewShare settings screen.
 * Override the expiration time per post or page.
 * Create multiple labeled preview links for different reviewers.
+* Optionally collect approvals, change requests, and comments on individual preview links, with optional or required reviewer name and email.
+* See review history in the editor and the current review state in the preview-link inventory. Approvals are flagged for re-review after the draft changes.
 * Revoke preview access when a link should stop working.
 * View and manage preview link status, expiry, labels, and view counts from the settings screen.
 * Choose which public post types support public preview sharing.
@@ -105,6 +107,14 @@ PreviewShare stores token hashes and token metadata in `wp_postmeta`. Raw tokens
 
 Expired tokens stop resolving to content. The editor panel will show the expired state and re-enabling preview sharing generates a fresh token.
 
+= Can reviewers respond without a WordPress account? =
+
+Yes, if an editor enables reviewer responses for a specific preview link. Anyone with that link can approve, request changes, or leave a comment. Editors can require a name and email address, review the history, and resolve change requests. Revoking or expiring the link stops new responses.
+
+= How long is reviewer feedback kept? =
+
+Responses, comments, and any name or email supplied by the reviewer are stored as private WordPress records and scheduled for automatic deletion after 90 days. The records are available through WordPress personal-data export and erasure tools when an email address was supplied. Site owners should include this use in their privacy notice and ensure WordPress scheduled tasks run reliably.
+
 = Does PreviewShare expose private content publicly? =
 
 PreviewShare only exposes a specific content item to visitors who have a valid preview URL. Treat preview URLs like private sharing links and send them only to intended reviewers.
@@ -127,6 +137,7 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 * Added an Expiring soon view and a fixed 24-hour extension action for eligible preview links.
 * Added a verified plugin catalog with product-specific descriptions and destinations.
 * Added browser lifecycle coverage for secure preview access, expiration, revocation, and published-content behavior.
+* Added optional reviewer approvals, change requests, and comments per preview link, with editor history, stale-approval status, and 90-day feedback retention.
 
 = 1.0.2 =
 * Validated preview-link editor and admin workflows with WordPress 7.1.

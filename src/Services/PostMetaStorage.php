@@ -18,9 +18,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Tokens are stored as HMAC hashes. Each post can have multiple preview links,
  * while legacy single-token meta remains readable for existing installs.
  *
- * @phpstan-type LinkRecord array{hash:string,label:string,created_at:int,created_by:int,expires_at:int|null,revoked:int,last_viewed_at:int|null,view_count:int}
- * @phpstan-type LinkResponse array{id:string,token_hash:string,label:string,created_at:int,created_by:int,expires_at:int|null,revoked:bool,expired:bool,status:string,last_viewed_at:int|null,view_count:int}
- * @phpstan-type LinkListItem array{id:string,token_hash:string,label:string,created_at:int,created_by:int,expires_at:int|null,revoked:bool,expired:bool,status:string,last_viewed_at:int|null,view_count:int,post_id:int}
+ * @phpstan-type LinkRecord array{hash:string,label:string,created_at:int,created_by:int,expires_at:int|null,revoked:int,last_viewed_at:int|null,view_count:int,responses_enabled:bool,identity_required:bool}
+ * @phpstan-type LinkResponse array{id:string,token_hash:string,label:string,created_at:int,created_by:int,expires_at:int|null,revoked:bool,expired:bool,status:string,last_viewed_at:int|null,view_count:int,responses_enabled:bool,identity_required:bool}
+ * @phpstan-type LinkListItem array{id:string,token_hash:string,label:string,created_at:int,created_by:int,expires_at:int|null,revoked:bool,expired:bool,status:string,last_viewed_at:int|null,view_count:int,responses_enabled:bool,identity_required:bool,post_id:int}
  */
 class PostMetaStorage {
 
@@ -53,9 +53,11 @@ class PostMetaStorage {
 	 * @param string $token Raw token.
 	 * @param int    $ttl_hours Hours until expiration. 0 for no expiry.
 	 * @param string $label Optional link label.
+	 * @param bool   $responses_enabled Whether reviewers may respond.
+	 * @param bool   $identity_required Whether response identity is required.
 	 * @return bool
 	 */
-	public function store_token( int $post_id, string $token, int $ttl_hours = 6, string $label = '' ): bool {
+	public function store_token( int $post_id, string $token, int $ttl_hours = 6, string $label = '', bool $responses_enabled = false, bool $identity_required = false ): bool {
 		$hash                  = $this->token_service->hash( $token );
 		$now                   = time();
 		$expires               = $ttl_hours > 0 ? ( $now + ( $ttl_hours * HOUR_IN_SECONDS ) ) : null;
@@ -73,6 +75,8 @@ class PostMetaStorage {
 				'revoked'        => 0,
 				'last_viewed_at' => null,
 				'view_count'     => 0,
+				'responses_enabled' => $responses_enabled,
+				'identity_required' => $responses_enabled && $identity_required,
 			],
 			$hash
 		);
@@ -141,6 +145,34 @@ class PostMetaStorage {
 
 		if ( ! $this->is_link_active( $link ) ) {
 			$this->delete_cache( $hash );
+			return null;
+		}
+
+		return [
+			'post_id' => $post_id,
+			'hash'    => $hash,
+			'link'    => $link,
+		];
+	}
+
+	/**
+	 * Resolve a link by its stored identifier, including revoked links.
+	 *
+	 * Callers must check the current user's post capability before returning
+	 * this context or its response history.
+	 *
+	 * @param string $id Link identifier.
+	 * @return array{post_id:int,hash:string,link:LinkRecord}|null
+	 */
+	public function get_link_context_by_id( string $id ): ?array {
+		$hash = strtolower( $id );
+		if ( ! preg_match( '/^[a-f0-9]{64}$/', $hash ) ) {
+			return null;
+		}
+
+		$post_id = $this->get_post_id_by_hash( $hash );
+		$link    = $post_id ? $this->get_link_record( $post_id, $hash ) : null;
+		if ( ! $link ) {
 			return null;
 		}
 
@@ -398,6 +430,51 @@ class PostMetaStorage {
 		$this->delete_cache( $hash );
 
 		return [ 'expires_at' => (int) $updated_links[ $hash ]['expires_at'] ];
+	}
+
+	/**
+	 * Set the response policy for one link without changing its URL or history.
+	 *
+	 * @param string $id Link identifier.
+	 * @param bool   $enabled Whether responses are enabled.
+	 * @param bool   $identity_required Whether both name and email are required.
+	 * @return bool
+	 */
+	public function set_review_policy_by_id( string $id, bool $enabled, bool $identity_required ): bool {
+		$context = $this->get_link_context_by_id( $id );
+		if ( ! $context ) {
+			return false;
+		}
+
+		$post_id  = $context['post_id'];
+		$hash     = $context['hash'];
+		$previous = $this->get_links_for_post( $post_id );
+		if ( ! isset( $previous[ $hash ] ) ) {
+			return false;
+		}
+
+		$updated                               = $previous;
+		$updated[ $hash ]['responses_enabled'] = $enabled;
+		$updated[ $hash ]['identity_required'] = $enabled && $identity_required;
+		$detail                                = array_merge(
+			$context['link'],
+			[
+				'responses_enabled' => $enabled,
+				'identity_required' => $enabled && $identity_required,
+			]
+		);
+
+		if ( ! $this->update_required_post_meta( $post_id, self::LINKS_META_KEY, $updated ) ) {
+			return false;
+		}
+
+		if ( ! $this->update_required_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $detail ) ) {
+			$this->update_required_post_meta( $post_id, self::LINKS_META_KEY, $previous );
+			return false;
+		}
+
+		$this->delete_cache( $hash );
+		return true;
 	}
 
 	/**
@@ -683,6 +760,8 @@ class PostMetaStorage {
 			'revoked'        => ! empty( $link['revoked'] ) ? 1 : 0,
 			'last_viewed_at' => array_key_exists( 'last_viewed_at', $link ) && null !== $link['last_viewed_at'] ? (int) $link['last_viewed_at'] : null,
 			'view_count'     => isset( $link['view_count'] ) ? max( 0, (int) $link['view_count'] ) : 0,
+			'responses_enabled' => ! empty( $link['responses_enabled'] ),
+			'identity_required' => ! empty( $link['responses_enabled'] ) && ! empty( $link['identity_required'] ),
 		];
 	}
 
@@ -706,6 +785,8 @@ class PostMetaStorage {
 			'status'         => $this->get_link_status( $link ),
 			'last_viewed_at' => $link['last_viewed_at'],
 			'view_count'     => (int) $link['view_count'],
+			'responses_enabled' => $link['responses_enabled'],
+			'identity_required' => $link['identity_required'],
 		];
 	}
 
@@ -805,6 +886,8 @@ class PostMetaStorage {
 				'status'         => $item['status'],
 				'last_viewed_at' => $item['last_viewed_at'],
 				'view_count'     => $item['view_count'],
+				'responses_enabled' => $item['responses_enabled'],
+				'identity_required' => $item['identity_required'],
 				'post_id'        => isset( $row['post_id'] ) ? (int) $row['post_id'] : 0,
 			];
 		}

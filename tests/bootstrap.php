@@ -196,6 +196,15 @@ if ( ! class_exists( 'WP_Post' ) ) {
 		/** @var string */
 		public $post_status;
 
+		/** @var string */
+		public $post_title;
+
+		/** @var string */
+		public $post_content;
+
+		/** @var string */
+		public $post_excerpt;
+
 		/**
 		 * @param array<string,mixed> $data Post data.
 		 */
@@ -203,6 +212,9 @@ if ( ! class_exists( 'WP_Post' ) ) {
 			$this->ID          = (int) ( $data['ID'] ?? 0 );
 			$this->post_type   = (string) ( $data['post_type'] ?? 'post' );
 			$this->post_status = (string) ( $data['post_status'] ?? 'draft' );
+			$this->post_title   = (string) ( $data['post_title'] ?? '' );
+			$this->post_content = (string) ( $data['post_content'] ?? '' );
+			$this->post_excerpt = (string) ( $data['post_excerpt'] ?? '' );
 		}
 	}
 }

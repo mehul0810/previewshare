@@ -128,3 +128,52 @@
 	font-size: 12px;
 	line-height: 1.4;
 }
+
+.previewshare-panel__review {
+	margin-top: 6px;
+}
+
+.previewshare-panel__review-details {
+	margin-top: 8px;
+	padding: 12px;
+	border: 1px solid #dce5f0;
+	border-radius: 6px;
+	background: #f7f9fc;
+}
+
+.previewshare-panel__review-details .components-toggle-control {
+	margin-bottom: 12px;
+}
+
+.previewshare-panel__review-state {
+	margin: 4px 0 8px;
+	color: #194a9a;
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.previewshare-panel__review-history {
+	margin: 12px 0;
+	padding: 0;
+	list-style: none;
+}
+
+.previewshare-panel__review-history li {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	padding: 10px 0;
+	border-top: 1px solid #dce5f0;
+	font-size: 12px;
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+}
+
+.previewshare-panel__review-history time {
+	color: #607086;
+}
+
+.previewshare-panel__review-history p {
+	margin: 4px 0;
+	white-space: pre-wrap;
+}
