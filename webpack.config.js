@@ -51,13 +51,14 @@ const config = {
 				plugin.constructor.name !== 'DependencyExtractionWebpackPlugin'
 		),
 		new DependencyExtractionWebpackPlugin( {
-			// WordPress 5.8 does not register react-jsx-runtime. Bundle it so the
-			// settings app stays compatible with the declared minimum version.
+			// WordPress 5.8 does not register react-jsx-runtime or wp-primitives.
+			// Bundle them so the settings app supports the declared minimum version.
 			useDefaults: false,
 			requestToExternal( request ) {
 				if (
 					request === 'react/jsx-runtime' ||
-					request === 'react/jsx-dev-runtime'
+					request === 'react/jsx-dev-runtime' ||
+					request === '@wordpress/primitives'
 				) {
 					return undefined;
 				}

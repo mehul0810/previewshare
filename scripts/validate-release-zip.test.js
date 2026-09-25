@@ -78,31 +78,34 @@ describe( 'release ZIP validation', () => {
 		}
 	} );
 
-	test( 'rejects script dependencies missing from WordPress 5.8', () => {
-		const { tempDirectory, zipPath } = writeFixtureZip(
-			[],
-			undefined,
-			"<?php return array('dependencies' => array('react-jsx-runtime'));"
-		);
-
-		try {
-			const result = spawnSync(
-				'bash',
-				[ 'scripts/validate-release-zip.sh', zipPath ],
-				{
-					cwd: process.cwd(),
-					encoding: 'utf8',
-				}
+	test.each( [ 'react-jsx-runtime', 'wp-primitives' ] )(
+		'rejects script dependency %s missing from WordPress 5.8',
+		( dependency ) => {
+			const { tempDirectory, zipPath } = writeFixtureZip(
+				[],
+				undefined,
+				`<?php return array('dependencies' => array('${ dependency }'));`
 			);
 
-			expect( result.status ).toBe( 1 );
-			expect( result.stderr ).toContain(
-				'Settings bundle requires react-jsx-runtime'
-			);
-		} finally {
-			rmSync( tempDirectory, { recursive: true, force: true } );
+			try {
+				const result = spawnSync(
+					'bash',
+					[ 'scripts/validate-release-zip.sh', zipPath ],
+					{
+						cwd: process.cwd(),
+						encoding: 'utf8',
+					}
+				);
+
+				expect( result.status ).toBe( 1 );
+				expect( result.stderr ).toContain(
+					'Settings bundle depends on a script handle that WordPress 5.8 does not register.'
+				);
+			} finally {
+				rmSync( tempDirectory, { recursive: true, force: true } );
+			}
 		}
-	} );
+	);
 
 	test( 'rejects wp-env configuration and override files', () => {
 		const { tempDirectory, zipPath } = writeFixtureZip( [

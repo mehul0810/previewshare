@@ -53,8 +53,8 @@ for required_path in "${required_paths[@]}"; do
 	fi
 done
 
-if unzip -p "${ZIP_PATH}" "${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.min.asset.php" | grep -Fq "'react-jsx-runtime'"; then
-	echo "Settings bundle requires react-jsx-runtime, which is unavailable in WordPress 5.8." >&2
+if unzip -p "${ZIP_PATH}" "${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.min.asset.php" | grep -Eq "'(react-jsx-runtime|wp-primitives)'"; then
+	echo "Settings bundle depends on a script handle that WordPress 5.8 does not register." >&2
 	exit 1
 fi
 
