@@ -11,6 +11,7 @@ import {
 	trash,
 } from '@wordpress/icons';
 import {
+	buildRestRequestUrl,
 	fallbackSettings,
 	getRestBase,
 	getInventoryBatchState,
@@ -57,6 +58,11 @@ import {
 	];
 
 	function apiFetch( path, options = {} ) {
+		const requestUrl = buildRestRequestUrl(
+			restBase,
+			path,
+			window.location.origin
+		);
 		const headers = Object.assign(
 			{
 				'Content-Type': 'application/json',
@@ -70,7 +76,7 @@ import {
 			requestOptions.body = JSON.stringify( requestOptions.body );
 		}
 
-		return fetch( restBase + path, requestOptions ).then( ( response ) => {
+		return fetch( requestUrl, requestOptions ).then( ( response ) => {
 			if ( ! response.ok ) {
 				return response
 					.json()
