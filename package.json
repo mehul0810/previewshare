@@ -1,6 +1,6 @@
 {
   "name": "previewshare",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "PreviewShare lets you securely share preview links for draft, pending, or scheduled content without publishing it publicly.",
   "homepage": "https://github.com/mehul0810/previewshare#readme",
   "license": "GPL-3.0-or-later",
@@ -18,7 +18,7 @@
     "url": "git+https://github.com/mehul0810/previewshare.git"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.19.0"
   },
   "overrides": {
     "http-proxy-middleware": "3.0.7",
@@ -41,7 +41,7 @@
   ],
   "scripts": {
     "start": "wp-scripts start --mode development",
-    "prebuild": "node -e \"const major = Number(process.versions.node.split('.')[0]); if (major < 20) { console.error('PreviewShare build requires Node.js 20 or newer.'); process.exit(1); }\"",
+    "prebuild": "node -e \"const [major, minor] = process.versions.node.split('.').map(Number); if (major < 20 || (major === 20 && minor < 19)) { console.error('PreviewShare build requires Node.js 20.19.0 or newer.'); process.exit(1); }\"",
     "build": "wp-scripts build --mode production",
     "plugin-zip": "npm run build && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress && bash scripts/build-release-zip.sh",
     "validate:zip": "bash scripts/validate-release-zip.sh",
@@ -51,20 +51,27 @@
     "lint:css": "wp-scripts lint-style \"assets/src/css/**/*.css\"",
     "lint:js": "wp-scripts lint-js assets/src/js webpack.config.js wp-textdomain.js",
     "test:abilities:runtime": "bash scripts/run-abilities-api-wp-env.sh",
+    "test:e2e": "bash scripts/run-e2e-wp-env.sh",
+    "test:e2e:playwright": "wp-scripts test-playwright --config=playwright.config.js",
     "test:js": "wp-scripts test-unit-js"
   },
   "devDependencies": {
     "@babel/core": "^7.28.5",
     "@babel/preset-env": "^7.29.7",
     "@babel/preset-react": "^7.29.7",
+    "@playwright/test": "^1.61.0",
     "@wordpress/components": "^35.0.1",
-    "@wordpress/data": "^10.53.0",
-    "@wordpress/editor": "^14.53.0",
+    "@wordpress/data": "^10.54.0",
+    "@wordpress/dataviews": "^18.1.0",
+    "@wordpress/dependency-extraction-webpack-plugin": "^6.50.0",
+    "@wordpress/e2e-test-utils-playwright": "^1.48.1",
+    "@wordpress/editor": "^14.54.0",
     "@wordpress/element": "^6.36.0",
+    "@wordpress/env": "^10.39.0",
     "@wordpress/i18n": "^6.9.0",
     "@wordpress/icons": "11.8.0",
     "@wordpress/plugins": "^7.36.0",
-    "@wordpress/scripts": "^32.4.1",
+    "@wordpress/scripts": "^32.6.0",
     "babel-loader": "^10.1.1",
     "mini-css-extract-plugin": "^2.10.2",
     "postcss-import": "^16.2.0",

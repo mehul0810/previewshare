@@ -145,6 +145,25 @@ class PreviewController {
 			]
 		);
 
+		// Extend one expiring link by a fixed 24-hour interval.
+		register_rest_route(
+			'previewshare/v1',
+			'/tokens/extend',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'extend_by_id' ],
+				'permission_callback' => function () {
+					return current_user_can( 'manage_options' );
+				},
+				'args'                => [
+					'id' => [
+						'required' => true,
+						'type'     => 'string',
+					],
+				],
+			]
+		);
+
 		// No legacy post meta REST routes are exposed.
 
 		// Settings get/update routes.
@@ -217,6 +236,7 @@ class PreviewController {
 					'id'             => isset( $row['id'] ) ? (string) $row['id'] : '',
 					'post_id'        => (int) $row['post_id'],
 					'post_title'     => $post ? get_the_title( $post ) : '(deleted)',
+					'post_type'      => $post ? (string) $post->post_type : '',
 					'edit_url'       => $edit_url ? $edit_url : '',
 					'label'          => isset( $row['label'] ) ? (string) $row['label'] : '',
 					'created_at'     => isset( $row['created_at'] ) ? (int) $row['created_at'] : 0,
@@ -274,6 +294,35 @@ class PreviewController {
 		);
 
 		return new \WP_REST_Response( [ 'revoked' => (bool) $revoked ], 200 );
+	}
+
+	/**
+	 * Extend an expiring link by 24 hours.
+	 *
+	 * @param \WP_REST_Request<array<string,mixed>> $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function extend_by_id( $request ) {
+		$id = sanitize_key( (string) $request->get_param( 'id' ) );
+
+		if ( '' === $id ) {
+			return new \WP_Error( 'invalid_id', 'Invalid preview link.', [ 'status' => 400 ] );
+		}
+
+		$result = $this->storage->extend_token_by_id( $id );
+		if ( $result instanceof \WP_Error ) {
+			return $result;
+		}
+
+		\previewshare_log(
+			'extend_link',
+			[
+				'user_id' => get_current_user_id(),
+				'id'      => $id,
+			]
+		);
+
+		return new \WP_REST_Response( $result, 200 );
 	}
 
 

@@ -12,6 +12,40 @@ export const fallbackSettings = {
 	},
 };
 
+export const INVENTORY_PAGE_SIZE = 100;
+export const INVENTORY_BATCH_PAGES = 10;
+
+export function getInventoryBatchState( {
+	existingCount = 0,
+	loadedCount = 0,
+	pageItemsCount = 0,
+	reportedTotal = 0,
+	pagesFetched = 0,
+	pageSize = INVENTORY_PAGE_SIZE,
+	batchPages = INVENTORY_BATCH_PAGES,
+} = {} ) {
+	const totalReached =
+		reportedTotal > 0 && existingCount + loadedCount >= reportedTotal;
+	const hasMore = pageItemsCount >= pageSize && ! totalReached;
+
+	return {
+		hasMore,
+		shouldFetchNextPage: hasMore && pagesFetched < batchPages,
+	};
+}
+
+export function mergeInventoryItems( existingItems = [], nextItems = [] ) {
+	const items = new Map();
+
+	existingItems.concat( nextItems ).forEach( ( item ) => {
+		if ( item && item.id !== undefined && item.id !== null ) {
+			items.set( item.id, item );
+		}
+	} );
+
+	return Array.from( items.values() );
+}
+
 export function normalizeSettings( settings = {} ) {
 	const availablePostTypes = settings.available_post_types || {};
 	const defaults = Object.assign(
@@ -45,4 +79,23 @@ export function getRestBase( localized = {} ) {
 	return localized.rest_url
 		? localized.rest_url.replace( /\/$/, '' )
 		: '/wp-json/previewshare/v1';
+}
+
+export function buildRestRequestUrl( restBase, path, baseUrl ) {
+	const url = new URL( restBase, baseUrl );
+	const [ endpoint, query = '' ] = path.split( '?' );
+
+	if ( url.searchParams.has( 'rest_route' ) ) {
+		const route = url.searchParams.get( 'rest_route' ).replace( /\/$/, '' );
+
+		url.searchParams.set( 'rest_route', `${ route }${ endpoint }` );
+	} else {
+		url.pathname = `${ url.pathname.replace( /\/$/, '' ) }${ endpoint }`;
+	}
+
+	for ( const [ key, value ] of new URLSearchParams( query ) ) {
+		url.searchParams.set( key, value );
+	}
+
+	return url.toString();
 }

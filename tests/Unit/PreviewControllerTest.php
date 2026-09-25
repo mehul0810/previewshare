@@ -63,6 +63,7 @@ class PreviewControllerTest extends TestCase {
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'Draft post', $response->get_data()['items'][0]['post_title'] );
+		$this->assertSame( 'post', $response->get_data()['items'][0]['post_type'] );
 		$this->assertSame( 'https://example.test/wp-admin/post.php?post=42&action=edit', $response->get_data()['items'][0]['edit_url'] );
 		$this->assertSame( 1, $response->get_data()['total'] );
 	}
@@ -75,6 +76,66 @@ class PreviewControllerTest extends TestCase {
 		$this->assertInstanceOf( WP_Error::class, $response );
 		$this->assertSame( 'invalid_id', $response->get_error_code() );
 		$this->assertSame( [ 'status' => 400 ], $response->get_error_data() );
+	}
+
+	public function test_extend_by_id_returns_the_new_expiry(): void {
+		$storage    = Mockery::mock( PostMetaStorage::class );
+		$controller = $this->makeController( $storage );
+		$new_expiry = time() + ( 27 * HOUR_IN_SECONDS );
+		$storage->shouldReceive( 'extend_token_by_id' )
+			->once()
+			->with( 'abc123' )
+			->andReturn( [ 'expires_at' => $new_expiry ] );
+
+		Functions\expect( 'get_current_user_id' )->once()->andReturn( 7 );
+		Functions\expect( 'get_option' )
+			->once()
+			->with( 'previewshare_enable_logging', false )
+			->andReturn( false );
+		Functions\expect( 'do_action' )->never();
+
+		$response = $controller->extend_by_id( new WP_REST_Request( [ 'id' => 'abc123' ] ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( [ 'expires_at' => $new_expiry ], $response->get_data() );
+	}
+
+	public function test_extend_by_id_rejects_empty_sanitized_id(): void {
+		$controller = $this->makeController();
+
+		$response = $controller->extend_by_id( new WP_REST_Request( [ 'id' => '###' ] ) );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( 'invalid_id', $response->get_error_code() );
+		$this->assertSame( [ 'status' => 400 ], $response->get_error_data() );
+	}
+
+	public function test_extend_route_requires_manage_options(): void {
+		$controller = $this->makeController();
+		$routes     = [];
+
+		Functions\expect( 'register_rest_route' )
+			->times( 6 )
+			->andReturnUsing(
+				static function ( string $namespace, string $route, array $args ) use ( &$routes ): bool {
+					$routes[ $route ] = $args;
+					return true;
+				}
+			);
+
+		$controller->register_routes();
+
+		$this->assertSame( 'POST', $routes['/tokens/extend']['methods'] );
+		$this->assertTrue( $routes['/tokens/extend']['args']['id']['required'] );
+		$this->assertSame( 'string', $routes['/tokens/extend']['args']['id']['type'] );
+
+		Functions\expect( 'current_user_can' )
+			->once()
+			->with( 'manage_options' )
+			->andReturn( false );
+
+		$this->assertFalse( $routes['/tokens/extend']['permission_callback']() );
 	}
 
 	public function test_generate_permission_requires_edit_post_capability(): void {
