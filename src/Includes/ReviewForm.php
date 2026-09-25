@@ -33,7 +33,9 @@ final class ReviewForm {
 	public function __construct( PostMetaStorage $storage ) {
 		$this->storage = $storage;
 		add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_assets' ] );
-		add_action( 'wp_footer', [ $this, 'render' ], 20 );
+		// Render before WordPress prints footer scripts (priority 20), so the
+		// frontend bundle can bind to the form as soon as it executes.
+		add_action( 'wp_footer', [ $this, 'render' ], 10 );
 	}
 
 	/**
