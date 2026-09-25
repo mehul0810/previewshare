@@ -36,7 +36,9 @@ async function findRestRoot( requestContext, baseURL ) {
 }
 
 async function getRestNonceFromAdminPage( requestContext ) {
-	const adminPage = await requestContext.get( 'wp-admin/' );
+	const adminPage = await requestContext.get(
+		'wp-admin/options-general.php?page=previewshare_settings'
+	);
 	if ( ! adminPage.ok() ) {
 		throw new Error(
 			`Could not load the WordPress admin page to read its REST nonce (HTTP ${ adminPage.status() }).`
@@ -45,11 +47,11 @@ async function getRestNonceFromAdminPage( requestContext ) {
 
 	const html = await adminPage.text();
 	const settingsMatch = html.match(
-		/\bwpApiSettings\s*=\s*(\{[^;]+\})\s*;/
+		/\b(?:wpApiSettings|previewshare_settings)\s*=\s*(\{[^;]+\})\s*;/
 	);
 	if ( ! settingsMatch ) {
 		throw new Error(
-			'Could not find the WordPress REST settings on the authenticated admin page.'
+			'Could not find the REST settings on the authenticated PreviewShare admin page.'
 		);
 	}
 
@@ -58,13 +60,13 @@ async function getRestNonceFromAdminPage( requestContext ) {
 		settings = JSON.parse( settingsMatch[ 1 ] );
 	} catch {
 		throw new Error(
-			'Could not parse the WordPress REST settings on the authenticated admin page.'
+			'Could not parse the REST settings on the authenticated PreviewShare admin page.'
 		);
 	}
 
 	if ( typeof settings.nonce !== 'string' || ! settings.nonce ) {
 		throw new Error(
-			'The WordPress REST settings on the authenticated admin page did not include a nonce.'
+			'The REST settings on the authenticated PreviewShare admin page did not include a nonce.'
 		);
 	}
 
