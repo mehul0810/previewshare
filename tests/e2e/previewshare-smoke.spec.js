@@ -79,10 +79,9 @@ async function ensurePreviewSharePanelOpen( page ) {
 		await expect( welcomeGuide ).not.toBeVisible();
 	}
 
-	const panelToggle = page.getByRole( 'button', {
-		name: 'PreviewShare',
-		exact: true,
-	} );
+	const panelToggle = page
+		.locator( 'button.components-panel__body-toggle' )
+		.filter( { hasText: 'PreviewShare' } );
 
 	await expect( panelToggle ).toBeVisible();
 
