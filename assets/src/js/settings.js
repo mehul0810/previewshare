@@ -1718,7 +1718,7 @@ import {
 																	)
 															  )
 															: null
-												),
+													),
 													'previewshare-actions-cell'
 												)
 											);
