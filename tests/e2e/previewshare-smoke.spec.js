@@ -274,15 +274,38 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		fullPage: true,
 	} );
 	await page.setViewportSize( { width: 390, height: 844 } );
-	const firstPluginCard = await pluginCards.first().boundingBox();
-	expect( firstPluginCard ).not.toBeNull();
-	expect( firstPluginCard.x + firstPluginCard.width ).toBeLessThanOrEqual(
-		390
-	);
-	await page.screenshot( {
-		path: testInfo.outputPath( 'previewshare-more-plugins-mobile.png' ),
-		fullPage: true,
-	} );
+	for ( const [ tabName, screenshotName ] of [
+		[ 'Overview', 'overview' ],
+		[ 'Preview links', 'preview-links-empty' ],
+		[ 'Content types', 'content-types' ],
+		[ 'Changelog', 'changelog' ],
+		[ 'More plugins', 'more-plugins' ],
+	] ) {
+		const mobileTab = tablist.getByRole( 'tab', {
+			name: tabName,
+			exact: true,
+		} );
+		await mobileTab.click();
+		await expect( mobileTab ).toHaveAttribute( 'aria-selected', 'true' );
+		await expect( page.getByRole( 'tabpanel' ) ).toBeVisible();
+		const mobilePageWidth = await page.evaluate(
+			() => document.documentElement.scrollWidth
+		);
+		expect( mobilePageWidth ).toBeLessThanOrEqual( 390 );
+		if ( tabName === 'More plugins' ) {
+			const firstPluginCard = await pluginCards.first().boundingBox();
+			expect( firstPluginCard ).not.toBeNull();
+			expect(
+				firstPluginCard.x + firstPluginCard.width
+			).toBeLessThanOrEqual( 390 );
+		}
+		await page.screenshot( {
+			path: testInfo.outputPath(
+				`previewshare-${ screenshotName }-mobile.png`
+			),
+			fullPage: true,
+		} );
+	}
 	await page.setViewportSize( { width: 1280, height: 900 } );
 	await tablist.getByRole( 'tab', { name: 'Overview' } ).click();
 
