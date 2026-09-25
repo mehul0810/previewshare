@@ -251,10 +251,18 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		page.getByRole( 'heading', { name: 'v1.1.0' } )
 	).toBeVisible();
+	await page.screenshot( {
+		path: testInfo.outputPath( 'previewshare-changelog.png' ),
+		fullPage: true,
+	} );
 	await tablist.getByRole( 'tab', { name: 'Content types' } ).click();
 	await expect(
 		page.getByRole( 'heading', { name: 'Content types' } )
 	).toBeVisible();
+	await page.screenshot( {
+		path: testInfo.outputPath( 'previewshare-content-types.png' ),
+		fullPage: true,
+	} );
 	await tablist.getByRole( 'tab', { name: 'More plugins' } ).click();
 	const pluginCards = page.locator( 'article.previewshare-plugin-card' );
 	await expect( pluginCards ).toHaveCount( 10 );
@@ -359,6 +367,10 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		page.getByRole( 'button', { name: 'Extend', exact: true } )
 	).toBeVisible();
+	await page.screenshot( {
+		path: testInfo.outputPath( 'previewshare-preview-links-expiring.png' ),
+		fullPage: true,
+	} );
 	const [ extendResponse ] = await Promise.all( [
 		page.waitForResponse( isExtendPreviewResponse ),
 		page.getByRole( 'button', { name: 'Extend', exact: true } ).click(),
