@@ -772,6 +772,7 @@ class Actions {
 		}
 
 		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- Standard shared cache-bypass flag.
 			define( 'DONOTCACHEPAGE', true );
 		}
 
