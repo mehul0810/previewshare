@@ -521,11 +521,15 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-dataviews {
+	min-width: 0;
+	max-width: 100%;
+	overflow-x: auto;
 	border: 1px solid var(--previewshare-border);
 	background: var(--previewshare-surface);
 }
 
 .previewshare-dataviews .dataviews-wrapper {
+	min-width: 0;
 	background: var(--previewshare-surface);
 }
 

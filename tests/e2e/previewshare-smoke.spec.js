@@ -364,6 +364,12 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	expect( generatedLink.status ).toBe( 'active' );
 	const previousExpiry = generatedLink.expires_at;
 	await page.getByRole( 'tab', { name: 'Preview links' } ).click();
+	const inventoryTable = page.locator( '.previewshare-dataviews' );
+	await expect( inventoryTable ).toBeVisible();
+	const desktopPageWidth = await page.evaluate(
+		() => document.documentElement.scrollWidth
+	);
+	expect( desktopPageWidth ).toBeLessThanOrEqual( 1280 );
 	await expect(
 		page.getByRole( 'button', { name: 'Extend', exact: true } )
 	).toBeVisible();
@@ -371,6 +377,26 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		path: testInfo.outputPath( 'previewshare-preview-links-expiring.png' ),
 		fullPage: true,
 	} );
+	await page.setViewportSize( { width: 390, height: 844 } );
+	const mobilePageWidth = await page.evaluate(
+		() => document.documentElement.scrollWidth
+	);
+	expect( mobilePageWidth ).toBeLessThanOrEqual( 390 );
+	await inventoryTable.evaluate( ( element ) => {
+		element.scrollLeft = element.scrollWidth;
+	} );
+	const mobileExtendBounds = await page
+		.getByRole( 'button', { name: 'Extend', exact: true } )
+		.boundingBox();
+	expect( mobileExtendBounds ).not.toBeNull();
+	expect(
+		mobileExtendBounds.x + mobileExtendBounds.width
+	).toBeLessThanOrEqual( 390 );
+	await page.screenshot( {
+		path: testInfo.outputPath( 'previewshare-preview-links-mobile.png' ),
+		fullPage: true,
+	} );
+	await page.setViewportSize( { width: 1280, height: 900 } );
 	const [ extendResponse ] = await Promise.all( [
 		page.waitForResponse( isExtendPreviewResponse ),
 		page.getByRole( 'button', { name: 'Extend', exact: true } ).click(),
