@@ -153,7 +153,7 @@ previewshare_abilities_runtime_assert(
 
 $post_id = wp_insert_post(
 	[
-		'post_author'  => $admin_id,
+		'post_author'  => $editor_id,
 		'post_content' => 'PreviewShare Abilities API runtime proof.',
 		'post_status'  => 'draft',
 		'post_title'   => 'PreviewShare Abilities runtime proof',
@@ -220,6 +220,23 @@ previewshare_abilities_runtime_assert(
 	'Generate ability is not exposed through the REST API.'
 );
 
+$list_schema_response = previewshare_abilities_runtime_request(
+	'GET',
+	'/wp-abilities/v1/abilities/previewshare/list-preview-links'
+);
+previewshare_abilities_runtime_assert_status(
+	$list_schema_response,
+	200,
+	'PreviewShare list ability discovery'
+);
+$list_schema = $list_schema_response->get_data();
+previewshare_abilities_runtime_assert(
+	isset( $list_schema['input_schema']['properties']['post_id'] )
+		&& isset( $list_schema['input_schema']['properties']['status'] ),
+	'List ability schema is missing post-scoped or status filters.'
+);
+
+
 wp_set_current_user( $editor_id );
 $generate_response = previewshare_abilities_runtime_request(
 	'POST',
@@ -248,15 +265,97 @@ $editor_list_response = previewshare_abilities_runtime_request(
 	[
 		'page'     => 1,
 		'per_page' => 10,
+		'post_id'  => $post_id,
+		'status'   => 'active',
 	]
 );
 previewshare_abilities_runtime_assert_status(
 	$editor_list_response,
+	200,
+	'Editor post-scoped inventory access'
+);
+$editor_inventory = $editor_list_response->get_data();
+previewshare_abilities_runtime_assert(
+	isset( $editor_inventory['items'][0]['token_id'] )
+		&& $editor_inventory['items'][0]['token_id'] === $generated['token_id'],
+	'Editor inventory did not return the link for the editable post.'
+);
+previewshare_abilities_runtime_assert(
+	false === strpos( wp_json_encode( $editor_inventory ), $raw_token ),
+	'Editor inventory response exposes the raw preview token.'
+);
+
+$editor_global_list_response = previewshare_abilities_runtime_request(
+	'GET',
+	'/wp-abilities/v1/abilities/previewshare/list-preview-links/run',
+	[
+		'page'     => 1,
+		'per_page' => 10,
+	]
+);
+previewshare_abilities_runtime_assert_status(
+	$editor_global_list_response,
 	403,
-	'Editor inventory access'
+	'Editor global inventory access'
+);
+
+wp_set_current_user( $subscriber_id );
+$foreign_list_response = previewshare_abilities_runtime_request(
+	'GET',
+	'/wp-abilities/v1/abilities/previewshare/list-preview-links/run',
+	[
+		'post_id'  => $post_id,
+		'page'     => 1,
+		'per_page' => 10,
+	]
+);
+previewshare_abilities_runtime_assert_status(
+	$foreign_list_response,
+	403,
+	'User without post access inventory request'
+);
+
+wp_set_current_user( $editor_id );
+$editor_revoke_response = previewshare_abilities_runtime_request(
+	'DELETE',
+	'/wp-abilities/v1/abilities/previewshare/revoke-preview-link/run',
+	[
+		'post_id'  => $post_id,
+		'token_id' => $generated['token_id'],
+	]
+);
+previewshare_abilities_runtime_assert_status(
+	$editor_revoke_response,
+	200,
+	'Editor owner-post link revocation'
+);
+$editor_revoked = $editor_revoke_response->get_data();
+previewshare_abilities_runtime_assert(
+	! empty( $editor_revoked['revoked'] ) && 'revoked' === $editor_revoked['status'],
+	'Editor revoke ability did not return a revoked result.'
+);
+previewshare_abilities_runtime_assert(
+	false === strpos( wp_json_encode( $editor_revoked ), $raw_token ),
+	'Editor revocation response exposes the raw preview token.'
 );
 
 wp_set_current_user( $admin_id );
+$admin_generate_response = previewshare_abilities_runtime_request(
+	'POST',
+	'/wp-abilities/v1/abilities/previewshare/generate-preview-link/run',
+	[
+		'label'   => 'Administrator runtime proof',
+		'post_id' => $post_id,
+	]
+);
+previewshare_abilities_runtime_assert_status(
+	$admin_generate_response,
+	200,
+	'Administrator preview generation'
+);
+$admin_generated = $admin_generate_response->get_data();
+$admin_raw_token = previewshare_abilities_runtime_token_from_url( $admin_generated['url'] );
+
 $list_response = previewshare_abilities_runtime_request(
 	'GET',
 	'/wp-abilities/v1/abilities/previewshare/list-preview-links/run',
@@ -272,14 +371,26 @@ previewshare_abilities_runtime_assert_status(
 );
 $inventory = $list_response->get_data();
 previewshare_abilities_runtime_assert(
-	false === strpos( wp_json_encode( $inventory ), $raw_token ),
-	'Inventory response exposes the raw preview token.'
+	false === strpos( wp_json_encode( $inventory ), $raw_token )
+		&& false === strpos( wp_json_encode( $inventory ), $admin_raw_token ),
+	'Inventory response exposes a raw preview token.'
+);
+
+$malformed_revoke_response = previewshare_abilities_runtime_request(
+	'DELETE',
+	'/wp-abilities/v1/abilities/previewshare/revoke-preview-link/run',
+	[ 'token_id' => 'not-a-hash' ]
+);
+previewshare_abilities_runtime_assert_status(
+	$malformed_revoke_response,
+	400,
+	'Malformed token identifier revocation'
 );
 
 $revoke_response = previewshare_abilities_runtime_request(
 	'DELETE',
 	'/wp-abilities/v1/abilities/previewshare/revoke-preview-link/run',
-	[ 'token_id' => $generated['token_id'] ]
+	[ 'token_id' => $admin_generated['token_id'] ]
 );
 previewshare_abilities_runtime_assert_status(
 	$revoke_response,
@@ -292,7 +403,7 @@ previewshare_abilities_runtime_assert(
 	'Revoke ability did not return a revoked result.'
 );
 previewshare_abilities_runtime_assert(
-	false === strpos( wp_json_encode( $revoked ), $raw_token ),
+	false === strpos( wp_json_encode( $revoked ), $admin_raw_token ),
 	'Revocation response exposes the raw preview token.'
 );
 
@@ -304,7 +415,11 @@ echo 'PREVIEWSHARE_ABILITIES_RUNTIME_RECEIPT=' . wp_json_encode(
 			'category_discovered',
 			'ability_schema_discovered',
 			'editor_generated_preview',
-			'editor_inventory_denied',
+			'editor_post_scoped_inventory',
+			'editor_global_inventory_denied',
+			'foreign_post_inventory_denied',
+			'editor_owner_post_revocation',
+			'malformed_token_identifier_rejected',
 			'administrator_inventory_redacted',
 			'administrator_revocation_redacted',
 		],
