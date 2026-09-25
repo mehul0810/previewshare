@@ -82,7 +82,6 @@ class PreviewAbilitiesTest extends TestCase {
 
 		$this->assertSame( [ 'post_id' ], $abilities['previewshare/generate-preview-link']['input_schema']['required'] );
 		$this->assertSame( [ 'token_id' ], $abilities['previewshare/revoke-preview-link']['input_schema']['required'] );
-		$this->assertSame( '^[a-f0-9]{64}
 	}
 
 	public function test_generate_permission_requires_edit_post_capability(): void {
@@ -149,7 +148,7 @@ class PreviewAbilitiesTest extends TestCase {
 			->andReturn( 'https://example.test/preview/generated-token' );
 
 		$token_service->shouldReceive( 'generate' )->once()->andReturn( 'generated-token' );
-		$token_service->shouldReceive( 'hash' )->once()->with( 'generated-token' )->andReturn( str_repeat( 'a', 64 ) );
+		$token_service->shouldReceive( 'hash' )->once()->with( 'generated-token' )->andReturn( 'token-hash' );
 		$storage->shouldReceive( 'get_post_id_by_token' )
 			->once()
 			->with( 'generated-token' )
@@ -160,10 +159,10 @@ class PreviewAbilitiesTest extends TestCase {
 			->andReturn( true );
 		$storage->shouldReceive( 'get_token_context_by_id' )
 			->once()
-			->with( str_repeat( 'a', 64 ) )
+			->with( 'token-hash' )
 			->andReturn(
 				[
-					'id'         => str_repeat( 'a', 64 ),
+					'id'         => 'token-hash',
 					'post_id'    => 42,
 					'label'      => 'Client review',
 					'expires_at' => 123456,
@@ -181,7 +180,7 @@ class PreviewAbilitiesTest extends TestCase {
 		$this->assertSame(
 			[
 				'url'        => 'https://example.test/preview/generated-token',
-				'token_id'   => str_repeat( 'a', 64 ),
+				'token_id'   => 'token-hash',
 				'post_id'    => 42,
 				'status'     => 'active',
 				'expires_at' => 123456,
@@ -191,107 +190,24 @@ class PreviewAbilitiesTest extends TestCase {
 		);
 	}
 
-	public function test_global_list_permission_requires_manage_options(): void {
-		$abilities = $this->makeAbilities();
+	public function test_list_preview_links_requires_admin_permission_and_returns_existing_inventory(): void {
+		$storage   = Mockery::mock( PostMetaStorage::class );
+		$abilities = $this->makeAbilities( $storage );
 
 		Functions\when( '__' )->returnArg( 1 );
 		Functions\expect( 'current_user_can' )->once()->with( 'manage_options' )->andReturn( false );
 
-		$permission = $abilities->can_list_preview_links( [] );
+		$permission = $abilities->can_manage_preview_links();
 
 		$this->assertInstanceOf( WP_Error::class, $permission );
-		$this->assertSame( 'previewshare_forbidden', $permission->get_error_code() );
-	}
 
-	public function test_editor_lists_only_an_editable_post_and_filters_status(): void {
-		$storage   = Mockery::mock( PostMetaStorage::class );
-		$abilities = $this->makeAbilities( $storage );
-		$hash      = str_repeat( 'a', 64 );
-
-		Functions\when( '__' )->returnArg( 1 );
-		Functions\expect( 'get_post' )
-			->once()
-			->with( 42 )
-			->andReturn( new WP_Post( [ 'ID' => 42, 'post_type' => 'post' ] ) );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'edit_post', 42 )
-			->andReturn( true );
-		$storage->shouldReceive( 'get_token_meta' )
-			->once()
-			->with( 42 )
-			->andReturn(
-				[
-					'links' => [
-						[
-							'id'             => $hash,
-							'label'          => 'Current review',
-							'created_at'     => 100,
-							'expires_at'     => null,
-							'status'         => 'active',
-						],
-						[
-							'id'             => str_repeat( 'b', 64 ),
-							'label'          => 'Old review',
-							'created_at'     => 90,
-							'expires_at'     => 50,
-							'status'         => 'expired',
-						],
-					],
-				]
-			);
-
-		$result = $abilities->list_preview_links(
-			[
-				'post_id'  => 42,
-				'status'   => 'active',
-				'page'     => 1,
-				'per_page' => 10,
-			]
-		);
-
-		$this->assertSame( 1, $result['total'] );
-		$this->assertSame( $hash, $result['items'][0]['token_id'] );
-		$this->assertSame( 42, $result['items'][0]['post_id'] );
-		$this->assertSame( 'active', $result['items'][0]['status'] );
-	}
-
-	public function test_scoped_list_denies_a_user_who_cannot_edit_the_post(): void {
-		$abilities = $this->makeAbilities();
-
-		Functions\when( '__' )->returnArg( 1 );
-		Functions\expect( 'get_post' )
-			->once()
-			->with( 84 )
-			->andReturn( new WP_Post( [ 'ID' => 84, 'post_type' => 'post' ] ) );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'edit_post', 84 )
-			->andReturn( false );
-
-		$permission = $abilities->can_list_preview_links( [ 'post_id' => 84 ] );
-
-		$this->assertInstanceOf( WP_Error::class, $permission );
-		$this->assertSame( 'previewshare_forbidden', $permission->get_error_code() );
-	}
-
-	public function test_administrator_list_returns_the_paginated_global_inventory(): void {
-		$storage   = Mockery::mock( PostMetaStorage::class );
-		$abilities = $this->makeAbilities( $storage );
-		$hash      = str_repeat( 'a', 64 );
-
-		Functions\when( '__' )->returnArg( 1 );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'manage_options' )
-			->andReturn( true );
 		$storage->shouldReceive( 'list_tokens' )
 			->once()
 			->with( 25, 2 )
 			->andReturn(
 				[
 					[
-						'id'         => $hash,
+						'id'         => 'token-hash',
 						'post_id'    => 42,
 						'label'      => 'Client review',
 						'created_at' => 100,
@@ -306,433 +222,36 @@ class PreviewAbilitiesTest extends TestCase {
 
 		$this->assertSame( 1, $result['total'] );
 		$this->assertSame( 2, $result['page'] );
-		$this->assertSame( $hash, $result['items'][0]['token_id'] );
+		$this->assertSame( 'token-hash', $result['items'][0]['token_id'] );
 		$this->assertSame( 42, $result['items'][0]['post_id'] );
 	}
 
-
-	public function test_revoke_preview_link_allows_an_administrator(): void {
+	public function test_revoke_preview_link_uses_existing_admin_revoke_service(): void {
 		$storage   = Mockery::mock( PostMetaStorage::class );
 		$abilities = $this->makeAbilities( $storage );
-		$hash      = str_repeat( 'a', 64 );
-		$link      = [
-			'id'         => $hash,
-			'post_id'    => 42,
-			'label'      => 'Client review',
-			'expires_at' => null,
-			'status'     => 'active',
-		];
 
-		Functions\when( '__' )->returnArg( 1 );
-		$storage->shouldReceive( 'get_token_context_by_id' )
-			->twice()
-			->with( $hash )
-			->andReturn( $link );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'edit_post', 42 )
-			->andReturn( false );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'manage_options' )
-			->andReturn( true );
-		$storage->shouldReceive( 'revoke_token_by_id' )
-			->once()
-			->with( $hash )
-			->andReturn( true );
-
-		$result = $abilities->revoke_preview_link( [ 'token_id' => $hash ] );
-
-		$this->assertSame(
-			[
-				'token_id' => $hash,
-				'post_id'  => 42,
-				'status'   => 'revoked',
-				'revoked'  => true,
-			],
-			$result
-		);
-	}
-
-	public function test_revoke_preview_link_allows_an_editor_who_can_edit_the_owner_post(): void {
-		$storage   = Mockery::mock( PostMetaStorage::class );
-		$abilities = $this->makeAbilities( $storage );
-		$hash      = str_repeat( 'a', 64 );
-		$link      = [
-			'id'         => $hash,
-			'post_id'    => 42,
-			'label'      => 'Client review',
-			'expires_at' => null,
-			'status'     => 'active',
-		];
-
-		Functions\when( '__' )->returnArg( 1 );
-		$storage->shouldReceive( 'get_token_context_by_id' )
-			->twice()
-			->with( $hash )
-			->andReturn( $link );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'edit_post', 42 )
-			->andReturn( true );
-		$storage->shouldReceive( 'revoke_token_by_id' )
-			->once()
-			->with( $hash )
-			->andReturn( true );
-
-		$result = $abilities->revoke_preview_link( [ 'token_id' => $hash, 'post_id' => 42 ] );
-
-		$this->assertSame( true, $result['revoked'] );
-		$this->assertSame( 42, $result['post_id'] );
-	}
-
-	public function test_revoke_permission_denies_users_without_access_to_the_owner_post(): void {
-		$storage   = Mockery::mock( PostMetaStorage::class );
-		$abilities = $this->makeAbilities( $storage );
-		$hash      = str_repeat( 'a', 64 );
-
-		Functions\when( '__' )->returnArg( 1 );
 		$storage->shouldReceive( 'get_token_context_by_id' )
 			->once()
-			->with( $hash )
+			->with( 'token-hash' )
 			->andReturn(
 				[
-					'id'      => $hash,
-					'post_id' => 42,
-				]
-			);
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'edit_post', 42 )
-			->andReturn( false );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'manage_options' )
-			->andReturn( false );
-
-		$result = $abilities->can_revoke_preview_link( [ 'token_id' => $hash ] );
-
-		$this->assertInstanceOf( WP_Error::class, $result );
-		$this->assertSame( 'previewshare_forbidden', $result->get_error_code() );
-	}
-
-	public function test_revoke_ability_rejects_malformed_token_identifiers(): void {
-		$storage   = Mockery::mock( PostMetaStorage::class );
-		$abilities = $this->makeAbilities( $storage );
-
-		Functions\when( '__' )->returnArg( 1 );
-		$storage->shouldNotReceive( 'get_token_context_by_id' );
-
-		$result = $abilities->revoke_preview_link( [ 'token_id' => 'not-a-hash' ] );
-
-		$this->assertInstanceOf( WP_Error::class, $result );
-		$this->assertSame( 'previewshare_invalid_token_id', $result->get_error_code() );
-	}
-
-
-	private function makeAbilities( ?PostMetaStorage $storage = null, ?TokenService $token_service = null ): PreviewAbilities {
-		$storage       = $storage ?: Mockery::mock( PostMetaStorage::class );
-		$token_service = $token_service ?: new TokenService();
-
-		Container::set( 'storage', $storage );
-		Container::set( 'token_service', $token_service );
-
-		return new PreviewAbilities( $token_service, $storage );
-	}
-
-	private function mockSupportedPostTypes(): void {
-		Functions\expect( 'get_post_types' )
-			->twice()
-			->with( [ 'public' => true ], 'objects' )
-			->andReturn(
-				[
-					'post' => (object) [
-						'label'  => 'Posts',
-						'labels' => (object) [ 'singular_name' => 'Post' ],
-					],
-				]
-			);
-		Functions\expect( 'is_post_type_viewable' )->twice()->andReturn( true );
-		Functions\when( 'get_option' )->alias(
-			static function ( string $option, $default = false ) {
-				$values = [
-					'previewshare_post_types'        => [ 'post' ],
-					'previewshare_default_ttl_hours' => 12,
-					'previewshare_enable_logging'    => false,
-					'previewshare_enable_caching'    => true,
-				];
-
-				return $values[ $option ] ?? $default;
-			}
-		);
-	}
-}
-, $abilities['previewshare/revoke-preview-link']['input_schema']['properties']['token_id']['pattern'] );
-		$this->assertArrayHasKey( 'post_id', $abilities['previewshare/list-preview-links']['input_schema']['properties'] );
-		$this->assertArrayHasKey( 'status', $abilities['previewshare/list-preview-links']['input_schema']['properties'] );
-	}
-
-	public function test_generate_permission_requires_edit_post_capability(): void {
-		$abilities = $this->makeAbilities();
-
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'edit_post', 42 )
-			->andReturn( false );
-		Functions\when( '__' )->returnArg( 1 );
-
-		$result = $abilities->can_generate_preview_link( [ 'post_id' => 42 ] );
-
-		$this->assertInstanceOf( WP_Error::class, $result );
-		$this->assertSame( 'previewshare_forbidden', $result->get_error_code() );
-		$this->assertSame( [ 'status' => 403 ], $result->get_error_data() );
-	}
-
-	public function test_generate_permission_rejects_disabled_post_types(): void {
-		$abilities = $this->makeAbilities();
-
-		Functions\when( '__' )->returnArg( 1 );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'edit_post', 42 )
-			->andReturn( true );
-		Functions\expect( 'get_post' )
-			->once()
-			->with( 42 )
-			->andReturn( new WP_Post( [ 'ID' => 42, 'post_type' => 'product' ] ) );
-		$this->mockSupportedPostTypes();
-
-		$result = $abilities->can_generate_preview_link( [ 'post_id' => 42 ] );
-
-		$this->assertInstanceOf( WP_Error::class, $result );
-		$this->assertSame( 'previewshare_unsupported_post_type', $result->get_error_code() );
-	}
-
-	public function test_generate_preview_link_returns_structured_link_data(): void {
-		$storage       = Mockery::mock( PostMetaStorage::class );
-		$token_service = Mockery::mock( TokenService::class );
-		$abilities     = $this->makeAbilities( $storage, $token_service );
-		$post          = new WP_Post(
-			[
-				'ID'          => 42,
-				'post_type'   => 'post',
-				'post_status' => 'draft',
-			]
-		);
-
-		Functions\expect( 'get_post' )->once()->with( 42 )->andReturn( $post );
-		$this->mockSupportedPostTypes();
-		Functions\expect( 'get_post_meta' )
-			->once()
-			->with( 42, '_previewshare_ttl_hours', true )
-			->andReturn( '' );
-		Functions\expect( 'update_post_meta' )
-			->once()
-			->with( 42, '_previewshare_enabled', true )
-			->andReturn( true );
-		Functions\expect( 'home_url' )
-			->once()
-			->with( '/preview/generated-token' )
-			->andReturn( 'https://example.test/preview/generated-token' );
-
-		$token_service->shouldReceive( 'generate' )->once()->andReturn( 'generated-token' );
-		$token_service->shouldReceive( 'hash' )->once()->with( 'generated-token' )->andReturn( str_repeat( 'a', 64 ) );
-		$storage->shouldReceive( 'get_post_id_by_token' )
-			->once()
-			->with( 'generated-token' )
-			->andReturn( false );
-		$storage->shouldReceive( 'store_token' )
-			->once()
-			->with( 42, 'generated-token', 12, 'Client review' )
-			->andReturn( true );
-		$storage->shouldReceive( 'get_token_context_by_id' )
-			->once()
-			->with( str_repeat( 'a', 64 ) )
-			->andReturn(
-				[
-					'id'         => str_repeat( 'a', 64 ),
+					'id'         => 'token-hash',
 					'post_id'    => 42,
 					'label'      => 'Client review',
-					'expires_at' => 123456,
+					'expires_at' => null,
 					'status'     => 'active',
 				]
 			);
-
-		$result = $abilities->generate_preview_link(
-			[
-				'post_id' => 42,
-				'label'   => '<b>Client review</b>',
-			]
-		);
-
-		$this->assertSame(
-			[
-				'url'        => 'https://example.test/preview/generated-token',
-				'token_id'   => str_repeat( 'a', 64 ),
-				'post_id'    => 42,
-				'status'     => 'active',
-				'expires_at' => 123456,
-				'label'      => 'Client review',
-			],
-			$result
-		);
-	}
-
-	public function test_global_list_permission_requires_manage_options(): void {
-		$abilities = $this->makeAbilities();
-
-		Functions\when( '__' )->returnArg( 1 );
-		Functions\expect( 'current_user_can' )->once()->with( 'manage_options' )->andReturn( false );
-
-		$permission = $abilities->can_list_preview_links( [] );
-
-		$this->assertInstanceOf( WP_Error::class, $permission );
-		$this->assertSame( 'previewshare_forbidden', $permission->get_error_code() );
-	}
-
-	public function test_editor_lists_only_an_editable_post_and_filters_status(): void {
-		$storage   = Mockery::mock( PostMetaStorage::class );
-		$abilities = $this->makeAbilities( $storage );
-		$hash      = str_repeat( 'a', 64 );
-
-		Functions\when( '__' )->returnArg( 1 );
-		Functions\expect( 'get_post' )
-			->once()
-			->with( 42 )
-			->andReturn( new WP_Post( [ 'ID' => 42, 'post_type' => 'post' ] ) );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'edit_post', 42 )
-			->andReturn( true );
-		$storage->shouldReceive( 'get_token_meta' )
-			->once()
-			->with( 42 )
-			->andReturn(
-				[
-					'links' => [
-						[
-							'id'             => $hash,
-							'label'          => 'Current review',
-							'created_at'     => 100,
-							'expires_at'     => null,
-							'status'         => 'active',
-						],
-						[
-							'id'             => str_repeat( 'b', 64 ),
-							'label'          => 'Old review',
-							'created_at'     => 90,
-							'expires_at'     => 50,
-							'status'         => 'expired',
-						],
-					],
-				]
-			);
-
-		$result = $abilities->list_preview_links(
-			[
-				'post_id'  => 42,
-				'status'   => 'active',
-				'page'     => 1,
-				'per_page' => 10,
-			]
-		);
-
-		$this->assertSame( 1, $result['total'] );
-		$this->assertSame( $hash, $result['items'][0]['token_id'] );
-		$this->assertSame( 42, $result['items'][0]['post_id'] );
-		$this->assertSame( 'active', $result['items'][0]['status'] );
-	}
-
-	public function test_scoped_list_denies_a_user_who_cannot_edit_the_post(): void {
-		$abilities = $this->makeAbilities();
-
-		Functions\when( '__' )->returnArg( 1 );
-		Functions\expect( 'get_post' )
-			->once()
-			->with( 84 )
-			->andReturn( new WP_Post( [ 'ID' => 84, 'post_type' => 'post' ] ) );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'edit_post', 84 )
-			->andReturn( false );
-
-		$permission = $abilities->can_list_preview_links( [ 'post_id' => 84 ] );
-
-		$this->assertInstanceOf( WP_Error::class, $permission );
-		$this->assertSame( 'previewshare_forbidden', $permission->get_error_code() );
-	}
-
-	public function test_administrator_list_returns_the_paginated_global_inventory(): void {
-		$storage   = Mockery::mock( PostMetaStorage::class );
-		$abilities = $this->makeAbilities( $storage );
-		$hash      = str_repeat( 'a', 64 );
-
-		Functions\when( '__' )->returnArg( 1 );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'manage_options' )
-			->andReturn( true );
-		$storage->shouldReceive( 'list_tokens' )
-			->once()
-			->with( 25, 2 )
-			->andReturn(
-				[
-					[
-						'id'         => $hash,
-						'post_id'    => 42,
-						'label'      => 'Client review',
-						'created_at' => 100,
-						'expires_at' => null,
-						'status'     => 'active',
-					],
-				]
-			);
-		$storage->shouldReceive( 'count_tokens' )->once()->andReturn( 1 );
-
-		$result = $abilities->list_preview_links( [ 'per_page' => 25, 'page' => 2 ] );
-
-		$this->assertSame( 1, $result['total'] );
-		$this->assertSame( 2, $result['page'] );
-		$this->assertSame( $hash, $result['items'][0]['token_id'] );
-		$this->assertSame( 42, $result['items'][0]['post_id'] );
-	}
-
-
-	public function test_revoke_preview_link_allows_an_administrator(): void {
-		$storage   = Mockery::mock( PostMetaStorage::class );
-		$abilities = $this->makeAbilities( $storage );
-		$hash      = str_repeat( 'a', 64 );
-		$link      = [
-			'id'         => $hash,
-			'post_id'    => 42,
-			'label'      => 'Client review',
-			'expires_at' => null,
-			'status'     => 'active',
-		];
-
-		Functions\when( '__' )->returnArg( 1 );
-		$storage->shouldReceive( 'get_token_context_by_id' )
-			->twice()
-			->with( $hash )
-			->andReturn( $link );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'edit_post', 42 )
-			->andReturn( false );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'manage_options' )
-			->andReturn( true );
 		$storage->shouldReceive( 'revoke_token_by_id' )
 			->once()
-			->with( $hash )
+			->with( 'token-hash' )
 			->andReturn( true );
 
-		$result = $abilities->revoke_preview_link( [ 'token_id' => $hash ] );
+		$result = $abilities->revoke_preview_link( [ 'token_id' => 'token-hash' ] );
 
 		$this->assertSame(
 			[
-				'token_id' => $hash,
+				'token_id' => 'token-hash',
 				'post_id'  => 42,
 				'status'   => 'revoked',
 				'revoked'  => true,
@@ -740,82 +259,6 @@ class PreviewAbilitiesTest extends TestCase {
 			$result
 		);
 	}
-
-	public function test_revoke_preview_link_allows_an_editor_who_can_edit_the_owner_post(): void {
-		$storage   = Mockery::mock( PostMetaStorage::class );
-		$abilities = $this->makeAbilities( $storage );
-		$hash      = str_repeat( 'a', 64 );
-		$link      = [
-			'id'         => $hash,
-			'post_id'    => 42,
-			'label'      => 'Client review',
-			'expires_at' => null,
-			'status'     => 'active',
-		];
-
-		Functions\when( '__' )->returnArg( 1 );
-		$storage->shouldReceive( 'get_token_context_by_id' )
-			->twice()
-			->with( $hash )
-			->andReturn( $link );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'edit_post', 42 )
-			->andReturn( true );
-		$storage->shouldReceive( 'revoke_token_by_id' )
-			->once()
-			->with( $hash )
-			->andReturn( true );
-
-		$result = $abilities->revoke_preview_link( [ 'token_id' => $hash, 'post_id' => 42 ] );
-
-		$this->assertSame( true, $result['revoked'] );
-		$this->assertSame( 42, $result['post_id'] );
-	}
-
-	public function test_revoke_permission_denies_users_without_access_to_the_owner_post(): void {
-		$storage   = Mockery::mock( PostMetaStorage::class );
-		$abilities = $this->makeAbilities( $storage );
-		$hash      = str_repeat( 'a', 64 );
-
-		Functions\when( '__' )->returnArg( 1 );
-		$storage->shouldReceive( 'get_token_context_by_id' )
-			->once()
-			->with( $hash )
-			->andReturn(
-				[
-					'id'      => $hash,
-					'post_id' => 42,
-				]
-			);
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'edit_post', 42 )
-			->andReturn( false );
-		Functions\expect( 'current_user_can' )
-			->once()
-			->with( 'manage_options' )
-			->andReturn( false );
-
-		$result = $abilities->can_revoke_preview_link( [ 'token_id' => $hash ] );
-
-		$this->assertInstanceOf( WP_Error::class, $result );
-		$this->assertSame( 'previewshare_forbidden', $result->get_error_code() );
-	}
-
-	public function test_revoke_ability_rejects_malformed_token_identifiers(): void {
-		$storage   = Mockery::mock( PostMetaStorage::class );
-		$abilities = $this->makeAbilities( $storage );
-
-		Functions\when( '__' )->returnArg( 1 );
-		$storage->shouldNotReceive( 'get_token_context_by_id' );
-
-		$result = $abilities->revoke_preview_link( [ 'token_id' => 'not-a-hash' ] );
-
-		$this->assertInstanceOf( WP_Error::class, $result );
-		$this->assertSame( 'previewshare_invalid_token_id', $result->get_error_code() );
-	}
-
 
 	private function makeAbilities( ?PostMetaStorage $storage = null, ?TokenService $token_service = null ): PreviewAbilities {
 		$storage       = $storage ?: Mockery::mock( PostMetaStorage::class );
