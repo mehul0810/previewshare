@@ -273,6 +273,26 @@ class PreviewAbilitiesTest extends TestCase {
 		$this->assertSame( 42, $result['items'][0]['post_id'] );
 	}
 
+	public function test_administrator_status_filter_uses_storage_page_and_filtered_total(): void {
+		$storage   = Mockery::mock( PostMetaStorage::class );
+		$abilities = $this->makeAbilities( $storage );
+		Functions\when( '__' )->returnArg( 1 );
+		Functions\expect( 'current_user_can' )->once()->with( 'manage_options' )->andReturn( true );
+		$storage->shouldReceive( 'list_tokens_by_status' )->once()->with( 'expired', 1, 2 )->andReturn(
+			[
+				'items' => [
+					[ 'id' => str_repeat( 'c', 64 ), 'post_id' => 42, 'label' => 'Expired', 'created_at' => 10, 'expires_at' => 5, 'status' => 'expired' ],
+				],
+				'total' => 2,
+			]
+		);
+
+		$result = $abilities->list_preview_links( [ 'status' => 'expired', 'per_page' => 1, 'page' => 2 ] );
+
+		$this->assertSame( 2, $result['total'] );
+		$this->assertSame( str_repeat( 'c', 64 ), $result['items'][0]['token_id'] );
+	}
+
 
 	public function test_revoke_preview_link_allows_an_administrator(): void {
 		$storage   = Mockery::mock( PostMetaStorage::class );

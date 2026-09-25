@@ -369,28 +369,12 @@ final class PreviewAbilities {
 
 			$total = $this->storage->count_tokens();
 		} else {
-			// Status is derived from serialized per-link metadata and expiry time.
-			// Scan bounded database pages so the returned total and page are exact.
-			$inventory_total = $this->storage->count_tokens();
-			$batch_pages     = (int) ceil( $inventory_total / 100 );
-
-			for ( $batch_page = 1; $batch_page <= $batch_pages; ++$batch_page ) {
-				$rows = $this->storage->list_tokens( 100, $batch_page );
-
-				foreach ( $rows as $row ) {
-					$item = $this->format_link_list_item( $row, (int) ( $row['post_id'] ?? 0 ) );
-
-					if ( $status !== $item['status'] ) {
-						continue;
-					}
-
-					if ( $total >= $offset && count( $items ) < $per_page ) {
-						$items[] = $item;
-					}
-
-					++$total;
-				}
-			}
+			$result = $this->storage->list_tokens_by_status( $status, $per_page, $page );
+			$items  = array_map(
+				fn( array $row ): array => $this->format_link_list_item( $row, (int) $row['post_id'] ),
+				$result['items']
+			);
+			$total  = $result['total'];
 		}
 
 		return [
