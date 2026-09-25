@@ -40,12 +40,26 @@ required_paths=(
 	"${PLUGIN_SLUG}/src/Plugin.php"
 	"${PLUGIN_SLUG}/assets/dist/js/previewshare-admin.min.js"
 	"${PLUGIN_SLUG}/assets/dist/js/previewshare.min.js"
+	"${PLUGIN_SLUG}/languages/previewshare.pot"
 	"${PLUGIN_SLUG}/vendor/autoload.php"
 )
 
 for required_path in "${required_paths[@]}"; do
 	if ! grep -Fxq "${required_path}" "${LIST_FILE}"; then
 		echo "Release zip is missing required file: ${required_path}" >&2
+		exit 1
+	fi
+done
+
+pot_content="$(unzip -p "${ZIP_PATH}" "${PLUGIN_SLUG}/languages/previewshare.pot")"
+required_translation_strings=(
+	'msgid "Settings saved."'
+	'msgid "Access extended by 24 hours. New expiry: %s."'
+)
+
+for translation_string in "${required_translation_strings[@]}"; do
+	if ! grep -Fq "${translation_string}" <<< "${pot_content}"; then
+		echo "Release zip translation template is missing: ${translation_string}" >&2
 		exit 1
 	fi
 done

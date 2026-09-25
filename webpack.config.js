@@ -42,8 +42,9 @@ const config = {
 	plugins: [ ...defaultConfig.plugins ],
 };
 
-if ( inProduction ) {
-	// POT file generation for translations.
+if ( inProduction && 'true' === process.env.PREVIEWSHARE_GENERATE_PHP_POT ) {
+	// This generates PHP strings only. Keep it opt-in because the checked-in POT
+	// also contains JavaScript strings needed by the settings interface.
 	wpPot( {
 		package: 'PreviewShare',
 		domain: 'previewshare',
