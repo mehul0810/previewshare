@@ -6,7 +6,7 @@
 
 import { registerPlugin } from '@wordpress/plugins';
 import {
-	PluginDocumentSettingPanel,
+	PluginDocumentSettingPanel as EditorDocumentSettingPanel,
 	PluginPreviewMenuItem,
 } from '@wordpress/editor';
 import { __, _n, sprintf } from '@wordpress/i18n';
@@ -21,6 +21,12 @@ import {
 	normalizeTtlHours,
 	resolvePreviewableStatus,
 } from './utils';
+
+// WordPress 5.8 exposes this SlotFill from wp.editPost. Newer core
+// versions expose it from wp.editor.
+const PluginDocumentSettingPanel =
+	EditorDocumentSettingPanel ||
+	window.wp?.editPost?.PluginDocumentSettingPanel;
 
 const PreviewSharePanel = () => {
 	const [ previewUrl, setPreviewUrl ] = useState( '' );
