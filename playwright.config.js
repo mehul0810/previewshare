@@ -24,9 +24,7 @@ module.exports = defineConfig( {
 	workers: 1,
 	retries: process.env.CI ? 1 : 0,
 	reporter: process.env.CI ? [ [ 'github' ], [ 'html', { open: 'never' } ] ] : 'list',
-	globalSetup: require.resolve(
-		'@wordpress/scripts/config/playwright/global-setup.js'
-	),
+	globalSetup: require.resolve( './scripts/e2e-global-setup.js' ),
 	outputDir: path.join( process.env.WP_ARTIFACTS_PATH, 'test-results' ),
 	use: {
 		baseURL,

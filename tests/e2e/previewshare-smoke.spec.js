@@ -265,7 +265,7 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	} );
 	await tablist.getByRole( 'tab', { name: 'More plugins' } ).click();
 	const pluginCards = page.locator( 'article.previewshare-plugin-card' );
-	await expect( pluginCards ).toHaveCount( 10 );
+	await expect( pluginCards ).toHaveCount( 9 );
 	await expect(
 		page.getByRole( 'heading', { name: 'OneCaptcha' } )
 	).toBeVisible();

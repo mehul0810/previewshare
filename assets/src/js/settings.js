@@ -64,10 +64,10 @@ import {
 		{
 			name: 'ThemeRouter',
 			description: __(
-				'Preview, test, and assign installed themes to individual pages, posts, or taxonomy archives.',
+				'Preview installed themes privately and route ready WordPress content to them in controlled stages.',
 				'previewshare'
 			),
-			url: 'https://github.com/mehul0810/themerouter/',
+			url: 'https://themerouter.com/',
 		},
 		{
 			name: 'Perform',
@@ -91,7 +91,7 @@ import {
 				'Use MCP-compatible AI apps to manage WordPress content, internal links, media, comments, and site workflows.',
 				'previewshare'
 			),
-			url: 'https://aculect.com/',
+			url: 'https://wordpress.org/plugins/aculect-ai-companion/',
 		},
 		{
 			name: 'Aculect Mail',
@@ -124,14 +124,6 @@ import {
 				'previewshare'
 			),
 			url: 'https://github.com/mehul0810/wp-distraction-free-view',
-		},
-		{
-			name: 'Aculect SEO',
-			description: __(
-				'Manage WordPress metadata, canonical and robots output, social cards, JSON-LD, and sitemaps.',
-				'previewshare'
-			),
-			url: 'https://aculect.com/',
 		},
 		{
 			name: 'OneCaptcha',
