@@ -16,6 +16,8 @@
 	--previewshare-blue-soft: #eff6ff;
 	--previewshare-green: #15803d;
 	--previewshare-green-soft: #ecfdf3;
+	--previewshare-warning: #8a5a00;
+	--previewshare-warning-soft: #fff4d6;
 	--previewshare-red: #b42318;
 	--previewshare-red-soft: #fef3f2;
 }
@@ -315,6 +317,61 @@ body.previewshare-settings-screen #wpbody-content {
 	margin-bottom: 38px;
 }
 
+.previewshare-site-defaults {
+	max-width: 760px;
+	margin-top: 8px;
+}
+
+.previewshare-plugin-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 18px;
+}
+
+.previewshare-plugin-card {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	align-items: flex-start;
+	padding: 22px;
+	border: 1px solid var(--previewshare-border);
+	border-radius: 6px;
+	background: var(--previewshare-surface);
+	box-shadow: 0 1px 2px rgb(16 24 40 / 4%);
+}
+
+.previewshare-plugin-card-mark {
+	display: grid;
+	width: 40px;
+	height: 40px;
+	place-items: center;
+	margin-bottom: 17px;
+	border: 1px solid #dbeafe;
+	border-radius: 8px;
+	background: var(--previewshare-blue-soft);
+	color: var(--previewshare-blue);
+}
+
+.previewshare-plugin-card h3 {
+	margin: 0 0 8px;
+	color: var(--previewshare-ink);
+	font-size: 15px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+.previewshare-plugin-card p {
+	flex: 1;
+	margin: 0 0 18px;
+	color: var(--previewshare-muted);
+	font-size: 13px;
+	line-height: 1.55;
+}
+
+.previewshare-plugin-card .previewshare-external-link {
+	margin-top: auto;
+}
+
 .previewshare-overview-section {
 	min-width: 0;
 	padding-top: 24px;
@@ -536,6 +593,11 @@ body.previewshare-settings-screen #wpbody-content {
 	color: var(--previewshare-green);
 }
 
+.previewshare-status.is-expiring_soon {
+	background: var(--previewshare-warning-soft);
+	color: var(--previewshare-warning);
+}
+
 .previewshare-status.is-expired {
 	background: var(--previewshare-red-soft);
 	color: var(--previewshare-red);
@@ -544,6 +606,16 @@ body.previewshare-settings-screen #wpbody-content {
 .previewshare-status.is-revoked {
 	background: #f2f4f7;
 	color: #667085;
+}
+
+.previewshare-link-status-cell {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.previewshare-link-status-cell .components-button {
+	min-height: 32px;
 }
 
 .previewshare-content-type-search {
@@ -758,6 +830,10 @@ body.previewshare-settings-screen #wpbody-content {
 		margin-bottom: 28px;
 	}
 
+	.previewshare-plugin-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
 	.previewshare-content-type-row {
 		padding-inline: 12px;
 	}
@@ -800,6 +876,10 @@ body.previewshare-settings-screen #wpbody-content {
 	}
 
 	.previewshare-metrics {
+		grid-template-columns: 1fr;
+	}
+
+	.previewshare-plugin-grid {
 		grid-template-columns: 1fr;
 	}
 

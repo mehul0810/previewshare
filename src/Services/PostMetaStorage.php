@@ -349,6 +349,58 @@ class PostMetaStorage {
 	}
 
 	/**
+	 * Extend an active expiring link by 24 hours.
+	 *
+	 * @param string $id Link ID/hash.
+	 * @return array{expires_at:int}|\WP_Error
+	 */
+	public function extend_token_by_id( string $id ) {
+		$hash = sanitize_key( $id );
+		if ( '' === $hash ) {
+			return new \WP_Error( 'invalid_id', 'Invalid preview link.', [ 'status' => 400 ] );
+		}
+
+		$post_id = $this->get_post_id_by_hash( $hash );
+		if ( ! $post_id ) {
+			return new \WP_Error( 'link_not_found', 'Preview link not found.', [ 'status' => 404 ] );
+		}
+
+		$link = $this->get_link_record( $post_id, $hash );
+		if (
+			! $link
+			|| ! $this->is_link_active( $link )
+			|| null === $link['expires_at']
+			|| (int) $link['expires_at'] > time() + DAY_IN_SECONDS
+		) {
+			return new \WP_Error( 'link_not_extendable', 'Only active links expiring within 24 hours can be extended.', [ 'status' => 409 ] );
+		}
+
+		$previous_links = $this->get_links_for_post( $post_id );
+		if ( empty( $previous_links[ $hash ] ) ) {
+			return new \WP_Error( 'link_not_found', 'Preview link not found.', [ 'status' => 404 ] );
+		}
+
+		$updated_links          = $previous_links;
+		$updated_links[ $hash ] = array_merge(
+			$link,
+			[ 'expires_at' => (int) $link['expires_at'] + DAY_IN_SECONDS ]
+		);
+
+		if ( ! $this->update_required_post_meta( $post_id, self::LINKS_META_KEY, $updated_links ) ) {
+			return new \WP_Error( 'link_update_failed', 'Preview link could not be extended.', [ 'status' => 500 ] );
+		}
+
+		if ( ! $this->update_required_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $updated_links[ $hash ] ) ) {
+			$this->update_required_post_meta( $post_id, self::LINKS_META_KEY, $previous_links );
+			return new \WP_Error( 'link_update_failed', 'Preview link could not be extended.', [ 'status' => 500 ] );
+		}
+
+		$this->delete_cache( $hash );
+
+		return [ 'expires_at' => (int) $updated_links[ $hash ]['expires_at'] ];
+	}
+
+	/**
 	 * Revoke all current links for a post.
 	 *
 	 * @param int $post_id Post ID.

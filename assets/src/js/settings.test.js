@@ -11,7 +11,7 @@ jest.mock( '@wordpress/dataviews/wp', () => {
 	const { createElement } = require( '@wordpress/element' );
 
 	return {
-		DataViews: ( { data = [], view = {} } ) =>
+		DataViews: ( { data = [], fields = [], view = {} } ) =>
 			createElement(
 				'div',
 				{
@@ -20,7 +20,14 @@ jest.mock( '@wordpress/dataviews/wp', () => {
 					'data-fields': ( view.fields || [] ).join( ',' ),
 				},
 				data.map( ( item ) =>
-					createElement( 'span', { key: item.id }, item.id )
+					createElement(
+						'span',
+						{ key: item.id },
+						item.id,
+						...fields
+							.filter( ( field ) => field.id === 'status' )
+							.map( ( field ) => field.render( { item } ) )
+					)
 				)
 			),
 		filterSortAndPaginate: ( data ) => ( {
@@ -133,8 +140,9 @@ function setupWordPressMocks() {
 	};
 }
 
-function setupFetch( settingsOverride = null ) {
+function setupFetch( settingsOverride = null, initialItems = [] ) {
 	const posts = [];
+	const tokenItems = initialItems.map( ( item ) => ( { ...item } ) );
 	const initialSettings = settingsOverride || {
 		default_ttl_hours: 6,
 		enable_logging: false,
@@ -151,6 +159,19 @@ function setupFetch( settingsOverride = null ) {
 
 	window.fetch = jest.fn( ( url, options = {} ) => {
 		if ( options.method === 'POST' ) {
+			if ( String( url ).endsWith( '/tokens/extend' ) ) {
+				const { id } = JSON.parse( options.body );
+				const item = tokenItems.find( ( token ) => token.id === id );
+				if ( ! item ) {
+					return Promise.reject( new Error( 'missing link' ) );
+				}
+
+				item.expires_at += 24 * 60 * 60;
+				return Promise.resolve(
+					response( { expires_at: item.expires_at } )
+				);
+			}
+
 			const request = deferred();
 			posts.push( {
 				body: JSON.parse( options.body ),
@@ -160,7 +181,9 @@ function setupFetch( settingsOverride = null ) {
 		}
 
 		if ( String( url ).includes( '/tokens' ) ) {
-			return Promise.resolve( response( { items: [], total: 0 } ) );
+			return Promise.resolve(
+				response( { items: tokenItems, total: tokenItems.length } )
+			);
 		}
 
 		return Promise.resolve( response( initialSettings ) );
@@ -172,7 +195,7 @@ function setupFetch( settingsOverride = null ) {
 async function mountSettingsApp( initialSettings ) {
 	document.body.innerHTML = '<div id="previewshare-settings-app"></div>';
 	window.previewshare_settings = {
-		version: '1.0.2',
+		version: '1.1.0',
 		rest_url: '/wp-json/previewshare/v1',
 		nonce: 'test-nonce',
 		settings: initialSettings,
@@ -197,6 +220,11 @@ function findButton( label ) {
 beforeAll( () => {
 	setupWordPressMocks();
 	globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+	window.previewshare_settings = {
+		version: '1.1.0',
+		rest_url: '/wp-json/previewshare/v1',
+		nonce: 'test-nonce',
+	};
 	// The settings bundle registers its DOMContentLoaded mount listener.
 	require( './settings' );
 } );
@@ -560,6 +588,22 @@ describe( 'PreviewShare settings autosave', () => {
 } );
 
 describe( 'PreviewShare settings navigation', () => {
+	it( 'keeps diagnostics logging in Overview without a diagnostics tab', async () => {
+		const { initialSettings } = setupFetch();
+		await mountSettingsApp( initialSettings );
+
+		expect(
+			document.querySelector(
+				'input[aria-label="Enable diagnostic logging"]'
+			)
+		).not.toBeNull();
+		expect(
+			Array.from( document.querySelectorAll( '[role="tab"]' ) ).some(
+				( tab ) => tab.textContent.includes( 'Diagnostics' )
+			)
+		).toBe( false );
+	} );
+
 	it( 'renders tabs inside a labelled tablist with an associated panel', async () => {
 		const { initialSettings } = setupFetch();
 		await mountSettingsApp( initialSettings );
@@ -572,7 +616,7 @@ describe( 'PreviewShare settings navigation', () => {
 		expect( tablist.getAttribute( 'aria-label' ) ).toBe(
 			'PreviewShare settings'
 		);
-		expect( tabs ).toHaveLength( 4 );
+		expect( tabs ).toHaveLength( 5 );
 		expect( tabs.every( ( tab ) => tab.parentElement === tablist ) ).toBe(
 			true
 		);
@@ -588,5 +632,158 @@ describe( 'PreviewShare settings navigation', () => {
 		).toBe( 0 );
 		expect( panel.getAttribute( 'aria-labelledby' ) ).toBe( tabs[ 0 ].id );
 		expect( tabs[ 0 ].getAttribute( 'aria-controls' ) ).toBe( panel.id );
+	} );
+
+	it( 'renders the More plugins catalog as product cards', async () => {
+		const { initialSettings } = setupFetch();
+		await mountSettingsApp( initialSettings );
+
+		await act( async () => {
+			findButton( 'More plugins' ).click();
+			await flushPromises();
+		} );
+
+		expect(
+			document.querySelectorAll( '.previewshare-plugin-card' )
+		).toHaveLength( 10 );
+		expect( document.body.textContent ).toContain( 'ThemeRouter' );
+		expect( document.body.textContent ).toContain( 'Aculect Icon Library' );
+		expect( document.body.textContent ).toContain( 'OneCaptcha' );
+		expect( document.body.textContent ).not.toContain( 'Aculect Docs' );
+
+		const productLinks = Array.from(
+			document.querySelectorAll(
+				'.previewshare-plugin-card .previewshare-external-link'
+			)
+		);
+		expect( productLinks ).toHaveLength( 10 );
+		productLinks.forEach( ( link ) => {
+			expect( link.href ).toMatch( /^https:\/\// );
+			expect( link.target ).toBe( '_blank' );
+			expect( link.rel ).toContain( 'noopener' );
+			expect( link.getAttribute( 'aria-label' ) ).toMatch(
+				/^Learn more about .+/
+			);
+		} );
+	} );
+} );
+
+describe( 'PreviewShare expiring-link management', () => {
+	it( 'moves expiring links into the inventory and extends the same link by 24 hours', async () => {
+		const expiresAt = Math.floor( Date.now() / 1000 ) + 3 * 60 * 60;
+		const linkItem = {
+			id: 'link-hash-1',
+			post_id: 42,
+			post_title: 'Review draft',
+			post_type: 'post',
+			label: 'Client review',
+			status: 'active',
+			expires_at: expiresAt,
+			view_count: 2,
+			created_at: expiresAt - 60,
+		};
+		const { initialSettings } = setupFetch( null, [ linkItem ] );
+		await mountSettingsApp( initialSettings );
+
+		expect( document.body.textContent ).not.toContain( 'Expiring soon' );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+
+		expect( document.body.textContent ).toContain( 'Expiring soon' );
+		expect( findButton( 'Extend' ) ).toBeDefined();
+		await act( async () => {
+			findButton( 'Extend' ).click();
+			await flushPromises();
+		} );
+		const extensionRequest = window.fetch.mock.calls.find( ( [ url ] ) =>
+			String( url ).endsWith( '/tokens/extend' )
+		);
+		expect( extensionRequest[ 1 ].headers[ 'X-WP-Nonce' ] ).toBe(
+			'test-nonce'
+		);
+
+		expect( findButton( 'Extend' ) ).toBeUndefined();
+		expect( document.body.textContent ).toContain(
+			'Access extended by 24 hours.'
+		);
+		expect(
+			document.querySelector( '.previewshare-status.is-expiring_soon' )
+		).toBeNull();
+		expect( document.body.textContent ).toContain( 'Expiring soon (0)' );
+	} );
+
+	it( 'includes the 24-hour boundary and excludes inactive or later expiries', async () => {
+		const now = Math.floor( Date.now() / 1000 );
+		const links = [
+			{ id: 'at-boundary', status: 'active', expires_at: now + 86400 },
+			{ id: 'outside-window', status: 'active', expires_at: now + 86401 },
+			{ id: 'expired-now', status: 'active', expires_at: now },
+			{ id: 'expired', status: 'expired', expires_at: now - 1 },
+			{ id: 'revoked', status: 'revoked', expires_at: now + 60 },
+			{ id: 'non-expiring', status: 'active', expires_at: null },
+		];
+		const { initialSettings } = setupFetch( null, links );
+		await mountSettingsApp( initialSettings );
+
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+
+		expect( findButton( 'Expiring soon (1)' ) ).toBeDefined();
+		await act( async () => {
+			findButton( 'Expiring soon (1)' ).click();
+			await flushPromises();
+		} );
+		expect(
+			document.querySelectorAll( '.previewshare-status.is-expiring_soon' )
+		).toHaveLength( 1 );
+		expect( document.body.textContent ).toContain( 'at-boundary' );
+	} );
+
+	it( 'shows a pending state and preserves the link after an extension failure', async () => {
+		const expiresAt = Math.floor( Date.now() / 1000 ) + 3 * 60 * 60;
+		const { initialSettings } = setupFetch( null, [
+			{
+				id: 'link-hash-1',
+				status: 'active',
+				expires_at: expiresAt,
+			},
+		] );
+		const defaultFetch = window.fetch;
+		const request = deferred();
+		window.fetch = jest.fn( ( url, options = {} ) => {
+			if ( String( url ).endsWith( '/tokens/extend' ) ) {
+				return request.promise;
+			}
+
+			return defaultFetch( url, options );
+		} );
+		await mountSettingsApp( initialSettings );
+
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+
+		await act( async () => {
+			findButton( 'Extend' ).click();
+			await flushPromises();
+		} );
+		expect( findButton( 'Extend' ).disabled ).toBe( true );
+
+		await act( async () => {
+			request.reject( new Error( 'network failure' ) );
+			await flushPromises();
+		} );
+		expect( document.body.textContent ).toContain(
+			'Preview link could not be extended. Its expiry is unchanged.'
+		);
+		expect( findButton( 'Extend' ) ).toBeDefined();
+		expect(
+			document.querySelectorAll( '.previewshare-status.is-expiring_soon' )
+		).toHaveLength( 1 );
 	} );
 } );
