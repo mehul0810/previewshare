@@ -929,7 +929,7 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 		page.waitForResponse( isRevokePreviewResponse ),
 		page
 			.getByRole( 'checkbox', { name: 'Enable Public Preview' } )
-			.uncheck(),
+			.click(),
 	] );
 	expect( revokeResponse.status() ).toBe( 200 );
 	await expect(
