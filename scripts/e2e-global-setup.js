@@ -1,7 +1,7 @@
 const fs = require( 'fs/promises' );
 const { execFileSync } = require( 'child_process' );
 const { dirname } = require( 'path' );
-const { chromium, request } = require( '@playwright/test' );
+const { chromium } = require( '@playwright/test' );
 
 function getAdminCookies( baseURL ) {
 	const username = process.env.WP_USERNAME || 'admin';
@@ -66,38 +66,6 @@ echo wp_json_encode(
 	}
 
 	return cookies.map( ( cookie ) => ( { ...cookie, url: baseURL } ) );
-}
-
-async function findRestRoot( requestContext, baseURL ) {
-	const homepage = await requestContext.get( '/' );
-	const linkHeader = homepage.headers().link;
-	const restLink = linkHeader?.match(
-		/<([^>]+)>; rel="https:\/\/api\.w\.org\/"/
-	);
-
-	if ( restLink ) {
-		return restLink[ 1 ];
-	}
-
-	for ( const candidate of [ 'wp-json/', '?rest_route=/' ] ) {
-		const response = await requestContext.get( candidate );
-		if ( ! response.ok() ) {
-			continue;
-		}
-
-		let index;
-		try {
-			index = await response.json();
-		} catch {
-			continue;
-		}
-
-		if ( index && typeof index.routes === 'object' ) {
-			return new URL( candidate, baseURL ).href;
-		}
-	}
-
-	throw new Error( 'Could not find the WordPress REST API root.' );
 }
 
 async function getRestNonceFromAdminPage( page, baseURL ) {
@@ -201,22 +169,11 @@ async function globalSetup( config ) {
 		await verifyAdminSession( page, baseURL );
 		const nonce = await getRestNonceFromAdminPage( page, baseURL );
 		const state = await browserContext.storageState();
-		const requestContext = await request.newContext( {
-			baseURL,
-			storageState: state,
-		} );
-		let rootURL;
-		try {
-			rootURL = await findRestRoot( requestContext, baseURL );
-		} finally {
-			await requestContext.dispose();
-		}
-
 		if ( storageStatePath ) {
 			await fs.mkdir( dirname( storageStatePath ), { recursive: true } );
 			await fs.writeFile(
 				storageStatePath,
-				JSON.stringify( { ...state, nonce, rootURL } ),
+				JSON.stringify( { ...state, nonce } ),
 				'utf-8'
 			);
 		}
