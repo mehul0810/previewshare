@@ -61,7 +61,7 @@ class Settings {
 
 		$asset      = \previewshare_get_asset_metadata(
 			'assets/dist/js/previewshare-settings.min.asset.php',
-			[ 'wp-element', 'wp-components', 'wp-i18n', 'wp-data' ]
+			[ 'wp-element', 'wp-components', 'wp-i18n', 'wp-data', 'wp-date' ]
 		);
 		$plugin_url = defined( 'PREVIEWSHARE_PLUGIN_URL' ) ? (string) constant( 'PREVIEWSHARE_PLUGIN_URL' ) : '';
 
@@ -81,6 +81,14 @@ class Settings {
 			$asset['dependencies'],
 			$asset['version'],
 			true
+		);
+
+		// WordPress 5.8 exposes date settings through the experimental alias.
+		// Backfill the stable name expected by the bundled DataViews package.
+		wp_add_inline_script(
+			'previewshare-settings',
+			'if ( window.wp && window.wp.date && typeof window.wp.date.getSettings !== "function" && typeof window.wp.date.__experimentalGetSettings === "function" ) { window.wp.date.getSettings = window.wp.date.__experimentalGetSettings; }',
+			'before'
 		);
 
 		wp_localize_script(
