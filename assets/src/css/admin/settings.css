@@ -1069,6 +1069,7 @@ body.previewshare-settings-screen #wpbody-content {
 		justify-content: center;
 	}
 }
+
 /* Bound legacy Icon output when core ignores its size prop. */
 .previewshare-settings .previewshare-external-link svg {
 	width: 16px !important;
