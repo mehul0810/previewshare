@@ -1039,7 +1039,7 @@ body.previewshare-settings-screen #wpbody-content {
 		font-weight: 600;
 	}
 
-	.previewshare-legacy-link-table tbody td[data-label="Actions"] {
+	.previewshare-legacy-link-table tbody td.previewshare-actions-cell {
 		grid-column: 1 / -1;
 	}
 
@@ -1059,7 +1059,7 @@ body.previewshare-settings-screen #wpbody-content {
 		grid-template-columns: 1fr;
 	}
 
-	.previewshare-legacy-link-table tbody td[data-label="Actions"] {
+	.previewshare-legacy-link-table tbody td.previewshare-actions-cell {
 		grid-column: auto;
 	}
 
