@@ -1479,225 +1479,260 @@ import {
 							{ className: 'previewshare-loading' },
 							el( Spinner )
 					  )
-					: pageItems.length
-					? el(
-							'div',
-							{ className: 'previewshare-legacy-table-wrap' },
+					: ( pageItems.length > 0 &&
 							el(
-								'table',
-								{
-									className: 'previewshare-legacy-link-table',
-									'aria-label': __(
-										'Preview link inventory',
-										'previewshare'
-									),
-								},
+								'div',
+								{ className: 'previewshare-legacy-table-wrap' },
 								el(
-									'thead',
-									null,
+									'table',
+									{
+										className:
+											'previewshare-legacy-link-table',
+										'aria-label': __(
+											'Preview link inventory',
+											'previewshare'
+										),
+									},
 									el(
-										'tr',
+										'thead',
 										null,
-										...[
-											__( 'Content', 'previewshare' ),
-											__( 'Label', 'previewshare' ),
-											__( 'Status', 'previewshare' ),
-											__( 'Views', 'previewshare' ),
-											__( 'Expires', 'previewshare' ),
-											__( 'Last viewed', 'previewshare' ),
-											__( 'Actions', 'previewshare' ),
-										].map( ( label ) =>
-											el(
-												'th',
-												{ key: label, scope: 'col' },
-												label
-											)
-										)
-									)
-								),
-								el(
-									'tbody',
-									null,
-									...pageItems.map( ( item ) => {
-										const title =
-											item.post_title ||
-											__(
-												'Untitled content',
-												'previewshare'
-											);
-										const meta = sprintf(
-											/* translators: 1: Content type. 2: Post ID. */
-											__(
-												'%1$s - ID %2$d',
-												'previewshare'
-											),
-											item.post_type ||
-												__( 'Content', 'previewshare' ),
-											Number( item.post_id ) || 0
-										);
-										const expiringSoon =
-											isExpiringSoon( item );
-										const status = expiringSoon
-											? 'expiring_soon'
-											: item.status || 'unknown';
-
-										return el(
+										el(
 											'tr',
-											{ key: item.id },
-											renderCell(
+											null,
+											...[
 												__( 'Content', 'previewshare' ),
-												el(
-													'div',
-													{
-														className:
-															'previewshare-content-cell',
-													},
-													item.edit_url
-														? el(
-																'a',
-																{
-																	href: item.edit_url,
-																},
-																title
-														  )
-														: el(
-																'span',
-																null,
-																title
-														  ),
-													el( 'small', null, meta )
-												)
-											),
-											renderCell(
 												__( 'Label', 'previewshare' ),
-												item.label ||
-													__(
-														'Preview link',
-														'previewshare'
-													)
-											),
-											renderCell(
 												__( 'Status', 'previewshare' ),
-												el(
-													'div',
-													{
-														className:
-															'previewshare-link-status-cell',
-													},
-													el( StatusBadge, {
-														status,
-													} ),
-													expiringSoon
-														? el(
-																Button,
-																{
-																	variant:
-																		'tertiary',
-																	isBusy:
-																		workingTokenId ===
-																		item.id,
-																	disabled:
-																		Boolean(
-																			workingTokenId
-																		),
-																	onClick:
-																		() =>
-																			handleExtend(
-																				item.id
-																			),
-																},
-																__(
-																	'Extend',
-																	'previewshare'
-																)
-														  )
-														: null
-												)
-											),
-											renderCell(
 												__( 'Views', 'previewshare' ),
-												Number( item.view_count ) || 0
-											),
-											renderCell(
 												__( 'Expires', 'previewshare' ),
-												formatDate( item.expires_at )
-											),
-											renderCell(
 												__(
 													'Last viewed',
 													'previewshare'
 												),
-												formatDate(
-													item.last_viewed_at
-												)
-											),
-											renderCell(
 												__( 'Actions', 'previewshare' ),
+											].map( ( label ) =>
 												el(
-													'div',
+													'th',
 													{
-														className:
-															'previewshare-legacy-row-actions',
+														key: label,
+														scope: 'col',
 													},
-													item.post_id
-														? el(
-																Button,
-																{
-																	variant:
-																		'tertiary',
-																	disabled:
-																		Boolean(
-																			workingTokenId
-																		),
-																	onClick:
-																		() =>
-																			handleGenerateAndCopy(
-																				item.post_id
-																			),
-																},
-																__(
-																	'Generate & copy',
-																	'previewshare'
-																)
-														  )
-														: null,
-													item.status === 'active'
-														? el(
-																Button,
-																{
-																	variant:
-																		'tertiary',
-																	disabled:
-																		Boolean(
-																			workingTokenId
-																		),
-																	onClick:
-																		() =>
-																			handleRevoke(
-																				item.id
-																			),
-																},
-																__(
-																	'Revoke link',
-																	'previewshare'
-																)
-														  )
-														: null
+													label
 												)
 											)
-										);
-									} )
+										)
+									),
+									el(
+										'tbody',
+										null,
+										...pageItems.map( ( item ) => {
+											const title =
+												item.post_title ||
+												__(
+													'Untitled content',
+													'previewshare'
+												);
+											const meta = sprintf(
+												/* translators: 1: Content type. 2: Post ID. */
+												__(
+													'%1$s - ID %2$d',
+													'previewshare'
+												),
+												item.post_type ||
+													__(
+														'Content',
+														'previewshare'
+													),
+												Number( item.post_id ) || 0
+											);
+											const expiringSoon =
+												isExpiringSoon( item );
+											const status = expiringSoon
+												? 'expiring_soon'
+												: item.status || 'unknown';
+
+											return el(
+												'tr',
+												{ key: item.id },
+												renderCell(
+													__(
+														'Content',
+														'previewshare'
+													),
+													el(
+														'div',
+														{
+															className:
+																'previewshare-content-cell',
+														},
+														item.edit_url
+															? el(
+																	'a',
+																	{
+																		href: item.edit_url,
+																	},
+																	title
+															  )
+															: el(
+																	'span',
+																	null,
+																	title
+															  ),
+														el(
+															'small',
+															null,
+															meta
+														)
+													)
+												),
+												renderCell(
+													__(
+														'Label',
+														'previewshare'
+													),
+													item.label ||
+														__(
+															'Preview link',
+															'previewshare'
+														)
+												),
+												renderCell(
+													__(
+														'Status',
+														'previewshare'
+													),
+													el(
+														'div',
+														{
+															className:
+																'previewshare-link-status-cell',
+														},
+														el( StatusBadge, {
+															status,
+														} ),
+														expiringSoon
+															? el(
+																	Button,
+																	{
+																		variant:
+																			'tertiary',
+																		isBusy:
+																			workingTokenId ===
+																			item.id,
+																		disabled:
+																			Boolean(
+																				workingTokenId
+																			),
+																		onClick:
+																			() =>
+																				handleExtend(
+																					item.id
+																				),
+																	},
+																	__(
+																		'Extend',
+																		'previewshare'
+																	)
+															  )
+															: null
+													)
+												),
+												renderCell(
+													__(
+														'Views',
+														'previewshare'
+													),
+													Number( item.view_count ) ||
+														0
+												),
+												renderCell(
+													__(
+														'Expires',
+														'previewshare'
+													),
+													formatDate(
+														item.expires_at
+													)
+												),
+												renderCell(
+													__(
+														'Last viewed',
+														'previewshare'
+													),
+													formatDate(
+														item.last_viewed_at
+													)
+												),
+												renderCell(
+													__(
+														'Actions',
+														'previewshare'
+													),
+													el(
+														'div',
+														{
+															className:
+																'previewshare-legacy-row-actions',
+														},
+														item.post_id
+															? el(
+																	Button,
+																	{
+																		variant:
+																			'tertiary',
+																		disabled:
+																			Boolean(
+																				workingTokenId
+																			),
+																		onClick:
+																			() =>
+																				handleGenerateAndCopy(
+																					item.post_id
+																				),
+																	},
+																	__(
+																		'Generate & copy',
+																		'previewshare'
+																	)
+															  )
+															: null,
+														item.status === 'active'
+															? el(
+																	Button,
+																	{
+																		variant:
+																			'tertiary',
+																		disabled:
+																			Boolean(
+																				workingTokenId
+																			),
+																		onClick:
+																			() =>
+																				handleRevoke(
+																					item.id
+																				),
+																	},
+																	__(
+																		'Revoke link',
+																		'previewshare'
+																	)
+															  )
+															: null
+													)
+												)
+											);
+										} )
+									)
 								)
-							)
-					  )
-					: el(
-							'p',
-							{ className: 'previewshare-empty-state' },
-							__(
-								'No preview links match this view.',
-								'previewshare'
-							)
-					  ),
+							) ) ||
+							el(
+								'p',
+								{ className: 'previewshare-empty-state' },
+								__(
+									'No preview links match this view.',
+									'previewshare'
+								)
+							),
 				! loadingTokens
 					? el(
 							'div',
