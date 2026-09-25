@@ -290,13 +290,15 @@ const PreviewSharePanel = () => {
 
 	return (
 		<Fragment>
-			<PluginPreviewMenuItem
-				icon="external"
-				onClick={ () => generatePreviewUrl( { copy: true } ) }
-				disabled={ ! canGeneratePreview || isGenerating }
-			>
-				{ __( 'Generate public preview link', 'previewshare' ) }
-			</PluginPreviewMenuItem>
+			{ PluginPreviewMenuItem && (
+				<PluginPreviewMenuItem
+					icon="external"
+					onClick={ () => generatePreviewUrl( { copy: true } ) }
+					disabled={ ! canGeneratePreview || isGenerating }
+				>
+					{ __( 'Generate public preview link', 'previewshare' ) }
+				</PluginPreviewMenuItem>
+			) }
 			<PluginDocumentSettingPanel
 				name="previewshare-panel"
 				title={ __( 'PreviewShare', 'previewshare' ) }
