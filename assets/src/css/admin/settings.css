@@ -951,7 +951,7 @@ body.previewshare-settings-screen #wpbody-content {
 	letter-spacing: 0.02em;
 }
 
-.previewshare-legacy-link-table tbody tr:last-child td {
+.previewshare-settings .previewshare-legacy-inventory .previewshare-legacy-link-table tbody tr:last-child td {
 	border-bottom: 0;
 }
 
