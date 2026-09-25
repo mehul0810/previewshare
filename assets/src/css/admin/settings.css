@@ -149,29 +149,6 @@ body.previewshare-settings-screen #wpbody-content {
 	flex: 0 0 auto;
 }
 
-/* Keep legacy WordPress Icon output bounded when its size prop is unavailable. */
-.previewshare-settings .previewshare-external-link svg {
-	width: 16px !important;
-	height: 16px !important;
-}
-
-.previewshare-settings .previewshare-metric-label svg,
-.previewshare-settings .previewshare-type-summary li svg,
-.previewshare-settings .previewshare-fact-list li svg,
-.previewshare-settings .previewshare-save-state svg {
-	width: 18px !important;
-	height: 18px !important;
-}
-
-.previewshare-settings .previewshare-plugin-card-mark svg {
-	width: 20px !important;
-	height: 20px !important;
-}
-
-.previewshare-settings .previewshare-content-type-icon svg {
-	width: 24px !important;
-	height: 24px !important;
-}
 
 .previewshare-tabs {
 	display: flex;
@@ -1091,4 +1068,35 @@ body.previewshare-settings-screen #wpbody-content {
 		flex: 1 1 auto;
 		justify-content: center;
 	}
+}
+/* Bound legacy Icon output when core ignores its size prop. */
+.previewshare-settings .previewshare-external-link svg {
+	width: 16px !important;
+	height: 16px !important;
+}
+
+.previewshare-settings .previewshare-metric-label svg {
+	width: 18px !important;
+	height: 18px !important;
+}
+
+.previewshare-settings .previewshare-save-state svg {
+	width: 18px !important;
+	height: 18px !important;
+}
+
+.previewshare-settings .previewshare-plugin-card-mark svg {
+	width: 20px !important;
+	height: 20px !important;
+}
+
+.previewshare-settings .previewshare-content-type-icon svg {
+	width: 24px !important;
+	height: 24px !important;
+}
+
+.previewshare-settings .previewshare-type-summary li svg,
+.previewshare-settings .previewshare-fact-list li svg {
+	width: 18px !important;
+	height: 18px !important;
 }
