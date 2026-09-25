@@ -52,11 +52,12 @@ async function getRestNonceFromAdminPage( requestContext ) {
 	const settingsMatch = html.match( /\b(?:wpApiSettings|previewshare_settings)\s*=\s*/ );
 	if ( ! settingsMatch ) {
 		const title = html.match( /<title>([^<]*)<\/title>/i )?.[ 1 ] || 'unknown';
+		const contentType = adminPage.headers()[ 'content-type' ] || 'unknown';
 		const scriptIds = [ ...html.matchAll( /<script\b[^>]*\bid=["']([^"']+)["']/gi ) ]
 			.map( ( match ) => match[ 1 ] )
 			.join( ', ' );
 		throw new Error(
-			`Could not find REST settings on the PreviewShare admin page (${ adminPage.url() }, title: ${ title }, app mount: ${ html.includes( 'previewshare-settings-app' ) }, permission denied: ${ /You do not have sufficient permissions/i.test( html ) }, scripts: ${ scriptIds || 'none' }).`
+			`Could not find REST settings on the PreviewShare admin page (${ adminPage.url() }, HTTP ${ adminPage.status() }, content type: ${ contentType }, bytes: ${ Buffer.byteLength( html ) }, document: ${ /<html\b/i.test( html ) }, body: ${ /<body\b/i.test( html ) }, title: ${ title }, login form: ${ /id=["']loginform["']/i.test( html ) }, admin bar: ${ /id=["']wpadminbar["']/i.test( html ) }, app mount: ${ html.includes( 'previewshare-settings-app' ) }, permission denied: ${ /You do not have sufficient permissions/i.test( html ) }, scripts: ${ scriptIds || 'none' }).`
 		);
 	}
 
@@ -89,6 +90,16 @@ async function loginWithForm( requestContext ) {
 
 	if ( ! response.ok() ) {
 		throw new Error( `WordPress login failed with HTTP ${ response.status() }.` );
+	}
+
+	const responseHtml = await response.text();
+	if (
+		/\/wp-login\.php(?:[?#]|$)/i.test( response.url() ) ||
+		/id=["']login_error["']/i.test( responseHtml )
+	) {
+		throw new Error(
+			`WordPress did not accept the E2E login (HTTP ${ response.status() }, final URL: ${ response.url() }, login error shown: ${ /id=["']login_error["']/i.test( responseHtml ) }).`
+		);
 	}
 }
 
