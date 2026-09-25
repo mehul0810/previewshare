@@ -195,7 +195,91 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	} );
 	createdPostIds.add( post.id );
 
-	const settingsResponse = page.waitForResponse(
+	const browserDiagnostics = {
+		consoleErrors: [],
+		pageErrors: [],
+		failedRequests: [],
+		relevantResponses: [],
+	};
+	page.on( 'console', ( message ) => {
+		if ( message.type() === 'error' ) {
+			browserDiagnostics.consoleErrors.push( message.text() );
+		}
+	} );
+	page.on( 'pageerror', ( error ) => {
+		browserDiagnostics.pageErrors.push( error.message );
+	} );
+	page.on( 'requestfailed', ( request ) => {
+		browserDiagnostics.failedRequests.push(
+			`${ request.method() } ${ request.url() }: ${ request.failure()?.errorText || 'unknown failure' }`
+		);
+	} );
+	page.on( 'response', ( response ) => {
+		if (
+			/previewshare|settings\.min\.js|wp-admin\/load/i.test(
+				response.url()
+			)
+		) {
+			browserDiagnostics.relevantResponses.push(
+				`${ response.status() } ${ response.url() }`
+			);
+		}
+	} );
+
+	let settingsResponseStatus = null;
+	let tokensResponseStatus = null;
+	const settingsResponse = page
+		.waitForResponse(
+			( response ) =>
+				response.request().method() === 'GET' &&
+				responseMatchesRoute( response, '/previewshare/v1/settings' )
+		)
+		.then( ( response ) => {
+			settingsResponseStatus = response.status();
+			return response;
+		} );
+	const tokensResponse = page
+		.waitForResponse(
+			( response ) =>
+				response.request().method() === 'GET' &&
+				responseMatchesRoute( response, '/previewshare/v1/tokens' )
+		)
+		.then( ( response ) => {
+			tokensResponseStatus = response.status();
+			return response;
+		} );
+
+	await admin.visitAdminPage(
+		'options-general.php',
+		'page=previewshare_settings'
+	);
+	if ( ! settingsResponseStatus || ! tokensResponseStatus ) {
+		await page.waitForTimeout( 5000 );
+		console.log(
+			'[PreviewShare E2E] Settings page diagnostics:',
+			JSON.stringify( {
+				url: page.url(),
+				title: await page.title(),
+				appHTML: (
+					await page.locator( '#previewshare-settings-app' ).innerHTML()
+				).slice( 0, 2000 ),
+				bodyText: ( await page.locator( 'body' ).innerText() ).slice(
+					0,
+					2000
+				),
+				...browserDiagnostics,
+			} )
+		);
+	}
+	await expectSuccessfulResponse(
+		settingsResponse,
+		'PreviewShare settings request'
+	);
+	await expectSuccessfulResponse(
+		tokensResponse,
+		'PreviewShare tokens request'
+	);
+	await expect( page.locator( '#previewshare-settings-app' ) ).toBeVisible();
 		( response ) =>
 			response.request().method() === 'GET' &&
 			responseMatchesRoute( response, '/previewshare/v1/settings' )
