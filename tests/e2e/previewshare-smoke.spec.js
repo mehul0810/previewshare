@@ -367,7 +367,9 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	const extendedLink = await extendResponse.json();
 	expect( extendedLink.expires_at ).toBe( previousExpiry + 24 * 60 * 60 );
 	await expect(
-		page.getByText( 'Access extended by 24 hours.', { exact: false } )
+		page
+			.getByRole( 'region', { name: 'PreviewShare notices' } )
+			.getByText( 'Access extended by 24 hours.', { exact: false } )
 	).toBeVisible();
 	await expect(
 		page.getByRole( 'button', { name: 'Extend', exact: true } )

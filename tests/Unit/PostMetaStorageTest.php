@@ -396,17 +396,25 @@ class PostMetaStorageTest extends TestCase {
 		$storage = $this->make_storage();
 		$hash    = hash_hmac( 'sha256', 'extend-token', self::HASH_KEY );
 		$post_id = 654;
-		$expires = time() + ( 3 * HOUR_IN_SECONDS );
-		$link    = [
+		$expires     = time() + ( 3 * HOUR_IN_SECONDS );
+		$last_viewed = time() - 15;
+		$link        = [
 			'hash'           => $hash,
 			'label'          => 'Client review',
 			'created_at'     => time() - 60,
 			'created_by'     => 7,
 			'expires_at'     => $expires,
 			'revoked'        => 0,
-			'last_viewed_at' => null,
-			'view_count'     => 2,
+			'last_viewed_at' => $last_viewed,
+			'view_count'     => 7,
 		];
+		$stale_inventory_link = array_merge(
+			$link,
+			[
+				'last_viewed_at' => null,
+				'view_count'     => 2,
+			]
+		);
 		$updated_meta = [];
 
 		Functions\expect( 'get_option' )
@@ -417,7 +425,7 @@ class PostMetaStorageTest extends TestCase {
 		Functions\expect( 'get_post_meta' )
 			->twice()
 			->andReturnUsing(
-				static function ( int $requested_post_id, string $key, bool $single ) use ( $post_id, $hash, $link ): array {
+				static function ( int $requested_post_id, string $key, bool $single ) use ( $post_id, $hash, $link, $stale_inventory_link ): array {
 					if ( $post_id !== $requested_post_id || true !== $single ) {
 						return [];
 					}
@@ -426,7 +434,7 @@ class PostMetaStorageTest extends TestCase {
 						return $link;
 					}
 
-					return '_previewshare_links' === $key ? [ $hash => $link ] : [];
+					return '_previewshare_links' === $key ? [ $hash => $stale_inventory_link ] : [];
 				}
 			);
 		Functions\expect( 'update_post_meta' )
@@ -449,6 +457,10 @@ class PostMetaStorageTest extends TestCase {
 		$this->assertSame( $expires + DAY_IN_SECONDS, $updated_meta['_previewshare_links'][ $hash ]['expires_at'] );
 		$this->assertSame( $expires + DAY_IN_SECONDS, $updated_meta['_previewshare_token:' . $hash ]['expires_at'] );
 		$this->assertSame( 'Client review', $updated_meta['_previewshare_links'][ $hash ]['label'] );
+		$this->assertSame( $last_viewed, $updated_meta['_previewshare_links'][ $hash ]['last_viewed_at'] );
+		$this->assertSame( 7, $updated_meta['_previewshare_links'][ $hash ]['view_count'] );
+		$this->assertSame( $last_viewed, $updated_meta['_previewshare_token:' . $hash ]['last_viewed_at'] );
+		$this->assertSame( 7, $updated_meta['_previewshare_token:' . $hash ]['view_count'] );
 	}
 
 	public function test_extend_token_by_id_rolls_back_the_inventory_when_detail_write_fails(): void {

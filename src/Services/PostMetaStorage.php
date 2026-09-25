@@ -380,14 +380,10 @@ class PostMetaStorage {
 			return new \WP_Error( 'link_not_found', 'Preview link not found.', [ 'status' => 404 ] );
 		}
 
-		$updated_links = array_replace(
-			$previous_links,
-			[
-				$hash => array_merge(
-					$previous_links[ $hash ],
-					[ 'expires_at' => (int) $link['expires_at'] + DAY_IN_SECONDS ]
-				),
-			]
+		$updated_links          = $previous_links;
+		$updated_links[ $hash ] = array_merge(
+			$link,
+			[ 'expires_at' => (int) $link['expires_at'] + DAY_IN_SECONDS ]
 		);
 
 		if ( ! $this->update_required_post_meta( $post_id, self::LINKS_META_KEY, $updated_links ) ) {
