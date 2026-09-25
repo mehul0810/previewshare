@@ -11,6 +11,8 @@ const requiredPaths = [
 	'config/constants.php',
 	'src/Plugin.php',
 	'assets/dist/js/previewshare-admin.min.js',
+	'assets/dist/js/previewshare-settings.min.js',
+	'assets/dist/js/previewshare-settings.min.asset.php',
 	'assets/dist/js/previewshare.min.js',
 	'languages/previewshare.pot',
 	'vendor/autoload.php',
@@ -20,20 +22,29 @@ const defaultPotContent = [
 	'msgid "Access extended by 24 hours. New expiry: %s."',
 	'',
 ].join( '\n' );
+const defaultSettingsAssetContent =
+	"<?php return array('dependencies' => array('react', 'react-dom'), 'version' => 'test');";
 
-function writeFixtureZip( extraFiles, potContent ) {
-	const tempDirectory = mkdtempSync( join( tmpdir(), 'previewshare-zip-test-' ) );
+function writeFixtureZip( extraFiles, potContent, settingsAssetContent ) {
+	const tempDirectory = mkdtempSync(
+		join( tmpdir(), 'previewshare-zip-test-' )
+	);
 	const pluginDirectory = join( tempDirectory, 'previewshare' );
 
 	for ( const file of [ ...requiredPaths, ...extraFiles ] ) {
 		const path = join( pluginDirectory, file );
+		let content = '';
+
+		if ( file === 'languages/previewshare.pot' ) {
+			content = potContent ?? defaultPotContent;
+		} else if (
+			file === 'assets/dist/js/previewshare-settings.min.asset.php'
+		) {
+			content = settingsAssetContent ?? defaultSettingsAssetContent;
+		}
+
 		mkdirSync( join( path, '..' ), { recursive: true } );
-		writeFileSync(
-			path,
-			file === 'languages/previewshare.pot'
-				? potContent ?? defaultPotContent
-				: ''
-		);
+		writeFileSync( path, content );
 	}
 
 	const zipPath = join( tempDirectory, 'previewshare.zip' );
@@ -66,6 +77,35 @@ describe( 'release ZIP validation', () => {
 			rmSync( tempDirectory, { recursive: true, force: true } );
 		}
 	} );
+
+	test.each( [ 'react-jsx-runtime', 'wp-primitives' ] )(
+		'rejects script dependency %s missing from WordPress 5.8',
+		( dependency ) => {
+			const { tempDirectory, zipPath } = writeFixtureZip(
+				[],
+				undefined,
+				`<?php return array('dependencies' => array('${ dependency }'));`
+			);
+
+			try {
+				const result = spawnSync(
+					'bash',
+					[ 'scripts/validate-release-zip.sh', zipPath ],
+					{
+						cwd: process.cwd(),
+						encoding: 'utf8',
+					}
+				);
+
+				expect( result.status ).toBe( 1 );
+				expect( result.stderr ).toContain(
+					'Settings bundle depends on a script handle that WordPress 5.8 does not register.'
+				);
+			} finally {
+				rmSync( tempDirectory, { recursive: true, force: true } );
+			}
+		}
+	);
 
 	test( 'rejects wp-env configuration and override files', () => {
 		const { tempDirectory, zipPath } = writeFixtureZip( [

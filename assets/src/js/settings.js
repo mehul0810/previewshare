@@ -30,8 +30,15 @@ import {
 		useState,
 	} = wp.element;
 	const { __, sprintf } = wp.i18n;
-	const { Button, Icon, Notice, Spinner, TextControl, ToggleControl } =
-		wp.components;
+	const {
+		Button,
+		Icon,
+		Notice,
+		SelectControl,
+		Spinner,
+		TextControl,
+		ToggleControl,
+	} = wp.components;
 
 	const AUTOSAVE_DELAY = 450;
 	const DAY_IN_SECONDS = 24 * 60 * 60;
@@ -64,10 +71,10 @@ import {
 		{
 			name: 'ThemeRouter',
 			description: __(
-				'Preview, test, and assign installed themes to individual pages, posts, or taxonomy archives.',
+				'Preview installed themes privately and route ready WordPress content to them in controlled stages.',
 				'previewshare'
 			),
-			url: 'https://github.com/mehul0810/themerouter/',
+			url: 'https://themerouter.com/',
 		},
 		{
 			name: 'Perform',
@@ -91,7 +98,7 @@ import {
 				'Use MCP-compatible AI apps to manage WordPress content, internal links, media, comments, and site workflows.',
 				'previewshare'
 			),
-			url: 'https://aculect.com/',
+			url: 'https://wordpress.org/plugins/aculect-ai-companion/',
 		},
 		{
 			name: 'Aculect Mail',
@@ -124,14 +131,6 @@ import {
 				'previewshare'
 			),
 			url: 'https://github.com/mehul0810/wp-distraction-free-view',
-		},
-		{
-			name: 'Aculect SEO',
-			description: __(
-				'Manage WordPress metadata, canonical and robots output, social cards, JSON-LD, and sitemaps.',
-				'previewshare'
-			),
-			url: 'https://aculect.com/',
 		},
 		{
 			name: 'OneCaptcha',
@@ -464,6 +463,7 @@ import {
 			},
 		} );
 		const [ contentTypeSearch, setContentTypeSearch ] = useState( '' );
+		const [ inventoryStatus, setInventoryStatus ] = useState( 'all' );
 		const [ expiringOnly, setExpiringOnly ] = useState( false );
 		const [ loadingSettings, setLoadingSettings ] = useState( true );
 		const [ loadingTokens, setLoadingTokens ] = useState( true );
@@ -1406,16 +1406,412 @@ import {
 			);
 		}
 
+		function renderLegacyLinkTable( items ) {
+			const perPage = Math.max( 1, Number( view.perPage ) || 20 );
+			const totalPages = Math.max(
+				1,
+				Math.ceil( items.length / perPage )
+			);
+			const currentPage = Math.min(
+				Math.max( 1, Number( view.page ) || 1 ),
+				totalPages
+			);
+			const pageItems = items.slice(
+				( currentPage - 1 ) * perPage,
+				currentPage * perPage
+			);
+			const renderCell = ( label, content, className ) =>
+				el( 'td', { className, 'data-label': label }, content );
+
+			return el(
+				'div',
+				{ className: 'previewshare-legacy-inventory' },
+				el(
+					'div',
+					{ className: 'previewshare-legacy-toolbar' },
+					el( TextControl, {
+						label: __( 'Search preview links', 'previewshare' ),
+						value: view.search || '',
+						placeholder: __(
+							'Search by content or label',
+							'previewshare'
+						),
+						onChange: ( search ) =>
+							setView( ( current ) => ( {
+								...current,
+								search,
+								page: 1,
+							} ) ),
+					} ),
+					el( SelectControl, {
+						label: __( 'Status', 'previewshare' ),
+						value: inventoryStatus,
+						options: [
+							{
+								label: __( 'All statuses', 'previewshare' ),
+								value: 'all',
+							},
+							{
+								label: __( 'Active', 'previewshare' ),
+								value: 'active',
+							},
+							{
+								label: __( 'Expired', 'previewshare' ),
+								value: 'expired',
+							},
+							{
+								label: __( 'Revoked', 'previewshare' ),
+								value: 'revoked',
+							},
+						],
+						onChange: ( status ) => {
+							setInventoryStatus( status );
+							setView( ( current ) => ( {
+								...current,
+								page: 1,
+							} ) );
+						},
+					} )
+				),
+				loadingTokens
+					? el(
+							'div',
+							{ className: 'previewshare-loading' },
+							el( Spinner )
+					  )
+					: ( pageItems.length > 0 &&
+							el(
+								'div',
+								{ className: 'previewshare-legacy-table-wrap' },
+								el(
+									'table',
+									{
+										className:
+											'previewshare-legacy-link-table',
+										'aria-label': __(
+											'Preview link inventory',
+											'previewshare'
+										),
+									},
+									el(
+										'thead',
+										null,
+										el(
+											'tr',
+											null,
+											...[
+												__( 'Content', 'previewshare' ),
+												__( 'Label', 'previewshare' ),
+												__( 'Status', 'previewshare' ),
+												__( 'Views', 'previewshare' ),
+												__( 'Expires', 'previewshare' ),
+												__(
+													'Last viewed',
+													'previewshare'
+												),
+												__( 'Actions', 'previewshare' ),
+											].map( ( label ) =>
+												el(
+													'th',
+													{
+														key: label,
+														scope: 'col',
+													},
+													label
+												)
+											)
+										)
+									),
+									el(
+										'tbody',
+										null,
+										...pageItems.map( ( item ) => {
+											const title =
+												item.post_title ||
+												__(
+													'Untitled content',
+													'previewshare'
+												);
+											const meta = sprintf(
+												/* translators: 1: Content type. 2: Post ID. */
+												__(
+													'%1$s - ID %2$d',
+													'previewshare'
+												),
+												item.post_type ||
+													__(
+														'Content',
+														'previewshare'
+													),
+												Number( item.post_id ) || 0
+											);
+											const expiringSoon =
+												isExpiringSoon( item );
+											const status = expiringSoon
+												? 'expiring_soon'
+												: item.status || 'unknown';
+
+											return el(
+												'tr',
+												{ key: item.id },
+												renderCell(
+													__(
+														'Content',
+														'previewshare'
+													),
+													el(
+														'div',
+														{
+															className:
+																'previewshare-content-cell',
+														},
+														item.edit_url
+															? el(
+																	'a',
+																	{
+																		href: item.edit_url,
+																	},
+																	title
+															  )
+															: el(
+																	'span',
+																	null,
+																	title
+															  ),
+														el(
+															'small',
+															null,
+															meta
+														)
+													)
+												),
+												renderCell(
+													__(
+														'Label',
+														'previewshare'
+													),
+													item.label ||
+														__(
+															'Preview link',
+															'previewshare'
+														)
+												),
+												renderCell(
+													__(
+														'Status',
+														'previewshare'
+													),
+													el(
+														'div',
+														{
+															className:
+																'previewshare-link-status-cell',
+														},
+														el( StatusBadge, {
+															status,
+														} ),
+														expiringSoon
+															? el(
+																	Button,
+																	{
+																		variant:
+																			'tertiary',
+																		isBusy:
+																			workingTokenId ===
+																			item.id,
+																		disabled:
+																			Boolean(
+																				workingTokenId
+																			),
+																		onClick:
+																			() =>
+																				handleExtend(
+																					item.id
+																				),
+																	},
+																	__(
+																		'Extend',
+																		'previewshare'
+																	)
+															  )
+															: null
+													)
+												),
+												renderCell(
+													__(
+														'Views',
+														'previewshare'
+													),
+													Number( item.view_count ) ||
+														0
+												),
+												renderCell(
+													__(
+														'Expires',
+														'previewshare'
+													),
+													formatDate(
+														item.expires_at
+													)
+												),
+												renderCell(
+													__(
+														'Last viewed',
+														'previewshare'
+													),
+													formatDate(
+														item.last_viewed_at
+													)
+												),
+												renderCell(
+													__(
+														'Actions',
+														'previewshare'
+													),
+													el(
+														'div',
+														{
+															className:
+																'previewshare-legacy-row-actions',
+														},
+														item.post_id
+															? el(
+																	Button,
+																	{
+																		variant:
+																			'tertiary',
+																		disabled:
+																			Boolean(
+																				workingTokenId
+																			),
+																		onClick:
+																			() =>
+																				handleGenerateAndCopy(
+																					item.post_id
+																				),
+																	},
+																	__(
+																		'Generate & copy',
+																		'previewshare'
+																	)
+															  )
+															: null,
+														item.status === 'active'
+															? el(
+																	Button,
+																	{
+																		variant:
+																			'tertiary',
+																		disabled:
+																			Boolean(
+																				workingTokenId
+																			),
+																		onClick:
+																			() =>
+																				handleRevoke(
+																					item.id
+																				),
+																	},
+																	__(
+																		'Revoke link',
+																		'previewshare'
+																	)
+															  )
+															: null
+													),
+													'previewshare-actions-cell'
+												)
+											);
+										} )
+									)
+								)
+							) ) ||
+							el(
+								'p',
+								{ className: 'previewshare-empty-state' },
+								__(
+									'No preview links match this view.',
+									'previewshare'
+								)
+							),
+				! loadingTokens
+					? el(
+							'div',
+							{ className: 'previewshare-legacy-pagination' },
+							el(
+								'span',
+								null,
+								sprintf(
+									/* translators: 1: Current page. 2: Number of pages. */
+									__( 'Page %1$d of %2$d', 'previewshare' ),
+									currentPage,
+									totalPages
+								)
+							),
+							el(
+								Button,
+								{
+									variant: 'secondary',
+									disabled: currentPage <= 1,
+									onClick: () =>
+										setView( ( current ) => ( {
+											...current,
+											page: currentPage - 1,
+										} ) ),
+								},
+								__( 'Previous', 'previewshare' )
+							),
+							el(
+								Button,
+								{
+									variant: 'secondary',
+									disabled: currentPage >= totalPages,
+									onClick: () =>
+										setView( ( current ) => ( {
+											...current,
+											page: currentPage + 1,
+										} ) ),
+								},
+								__( 'Next', 'previewshare' )
+							)
+					  )
+					: null
+			);
+		}
+
 		function renderPreviews() {
 			const fields = getTokenFields( handleExtend, workingTokenId );
 			const visibleTokens = expiringOnly
 				? tokens.filter( ( token ) => isExpiringSoon( token ) )
 				: tokens;
-			const processed = filterSortAndPaginate(
-				visibleTokens,
-				view,
-				fields
+			const canRenderDataViews = Boolean(
+				DataViews && typeof wp.element.useInsertionEffect === 'function'
 			);
+			const processed = canRenderDataViews
+				? filterSortAndPaginate( visibleTokens, view, fields )
+				: null;
+			const normalizedSearch = String( view.search || '' )
+				.trim()
+				.toLowerCase();
+			const legacyTokens = visibleTokens.filter( ( token ) => {
+				const statusMatches =
+					'all' === inventoryStatus ||
+					token.status === inventoryStatus;
+				const searchable = [
+					token.post_title,
+					token.post_type,
+					token.label,
+					token.id,
+				]
+					.map( ( value ) => String( value || '' ) )
+					.join( ' ' )
+					.toLowerCase();
+				const searchMatches =
+					! normalizedSearch ||
+					searchable.includes( normalizedSearch );
+
+				return statusMatches && searchMatches;
+			} );
 			const actions = [
 				{
 					id: 'generate',
@@ -1492,15 +1888,8 @@ import {
 							)
 					  )
 					: null,
-				! DataViews
-					? el(
-							'p',
-							{ className: 'previewshare-empty-state' },
-							__(
-								'The preview link listing is unavailable in this WordPress version.',
-								'previewshare'
-							)
-					  )
+				! canRenderDataViews
+					? renderLegacyLinkTable( legacyTokens )
 					: el(
 							'div',
 							{ className: 'previewshare-dataviews' },

@@ -39,6 +39,8 @@ required_paths=(
 	"${PLUGIN_SLUG}/config/constants.php"
 	"${PLUGIN_SLUG}/src/Plugin.php"
 	"${PLUGIN_SLUG}/assets/dist/js/previewshare-admin.min.js"
+	"${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.min.js"
+	"${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.min.asset.php"
 	"${PLUGIN_SLUG}/assets/dist/js/previewshare.min.js"
 	"${PLUGIN_SLUG}/languages/previewshare.pot"
 	"${PLUGIN_SLUG}/vendor/autoload.php"
@@ -50,6 +52,11 @@ for required_path in "${required_paths[@]}"; do
 		exit 1
 	fi
 done
+
+if unzip -p "${ZIP_PATH}" "${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.min.asset.php" | grep -Eq "'(react-jsx-runtime|wp-primitives)'"; then
+	echo "Settings bundle depends on a script handle that WordPress 5.8 does not register." >&2
+	exit 1
+fi
 
 pot_content="$(unzip -p "${ZIP_PATH}" "${PLUGIN_SLUG}/languages/previewshare.pot")"
 required_translation_strings=(

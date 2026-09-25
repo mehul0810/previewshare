@@ -95,15 +95,16 @@ class Actions {
 			return;
 		}
 
-		$asset = \previewshare_get_asset_metadata(
+		$asset        = \previewshare_get_asset_metadata(
 			'assets/dist/js/previewshare-admin.min.asset.php',
 			[ 'wp-api-fetch', 'wp-edit-post' ]
 		);
+		$dependencies = array_values( array_unique( array_merge( $asset['dependencies'], [ 'wp-edit-post' ] ) ) );
 
 		wp_enqueue_script(
 			'previewshare-editor',
 			PREVIEWSHARE_PLUGIN_URL . 'assets/dist/js/previewshare-admin.min.js',
-			$asset['dependencies'],
+			$dependencies,
 			$asset['version'],
 			true
 		);

@@ -645,10 +645,11 @@ describe( 'PreviewShare settings navigation', () => {
 
 		expect(
 			document.querySelectorAll( '.previewshare-plugin-card' )
-		).toHaveLength( 10 );
+		).toHaveLength( 9 );
 		expect( document.body.textContent ).toContain( 'ThemeRouter' );
 		expect( document.body.textContent ).toContain( 'Aculect Icon Library' );
 		expect( document.body.textContent ).toContain( 'OneCaptcha' );
+		expect( document.body.textContent ).not.toContain( 'Aculect SEO' );
 		expect( document.body.textContent ).not.toContain( 'Aculect Docs' );
 
 		const productLinks = Array.from(
@@ -656,7 +657,19 @@ describe( 'PreviewShare settings navigation', () => {
 				'.previewshare-plugin-card .previewshare-external-link'
 			)
 		);
-		expect( productLinks ).toHaveLength( 10 );
+		expect( productLinks ).toHaveLength( 9 );
+		expect(
+			productLinks.find( ( link ) =>
+				link.getAttribute( 'aria-label' ).includes( 'ThemeRouter' )
+			).href
+		).toBe( 'https://themerouter.com/' );
+		expect(
+			productLinks.find( ( link ) =>
+				link
+					.getAttribute( 'aria-label' )
+					.includes( 'Aculect AI Companion' )
+			).href
+		).toBe( 'https://wordpress.org/plugins/aculect-ai-companion/' );
 		productLinks.forEach( ( link ) => {
 			expect( link.href ).toMatch( /^https:\/\// );
 			expect( link.target ).toBe( '_blank' );
