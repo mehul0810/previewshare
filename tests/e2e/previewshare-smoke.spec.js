@@ -274,15 +274,38 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		fullPage: true,
 	} );
 	await page.setViewportSize( { width: 390, height: 844 } );
-	const firstPluginCard = await pluginCards.first().boundingBox();
-	expect( firstPluginCard ).not.toBeNull();
-	expect( firstPluginCard.x + firstPluginCard.width ).toBeLessThanOrEqual(
-		390
-	);
-	await page.screenshot( {
-		path: testInfo.outputPath( 'previewshare-more-plugins-mobile.png' ),
-		fullPage: true,
-	} );
+	for ( const [ tabName, screenshotName ] of [
+		[ 'Overview', 'overview' ],
+		[ 'Preview links', 'preview-links-empty' ],
+		[ 'Content types', 'content-types' ],
+		[ 'Changelog', 'changelog' ],
+		[ 'More plugins', 'more-plugins' ],
+	] ) {
+		const mobileTab = tablist.getByRole( 'tab', {
+			name: tabName,
+			exact: true,
+		} );
+		await mobileTab.click();
+		await expect( mobileTab ).toHaveAttribute( 'aria-selected', 'true' );
+		await expect( page.getByRole( 'tabpanel' ) ).toBeVisible();
+		const mobilePageWidth = await page.evaluate(
+			() => document.documentElement.scrollWidth
+		);
+		expect( mobilePageWidth ).toBeLessThanOrEqual( 390 );
+		if ( tabName === 'More plugins' ) {
+			const firstPluginCard = await pluginCards.first().boundingBox();
+			expect( firstPluginCard ).not.toBeNull();
+			expect(
+				firstPluginCard.x + firstPluginCard.width
+			).toBeLessThanOrEqual( 390 );
+		}
+		await page.screenshot( {
+			path: testInfo.outputPath(
+				`previewshare-${ screenshotName }-mobile.png`
+			),
+			fullPage: true,
+		} );
+	}
 	await page.setViewportSize( { width: 1280, height: 900 } );
 	await tablist.getByRole( 'tab', { name: 'Overview' } ).click();
 
@@ -364,6 +387,12 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	expect( generatedLink.status ).toBe( 'active' );
 	const previousExpiry = generatedLink.expires_at;
 	await page.getByRole( 'tab', { name: 'Preview links' } ).click();
+	const inventoryTable = page.locator( '.previewshare-dataviews' );
+	await expect( inventoryTable ).toBeVisible();
+	const desktopPageWidth = await page.evaluate(
+		() => document.documentElement.scrollWidth
+	);
+	expect( desktopPageWidth ).toBeLessThanOrEqual( 1280 );
 	await expect(
 		page.getByRole( 'button', { name: 'Extend', exact: true } )
 	).toBeVisible();
@@ -371,9 +400,80 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		path: testInfo.outputPath( 'previewshare-preview-links-expiring.png' ),
 		fullPage: true,
 	} );
+	await page.setViewportSize( { width: 390, height: 844 } );
+	const mobilePageWidth = await page.evaluate(
+		() => document.documentElement.scrollWidth
+	);
+	expect( mobilePageWidth ).toBeLessThanOrEqual( 390 );
+	const inventoryViewport = inventoryTable.locator(
+		'.dataviews-layout__container'
+	);
+	const inventoryScrollMetrics = await inventoryViewport.evaluate(
+		( element ) => ( {
+			clientWidth: element.clientWidth,
+			scrollWidth: element.scrollWidth,
+		} )
+	);
+	expect( inventoryScrollMetrics.scrollWidth ).toBeGreaterThan(
+		inventoryScrollMetrics.clientWidth
+	);
+	const extendButton = page.getByRole( 'button', {
+		name: 'Extend',
+		exact: true,
+	} );
+	const mobileScrollLeft = await extendButton.evaluate( ( button ) => {
+		const viewport = button.closest( '.dataviews-layout__container' );
+		const viewportBounds = viewport.getBoundingClientRect();
+		const buttonBounds = button.getBoundingClientRect();
+		const actionsHeader = viewport.querySelector(
+			'th.dataviews-view-table__actions-column'
+		);
+		const safeLeft = viewportBounds.left + 16;
+
+		viewport.scrollLeft += buttonBounds.left - safeLeft;
+		const visibleButtonBounds = button.getBoundingClientRect();
+		const visibleViewportBounds = viewport.getBoundingClientRect();
+		const actionsWidth = actionsHeader.getBoundingClientRect().width;
+
+		return {
+			scrollLeft: viewport.scrollLeft,
+			buttonLeft: visibleButtonBounds.left,
+			buttonRight: visibleButtonBounds.right,
+			visibleLeft: visibleViewportBounds.left,
+			visibleRight: visibleViewportBounds.right - actionsWidth,
+		};
+	} );
+	expect( mobileScrollLeft.scrollLeft ).toBeGreaterThan( 0 );
+	expect( mobileScrollLeft.buttonLeft ).toBeGreaterThanOrEqual(
+		mobileScrollLeft.visibleLeft
+	);
+	expect( mobileScrollLeft.buttonRight ).toBeLessThanOrEqual(
+		mobileScrollLeft.visibleRight
+	);
+	await expect( extendButton ).toBeInViewport();
+	const extendButtonIsPainted = await extendButton.evaluate( ( button ) => {
+		const bounds = button.getBoundingClientRect();
+		const visibleElement = document.elementFromPoint(
+			bounds.left + bounds.width / 2,
+			bounds.top + bounds.height / 2
+		);
+
+		return button === visibleElement || button.contains( visibleElement );
+	} );
+	expect( extendButtonIsPainted ).toBe( true );
+	const mobileExtendBounds = await extendButton.boundingBox();
+	expect( mobileExtendBounds ).not.toBeNull();
+	expect(
+		mobileExtendBounds.x + mobileExtendBounds.width
+	).toBeLessThanOrEqual( 390 );
+	await page.screenshot( {
+		path: testInfo.outputPath( 'previewshare-preview-links-mobile.png' ),
+		fullPage: true,
+	} );
+	await page.setViewportSize( { width: 1280, height: 900 } );
 	const [ extendResponse ] = await Promise.all( [
 		page.waitForResponse( isExtendPreviewResponse ),
-		page.getByRole( 'button', { name: 'Extend', exact: true } ).click(),
+		extendButton.click(),
 	] );
 	await expectSuccessfulResponse( extendResponse, 'Extend preview link' );
 	const extendedLink = await extendResponse.json();
