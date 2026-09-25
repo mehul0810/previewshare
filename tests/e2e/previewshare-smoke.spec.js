@@ -314,6 +314,12 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 					} ) )
 			),
 			appText: await page.locator( '#previewshare-settings-app' ).textContent(),
+			reactRuntime: {
+				wpElementInsertion: typeof window.wp?.element?.useInsertionEffect,
+				wpElementLayout: typeof window.wp?.element?.useLayoutEffect,
+				windowReactInsertion: typeof window.React?.useInsertionEffect,
+				windowReactLayout: typeof window.React?.useLayoutEffect,
+			},
 		} )
 	);
 	const previewLinksTab = tablist.getByRole( 'tab', {
