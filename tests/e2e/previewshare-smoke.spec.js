@@ -394,13 +394,25 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	expect( inventoryScrollMetrics.scrollWidth ).toBeGreaterThan(
 		inventoryScrollMetrics.clientWidth
 	);
-	await inventoryViewport.evaluate( ( element ) => {
-		element.scrollLeft = element.scrollWidth;
-	} );
 	const extendButton = page.getByRole( 'button', {
 		name: 'Extend',
 		exact: true,
 	} );
+	const mobileScrollLeft = await extendButton.evaluate( ( button ) => {
+		const viewport = button.closest( '.dataviews-layout__container' );
+		const viewportBounds = viewport.getBoundingClientRect();
+		const buttonBounds = button.getBoundingClientRect();
+		const horizontalAdjustment =
+			buttonBounds.left < viewportBounds.left
+				? buttonBounds.left - viewportBounds.left
+				: buttonBounds.right > viewportBounds.right
+					? buttonBounds.right - viewportBounds.right
+					: 0;
+
+		viewport.scrollLeft += horizontalAdjustment;
+		return viewport.scrollLeft;
+	} );
+	expect( mobileScrollLeft ).toBeGreaterThan( 0 );
 	await expect( extendButton ).toBeInViewport();
 	const mobileExtendBounds = await extendButton.boundingBox();
 	expect( mobileExtendBounds ).not.toBeNull();
