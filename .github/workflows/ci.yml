@@ -147,7 +147,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        wp_version: ${{ github.event_name == 'pull_request' && fromJSON('["5.8.17", "latest"]') || fromJSON(format('["{0}"]', github.event.inputs.wp_version || 'latest')) }}
+        wp_version: ${{ github.event_name == 'pull_request' && fromJSON('["5.8.17", "7.1.2"]') || fromJSON(format('["{0}"]', github.event.inputs.wp_version || 'latest')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Setup PHP
@@ -167,9 +167,9 @@ jobs:
         run: npm ci
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
-      - name: Select the minimum supported WordPress version
-        if: matrix.wp_version == '5.8.17'
-        run: echo "WP_ENV_CORE=WordPress/WordPress#5.8.17" >> "$GITHUB_ENV"
+      - name: Select the requested WordPress version
+        if: matrix.wp_version != 'latest'
+        run: echo "WP_ENV_CORE=WordPress/WordPress#${{ matrix.wp_version }}" >> "$GITHUB_ENV"
       - name: Run PreviewShare e2e smoke
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
