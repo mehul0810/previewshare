@@ -155,7 +155,16 @@ class PreviewAbilitiesTest extends TestCase {
 			->andReturn( false );
 		$storage->shouldReceive( 'store_token' )
 			->once()
-			->with( 42, 'generated-token', 12, 'Client review' )
+			->withArgs(
+				static function ( int $post_id, string $token, int $ttl, string $label, bool $responses_enabled = false, bool $identity_required = false ): bool {
+					return 42 === $post_id
+						&& 'generated-token' === $token
+						&& 12 === $ttl
+						&& 'Client review' === $label
+						&& ! $responses_enabled
+						&& ! $identity_required;
+				}
+			)
 			->andReturn( true );
 		$storage->shouldReceive( 'get_token_context_by_id' )
 			->once()
