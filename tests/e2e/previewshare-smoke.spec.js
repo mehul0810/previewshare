@@ -13,6 +13,7 @@ const previewShareRoutes = [
 	'/previewshare/v1/v2/generate',
 	'/previewshare/v1/settings',
 	'/previewshare/v1/post-meta',
+	'/previewshare/v1/tokens/extend',
 ];
 
 async function expectSuccessfulResponse( responsePromise, name ) {
@@ -96,6 +97,15 @@ function isRevokePreviewResponse( response ) {
 		response.request().method() === 'POST' &&
 		decodeURIComponent( response.url() ).includes(
 			'/previewshare/v1/v2/revoke'
+		)
+	);
+}
+
+function isExtendPreviewResponse( response ) {
+	return (
+		response.request().method() === 'POST' &&
+		decodeURIComponent( response.url() ).includes(
+			'/previewshare/v1/tokens/extend'
 		)
 	);
 }
@@ -209,16 +219,64 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		'PreviewShare tokens request'
 	);
 	await expect( page.locator( '#previewshare-settings-app' ) ).toBeVisible();
+	const tablist = page.getByRole( 'tablist', {
+		name: 'PreviewShare settings',
+	} );
+	for ( const tabName of [
+		'Overview',
+		'Preview links',
+		'Content types',
+		'Changelog',
+		'More plugins',
+	] ) {
+		await expect(
+			tablist.getByRole( 'tab', { name: tabName, exact: true } )
+		).toBeVisible();
+	}
 	await expect(
 		page.getByText( 'Active links', { exact: true } )
 	).toBeVisible();
 	await expect(
 		page.getByText( 'Default expiry', { exact: true } )
 	).toBeVisible();
+	await expect(
+		page.getByText( 'Expiring soon', { exact: true } )
+	).toHaveCount( 0 );
 	await page.screenshot( {
 		path: testInfo.outputPath( 'previewshare-settings.png' ),
 		fullPage: true,
 	} );
+
+	await tablist.getByRole( 'tab', { name: 'Changelog' } ).click();
+	await expect(
+		page.getByRole( 'heading', { name: 'v1.1.0' } )
+	).toBeVisible();
+	await tablist.getByRole( 'tab', { name: 'Content types' } ).click();
+	await expect(
+		page.getByRole( 'heading', { name: 'Content types' } )
+	).toBeVisible();
+	await tablist.getByRole( 'tab', { name: 'More plugins' } ).click();
+	const pluginCards = page.locator( 'article.previewshare-plugin-card' );
+	await expect( pluginCards ).toHaveCount( 10 );
+	await expect(
+		page.getByRole( 'heading', { name: 'OneCaptcha' } )
+	).toBeVisible();
+	await page.screenshot( {
+		path: testInfo.outputPath( 'previewshare-more-plugins.png' ),
+		fullPage: true,
+	} );
+	await page.setViewportSize( { width: 390, height: 844 } );
+	const firstPluginCard = await pluginCards.first().boundingBox();
+	expect( firstPluginCard ).not.toBeNull();
+	expect( firstPluginCard.x + firstPluginCard.width ).toBeLessThanOrEqual(
+		390
+	);
+	await page.screenshot( {
+		path: testInfo.outputPath( 'previewshare-more-plugins-mobile.png' ),
+		fullPage: true,
+	} );
+	await page.setViewportSize( { width: 1280, height: 900 } );
+	await tablist.getByRole( 'tab', { name: 'Overview' } ).click();
 
 	const postMetaResponse = page.waitForResponse(
 		( response ) =>
@@ -276,6 +334,51 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		anonymous.getByText( postContent, { exact: true } )
 	).toBeVisible();
+
+	const inventoryResponse = page.waitForResponse(
+		( responseCandidate ) =>
+			responseCandidate.request().method() === 'GET' &&
+			responseMatchesRoute( responseCandidate, '/previewshare/v1/tokens' )
+	);
+	await admin.visitAdminPage(
+		'options-general.php',
+		'page=previewshare_settings'
+	);
+	await expectSuccessfulResponse(
+		inventoryResponse,
+		'PreviewShare token inventory request'
+	);
+	const inventory = await ( await inventoryResponse ).json();
+	const generatedLink = inventory.items.find(
+		( item ) => item.label === 'E2E smoke'
+	);
+	expect( generatedLink ).toBeDefined();
+	expect( generatedLink.status ).toBe( 'active' );
+	const previousExpiry = generatedLink.expires_at;
+	await page.getByRole( 'tab', { name: 'Preview links' } ).click();
+	await expect(
+		page.getByRole( 'button', { name: 'Extend', exact: true } )
+	).toBeVisible();
+	const [ extendResponse ] = await Promise.all( [
+		page.waitForResponse( isExtendPreviewResponse ),
+		page.getByRole( 'button', { name: 'Extend', exact: true } ).click(),
+	] );
+	await expectSuccessfulResponse( extendResponse, 'Extend preview link' );
+	const extendedLink = await extendResponse.json();
+	expect( extendedLink.expires_at ).toBe( previousExpiry + 24 * 60 * 60 );
+	await expect(
+		page.getByText( 'Access extended by 24 hours.', { exact: false } )
+	).toBeVisible();
+	await expect(
+		page.getByRole( 'button', { name: 'Extend', exact: true } )
+	).toHaveCount( 0 );
+	const samePreviewResponse = await anonymous.goto( previewUrl );
+	expect( samePreviewResponse.status() ).toBe( 200 );
+	await expect(
+		anonymous.getByText( postContent, { exact: true } )
+	).toBeVisible();
+
+	await admin.editPost( post.id );
 
 	const invalidPreviewResponse = await anonymous.goto(
 		resolvePreviewUrlForTestServer(
