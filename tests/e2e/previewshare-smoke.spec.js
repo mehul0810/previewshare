@@ -565,15 +565,11 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		expect( cardScrollMetrics.scrollWidth ).toBeLessThanOrEqual(
 			cardScrollMetrics.clientWidth
 		);
-		const statusAndExtendShareCell = await extendButton.evaluate(
-			( button ) =>
-				button.closest( 'td' )?.contains(
-					document.querySelector(
-						'.previewshare-status.is-expiring_soon'
-					)
-				)
-		);
-		expect( statusAndExtendShareCell ).toBe( true );
+		const cellExtendButton = statusCell.getByRole( 'button', {
+			name: 'Extend',
+			exact: true,
+		} );
+		await expect( cellExtendButton ).toBeVisible();
 	} else {
 		const inventoryViewport = inventoryTable.locator(
 			'.dataviews-layout__container'
