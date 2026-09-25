@@ -1420,8 +1420,8 @@ import {
 				( currentPage - 1 ) * perPage,
 				currentPage * perPage
 			);
-			const renderCell = ( label, content ) =>
-				el( 'td', { 'data-label': label }, content );
+			const renderCell = ( label, content, className ) =>
+				el( 'td', { className, 'data-label': label }, content );
 
 			return el(
 				'div',
@@ -1719,6 +1719,8 @@ import {
 															  )
 															: null
 													)
+												,
+													'previewshare-actions-cell'
 												)
 											);
 										} )
