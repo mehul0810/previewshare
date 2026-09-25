@@ -207,7 +207,7 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		}
 	} );
 	page.on( 'pageerror', ( error ) => {
-		browserDiagnostics.pageErrors.push( error.message );
+		browserDiagnostics.pageErrors.push( error.stack || error.message );
 	} );
 	page.on( 'requestfailed', ( request ) => {
 		browserDiagnostics.failedRequests.push(
@@ -301,6 +301,21 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	} );
 	await overviewTab.focus();
 	await overviewTab.press( 'ArrowRight' );
+	console.log(
+		'[PreviewShare E2E] ArrowRight result:',
+		JSON.stringify( {
+			pageErrors: browserDiagnostics.pageErrors,
+			consoleErrors: browserDiagnostics.consoleErrors,
+			tabs: await page.locator( '[role="tab"]' ).evaluateAll(
+				( tabs ) =>
+					tabs.map( ( tab ) => ( {
+						text: tab.textContent,
+						selected: tab.getAttribute( 'aria-selected' ),
+					} ) )
+			),
+			appText: await page.locator( '#previewshare-settings-app' ).textContent(),
+		} )
+	);
 	const previewLinksTab = tablist.getByRole( 'tab', {
 		name: 'Preview links',
 		exact: true,
