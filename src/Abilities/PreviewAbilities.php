@@ -215,7 +215,7 @@ final class PreviewAbilities {
 	 * Check permission for a post-scoped or administrator-wide inventory.
 	 *
 	 * @param mixed $input Ability input.
-	 * @return bool|\\WP_Error
+	 * @return bool|\WP_Error
 	 */
 	public function can_list_preview_links( $input ) {
 		if ( ! is_array( $input ) ) {
@@ -247,7 +247,7 @@ final class PreviewAbilities {
 	 * Check permission to revoke a link owned by an editable post or by an administrator.
 	 *
 	 * @param mixed $input Ability input.
-	 * @return bool|\\WP_Error
+	 * @return bool|\WP_Error
 	 */
 	public function can_revoke_preview_link( $input ) {
 		if ( ! is_array( $input ) || ! isset( $input['token_id'] ) || ! $this->is_valid_token_id( $input['token_id'] ) ) {
@@ -270,7 +270,6 @@ final class PreviewAbilities {
 
 		return $this->error( 'previewshare_forbidden', __( 'You cannot revoke this preview link.', 'previewshare' ), 403 );
 	}
-
 
 	/**
 	 * Generate a preview link through the existing domain service.
