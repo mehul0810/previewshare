@@ -1,7 +1,6 @@
 const fs = require( 'fs/promises' );
 const { dirname } = require( 'path' );
 const { request } = require( '@playwright/test' );
-const { RequestUtils } = require( '@wordpress/e2e-test-utils-playwright' );
 
 async function findRestRoot( requestContext, baseURL ) {
 	const homepage = await requestContext.get( '/' );
@@ -45,13 +44,17 @@ async function getRestNonceFromAdminPage( requestContext ) {
 		);
 	}
 
+	if ( /wp-login\.php/i.test( adminPage.url() ) ) {
+		throw new Error( 'WordPress redirected the PreviewShare settings request to the login page.' );
+	}
+
 	const html = await adminPage.text();
 	const settingsMatch = html.match(
-		/\b(?:wpApiSettings|previewshare_settings)\s*=\s*(\{[^;]+\})\s*;/
+		/\b(?:wpApiSettings|previewshare_settings)\s*=\s*(\{[\s\S]*?\})\s*;/
 	);
 	if ( ! settingsMatch ) {
 		throw new Error(
-			'Could not find the REST settings on the authenticated PreviewShare admin page.'
+			`Could not find REST settings on the PreviewShare admin page (${ adminPage.url() }, ${ html.length } bytes).`
 		);
 	}
 
@@ -73,26 +76,35 @@ async function getRestNonceFromAdminPage( requestContext ) {
 	return settings.nonce;
 }
 
+async function loginWithForm( requestContext ) {
+	// Seed the WordPress test cookie before posting credentials. This is required
+	// by older core versions supported by the plugin.
+	await requestContext.get( 'wp-login.php' );
+
+	const response = await requestContext.post( 'wp-login.php', {
+		form: {
+			log: process.env.WP_USERNAME || 'admin',
+			pwd: process.env.WP_PASSWORD || 'password',
+			'wp-submit': 'Log In',
+			redirect_to: 'wp-admin/',
+			testcookie: '1',
+		},
+	} );
+
+	if ( ! response.ok() ) {
+		throw new Error( `WordPress login failed with HTTP ${ response.status() }.` );
+	}
+}
+
 async function globalSetup( config ) {
 	const { storageState, baseURL } = config.projects[ 0 ].use;
 	const storageStatePath =
 		typeof storageState === 'string' ? storageState : undefined;
 	const requestContext = await request.newContext( { baseURL } );
-	const requestUtils = new RequestUtils( requestContext, { baseURL } );
 
 	try {
-		let nonce;
-		try {
-			nonce = await requestUtils.login();
-		} catch ( error ) {
-			nonce = await getRestNonceFromAdminPage( requestContext ).catch(
-				( fallbackError ) => {
-					throw new Error(
-						`Could not retrieve a WordPress REST nonce. The standard endpoint failed (${ error.message }); the admin-page fallback failed (${ fallbackError.message }).`
-					);
-				}
-			);
-		}
+		await loginWithForm( requestContext );
+		const nonce = await getRestNonceFromAdminPage( requestContext );
 		const rootURL = await findRestRoot( requestContext, baseURL );
 		const { cookies } = await requestContext.storageState();
 
