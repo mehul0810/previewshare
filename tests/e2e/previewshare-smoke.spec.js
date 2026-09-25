@@ -293,6 +293,16 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	);
 	await expect( page.locator( '#previewshare-settings-app' ) ).toBeVisible();
 
+	const settingsIconSizes = await page
+		.locator( '#previewshare-settings-app svg' )
+		.evaluateAll( ( icons ) =>
+			icons.map( ( icon ) => {
+				const bounds = icon.getBoundingClientRect();
+				return Math.max( bounds.width, bounds.height );
+			} )
+		);
+	expect( Math.max( 0, ...settingsIconSizes ) ).toBeLessThanOrEqual( 32 );
+
 	const tablist = page.getByRole( 'tablist', {
 		name: 'PreviewShare settings',
 	} );
