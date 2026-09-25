@@ -563,15 +563,21 @@ final class PreviewAbilities {
 		return [
 			'type'                 => 'object',
 			'properties'           => [
+				'post_id'  => [
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => __( 'Optional post ID to confirm the link owner.', 'previewshare' ),
+				],
 				'token_id' => [
 					'type'        => 'string',
-					'pattern'     => '^[a-f0-9]{64}
+					'pattern'     => '^[a-f0-9]{64}$',
+					'description' => __( 'Opaque 64-character lowercase hexadecimal PreviewShare link identifier.', 'previewshare' ),
+				],
 			],
 			'required'             => [ 'token_id' ],
 			'additionalProperties' => false,
 		];
 	}
-
 	/**
 	 * Build the revoke output schema.
 	 *
@@ -610,7 +616,9 @@ final class PreviewAbilities {
 		return [
 			'token_id'   => [
 				'type'        => 'string',
-				'pattern'     => '^[a-f0-9]{64}
+				'pattern'     => '^[a-f0-9]{64}$',
+				'description' => __( 'Opaque 64-character lowercase hexadecimal PreviewShare link identifier.', 'previewshare' ),
+			],
 			'post_id'    => [
 				'type'        => 'integer',
 				'minimum'     => 1,
@@ -635,7 +643,6 @@ final class PreviewAbilities {
 			],
 		];
 	}
-
 	/**
 	 * Validate an opaque stored token identifier without normalizing caller input.
 	 *
