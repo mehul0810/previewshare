@@ -169,11 +169,13 @@ async function globalSetup( config ) {
 		await verifyAdminSession( page, baseURL );
 		const nonce = await getRestNonceFromAdminPage( page, baseURL );
 		const state = await browserContext.storageState();
+		const restRoot = new URL( baseURL );
+		restRoot.searchParams.set( 'rest_route', '/' );
 		if ( storageStatePath ) {
 			await fs.mkdir( dirname( storageStatePath ), { recursive: true } );
 			await fs.writeFile(
 				storageStatePath,
-				JSON.stringify( { ...state, nonce } ),
+				JSON.stringify( { ...state, nonce, rootURL: restRoot.href } ),
 				'utf-8'
 			);
 		}
