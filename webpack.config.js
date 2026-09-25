@@ -1,4 +1,10 @@
 const path = require( 'path' );
+const DependencyExtractionWebpackPlugin = require( '@wordpress/dependency-extraction-webpack-plugin' );
+const {
+	defaultRequestToExternal,
+	defaultRequestToExternalModule,
+	defaultRequestToHandle,
+} = require( '@wordpress/dependency-extraction-webpack-plugin/lib/util' );
 
 // Reuse the default @wordpress/scripts webpack config and extend it.
 // Keep WP Scripts behaviors (Babel, externals, optimizations) while
@@ -39,7 +45,29 @@ const config = {
 		...defaultConfig.module,
 		rules: [ ...defaultConfig.module.rules ],
 	},
-	plugins: [ ...defaultConfig.plugins ],
+	plugins: [
+		...defaultConfig.plugins.filter(
+			( plugin ) =>
+				plugin.constructor.name !== 'DependencyExtractionWebpackPlugin'
+		),
+		new DependencyExtractionWebpackPlugin( {
+			// WordPress 5.8 does not register react-jsx-runtime. Bundle it so the
+			// settings app stays compatible with the declared minimum version.
+			useDefaults: false,
+			requestToExternal( request ) {
+				if (
+					request === 'react/jsx-runtime' ||
+					request === 'react/jsx-dev-runtime'
+				) {
+					return undefined;
+				}
+
+				return defaultRequestToExternal( request );
+			},
+			requestToExternalModule: defaultRequestToExternalModule,
+			requestToHandle: defaultRequestToHandle,
+		} ),
+	],
 };
 
 if ( inProduction && 'true' === process.env.PREVIEWSHARE_GENERATE_PHP_POT ) {

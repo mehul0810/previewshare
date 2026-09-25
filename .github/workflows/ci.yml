@@ -11,6 +11,14 @@ on:
         options:
           - 'false'
           - 'true'
+      wp_version:
+        description: 'WordPress version for the E2E smoke job'
+        required: false
+        default: latest
+        type: choice
+        options:
+          - latest
+          - '5.8.17'
   push:
     branches:
       - main
@@ -153,6 +161,9 @@ jobs:
         run: npm ci
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
+      - name: Select the minimum supported WordPress version
+        if: github.event.inputs.wp_version == '5.8.17'
+        run: echo "WP_ENV_CORE=WordPress/WordPress#5.8.17" >> "$GITHUB_ENV"
       - name: Run PreviewShare e2e smoke
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
