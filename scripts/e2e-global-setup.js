@@ -1,6 +1,72 @@
 const fs = require( 'fs/promises' );
+const { execFileSync } = require( 'child_process' );
 const { dirname } = require( 'path' );
 const { chromium, request } = require( '@playwright/test' );
+
+function getAdminCookies( baseURL ) {
+	const username = process.env.WP_USERNAME || 'admin';
+	const php = `
+$user = get_user_by( 'login', ${ JSON.stringify( username ) } );
+if ( ! $user ) {
+	fwrite( STDERR, 'PreviewShare E2E admin user was not found.' );
+	exit( 1 );
+}
+$expiration = time() + HOUR_IN_SECONDS;
+$token = WP_Session_Tokens::get_instance( $user->ID )->create( $expiration );
+echo wp_json_encode(
+	[
+		[ 'name' => AUTH_COOKIE, 'value' => wp_generate_auth_cookie( $user->ID, $expiration, 'auth', $token ) ],
+		[ 'name' => SECURE_AUTH_COOKIE, 'value' => wp_generate_auth_cookie( $user->ID, $expiration, 'secure_auth', $token ) ],
+		[ 'name' => LOGGED_IN_COOKIE, 'value' => wp_generate_auth_cookie( $user->ID, $expiration, 'logged_in', $token ) ],
+	]
+);
+`;
+	const output = execFileSync(
+		'wp-env',
+		[ 'run', 'cli', 'wp', 'eval', php ],
+		{ encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } }
+	).trim();
+	const jsonLine = output
+		.split( /\r?\n/ )
+		.reverse()
+		.find( ( line ) => {
+			try {
+				return Array.isArray( JSON.parse( line ) );
+			} catch {
+				return false;
+			}
+		} );
+	if ( ! jsonLine ) {
+		throw new Error(
+			'WP-CLI did not return the PreviewShare E2E authentication cookies.'
+		);
+	}
+
+	let cookies;
+	try {
+		cookies = JSON.parse( jsonLine );
+	} catch {
+		throw new Error(
+			'WP-CLI returned invalid PreviewShare E2E authentication cookies.'
+		);
+	}
+	if (
+		! Array.isArray( cookies ) ||
+		cookies.length !== 3 ||
+		! cookies.every(
+			( cookie ) =>
+				typeof cookie.name === 'string' &&
+				typeof cookie.value === 'string' &&
+				cookie.value.length > 0
+		)
+	) {
+		throw new Error(
+			'WP-CLI returned an incomplete PreviewShare E2E authentication cookie set.'
+		);
+	}
+
+	return cookies.map( ( cookie ) => ( { ...cookie, url: baseURL } ) );
+}
 
 async function findRestRoot( requestContext, baseURL ) {
 	const homepage = await requestContext.get( '/' );
@@ -101,49 +167,7 @@ async function getRestNonceFromAdminPage( page, baseURL ) {
 	return nonceMatch[ 1 ];
 }
 
-async function loginWithForm( page, baseURL ) {
-	const loginResponse = await page.goto(
-		new URL( 'wp-login.php', baseURL ).href,
-		{
-			waitUntil: 'domcontentloaded',
-		}
-	);
-	if ( ! loginResponse || ! loginResponse.ok() ) {
-		throw new Error(
-			`Could not load the WordPress login page (HTTP ${
-				loginResponse?.status() || 'unknown'
-			}).`
-		);
-	}
-
-	await page
-		.locator( '#user_login' )
-		.fill( process.env.WP_USERNAME || 'admin' );
-	await page
-		.locator( '#user_pass' )
-		.fill( process.env.WP_PASSWORD || 'password' );
-	// WordPress's optional test-cookie preflight is unreliable on the wp-env
-	// localhost port. Verify the authenticated cookie directly by loading wp-admin.
-	await page
-		.locator( 'input[name="testcookie"]' )
-		.evaluate( ( input ) => input.remove() );
-	await page.locator( '#wp-submit' ).click();
-
-	const loginError = page.locator( '#login_error' );
-	if (
-		/\/wp-login\.php(?:[?#]|$)/i.test( page.url() ) &&
-		( await loginError.count() )
-	) {
-		const message = await loginError.innerText();
-		let reason = 'WordPress rejected the login';
-		if ( /cookie/i.test( message ) ) {
-			reason = 'WordPress rejected the test cookie';
-		} else if ( /password|username/i.test( message ) ) {
-			reason = 'WordPress rejected the test credentials';
-		}
-		throw new Error( `${ reason } (HTTP ${ loginResponse.status() }).` );
-	}
-
+async function verifyAdminSession( page, baseURL ) {
 	const dashboardResponse = await page.goto(
 		new URL( 'wp-admin/', baseURL ).href,
 		{ waitUntil: 'domcontentloaded' }
@@ -172,8 +196,9 @@ async function globalSetup( config ) {
 	} );
 
 	try {
+		await browserContext.addCookies( getAdminCookies( baseURL ) );
 		const page = await browserContext.newPage();
-		await loginWithForm( page, baseURL );
+		await verifyAdminSession( page, baseURL );
 		const nonce = await getRestNonceFromAdminPage( page, baseURL );
 		const state = await browserContext.storageState();
 		const requestContext = await request.newContext( {
