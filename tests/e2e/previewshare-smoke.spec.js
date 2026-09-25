@@ -421,22 +421,31 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		name: 'Extend',
 		exact: true,
 	} );
-	const mobileScrollLeft = await extendButton.evaluate( ( button ) => {
-		const viewport = button.closest( '.dataviews-layout__container' );
+	const expiringStatus = page.locator(
+		'.previewshare-status.is-expiring_soon'
+	);
+	const mobileScrollLeft = await expiringStatus.evaluate( ( status ) => {
+		const viewport = status.closest( '.dataviews-layout__container' );
 		const viewportBounds = viewport.getBoundingClientRect();
-		const buttonBounds = button.getBoundingClientRect();
+		const statusBounds = status.getBoundingClientRect();
+		const button = viewport.querySelector(
+			'.previewshare-link-status-cell button'
+		);
 		const actionsHeader = viewport.querySelector(
 			'th.dataviews-view-table__actions-column'
 		);
 		const safeLeft = viewportBounds.left + 16;
 
-		viewport.scrollLeft += buttonBounds.left - safeLeft;
+		viewport.scrollLeft += statusBounds.left - safeLeft;
+		const visibleStatusBounds = status.getBoundingClientRect();
 		const visibleButtonBounds = button.getBoundingClientRect();
 		const visibleViewportBounds = viewport.getBoundingClientRect();
 		const actionsWidth = actionsHeader.getBoundingClientRect().width;
 
 		return {
 			scrollLeft: viewport.scrollLeft,
+			statusLeft: visibleStatusBounds.left,
+			statusRight: visibleStatusBounds.right,
 			buttonLeft: visibleButtonBounds.left,
 			buttonRight: visibleButtonBounds.right,
 			visibleLeft: visibleViewportBounds.left,
@@ -447,10 +456,28 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	expect( mobileScrollLeft.buttonLeft ).toBeGreaterThanOrEqual(
 		mobileScrollLeft.visibleLeft
 	);
+	expect( mobileScrollLeft.statusLeft ).toBeGreaterThanOrEqual(
+		mobileScrollLeft.visibleLeft
+	);
+	expect( mobileScrollLeft.statusRight ).toBeLessThanOrEqual(
+		mobileScrollLeft.visibleRight
+	);
 	expect( mobileScrollLeft.buttonRight ).toBeLessThanOrEqual(
 		mobileScrollLeft.visibleRight
 	);
+	await expect( expiringStatus ).toBeVisible();
+	await expect( expiringStatus ).toHaveText( 'Expiring soon' );
 	await expect( extendButton ).toBeInViewport();
+	const expiringStatusIsPainted = await expiringStatus.evaluate( ( status ) => {
+		const bounds = status.getBoundingClientRect();
+		const visibleElement = document.elementFromPoint(
+			bounds.left + bounds.width / 2,
+			bounds.top + bounds.height / 2
+		);
+
+		return status === visibleElement || status.contains( visibleElement );
+	} );
+	expect( expiringStatusIsPainted ).toBe( true );
 	const extendButtonIsPainted = await extendButton.evaluate( ( button ) => {
 		const bounds = button.getBoundingClientRect();
 		const visibleElement = document.elementFromPoint(
