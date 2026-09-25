@@ -392,6 +392,214 @@ class PostMetaStorageTest extends TestCase {
 		$this->assertSame( 1, $fake_wpdb->get_var_calls );
 	}
 
+	public function test_extend_token_by_id_adds_twenty_four_hours_and_preserves_the_link(): void {
+		$storage = $this->make_storage();
+		$hash    = hash_hmac( 'sha256', 'extend-token', self::HASH_KEY );
+		$post_id = 654;
+		$expires = time() + ( 3 * HOUR_IN_SECONDS );
+		$link    = [
+			'hash'           => $hash,
+			'label'          => 'Client review',
+			'created_at'     => time() - 60,
+			'created_by'     => 7,
+			'expires_at'     => $expires,
+			'revoked'        => 0,
+			'last_viewed_at' => null,
+			'view_count'     => 2,
+		];
+		$updated_meta = [];
+
+		Functions\expect( 'get_option' )
+			->times( 3 )
+			->with( 'previewshare_enable_caching', true )
+			->andReturn( false );
+		Functions\expect( 'get_posts' )->once()->andReturn( [ $post_id ] );
+		Functions\expect( 'get_post_meta' )
+			->twice()
+			->andReturnUsing(
+				static function ( int $requested_post_id, string $key, bool $single ) use ( $post_id, $hash, $link ): array {
+					if ( $post_id !== $requested_post_id || true !== $single ) {
+						return [];
+					}
+
+					if ( '_previewshare_token:' . $hash === $key ) {
+						return $link;
+					}
+
+					return '_previewshare_links' === $key ? [ $hash => $link ] : [];
+				}
+			);
+		Functions\expect( 'update_post_meta' )
+			->twice()
+			->andReturnUsing(
+				static function ( int $requested_post_id, string $key, array $value ) use ( $post_id, $hash, &$updated_meta ): bool {
+					if ( $post_id !== $requested_post_id ) {
+						return false;
+					}
+
+					$updated_meta[ $key ] = $value;
+					return '_previewshare_links' === $key || '_previewshare_token:' . $hash === $key;
+				}
+			);
+
+		$result = $storage->extend_token_by_id( $hash );
+
+		$this->assertSame( [ 'expires_at' => $expires + DAY_IN_SECONDS ], $result );
+		$this->assertSame( $hash, $updated_meta['_previewshare_links'][ $hash ]['hash'] );
+		$this->assertSame( $expires + DAY_IN_SECONDS, $updated_meta['_previewshare_links'][ $hash ]['expires_at'] );
+		$this->assertSame( $expires + DAY_IN_SECONDS, $updated_meta['_previewshare_token:' . $hash ]['expires_at'] );
+		$this->assertSame( 'Client review', $updated_meta['_previewshare_links'][ $hash ]['label'] );
+	}
+
+	public function test_extend_token_by_id_rolls_back_the_inventory_when_detail_write_fails(): void {
+		$storage = $this->make_storage();
+		$hash    = hash_hmac( 'sha256', 'failed-extend-token', self::HASH_KEY );
+		$post_id = 657;
+		$link    = [
+			'hash'           => $hash,
+			'label'          => 'Client review',
+			'created_at'     => time() - 60,
+			'created_by'     => 7,
+			'expires_at'     => time() + ( 3 * HOUR_IN_SECONDS ),
+			'revoked'        => 0,
+			'last_viewed_at' => null,
+			'view_count'     => 1,
+		];
+		$write_number = 0;
+		$inventory_after_rollback = [];
+
+		Functions\expect( 'get_option' )
+			->twice()
+			->with( 'previewshare_enable_caching', true )
+			->andReturn( false );
+		Functions\expect( 'get_posts' )->once()->andReturn( [ $post_id ] );
+		Functions\expect( 'get_post_meta' )
+			->times( 3 )
+			->andReturnUsing(
+				static function ( int $requested_post_id, string $key, bool $single ) use ( $post_id, $hash, $link ): array {
+					if ( $post_id !== $requested_post_id || true !== $single ) {
+						return [];
+					}
+
+					return '_previewshare_token:' . $hash === $key
+						? $link
+						: [ $hash => $link ];
+				}
+			);
+		Functions\expect( 'update_post_meta' )
+			->times( 3 )
+			->andReturnUsing(
+				static function ( int $requested_post_id, string $key, array $value ) use ( $post_id, $hash, $link, &$write_number, &$inventory_after_rollback ): bool {
+					if ( $post_id !== $requested_post_id ) {
+						return false;
+					}
+
+					++$write_number;
+					if ( 1 === $write_number ) {
+						return '_previewshare_links' === $key;
+					}
+
+					if ( 2 === $write_number ) {
+						return false;
+					}
+
+					$inventory_after_rollback = $value;
+					return '_previewshare_links' === $key && [ $hash => $link ] === $value;
+				}
+			);
+
+		$result = $storage->extend_token_by_id( $hash );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'link_update_failed', $result->get_error_code() );
+		$this->assertSame( [ 'status' => 500 ], $result->get_error_data() );
+		$this->assertSame( [ $hash => $link ], $inventory_after_rollback );
+	}
+
+	public function test_extend_token_by_id_rejects_non_expiring_links_without_writes(): void {
+		$storage = $this->make_storage();
+		$hash    = hash_hmac( 'sha256', 'non-expiring-token', self::HASH_KEY );
+		$post_id = 655;
+		$link    = [
+			'hash'           => $hash,
+			'label'          => 'Permanent review',
+			'created_at'     => time() - 60,
+			'created_by'     => 7,
+			'expires_at'     => null,
+			'revoked'        => 0,
+			'last_viewed_at' => null,
+			'view_count'     => 0,
+		];
+
+		Functions\expect( 'get_option' )
+			->twice()
+			->with( 'previewshare_enable_caching', true )
+			->andReturn( false );
+		Functions\expect( 'get_posts' )->once()->andReturn( [ $post_id ] );
+		Functions\expect( 'get_post_meta' )
+			->once()
+			->andReturnUsing(
+				static function ( int $requested_post_id, string $key, bool $single ) use ( $post_id, $hash, $link ): array {
+					if ( $post_id !== $requested_post_id || true !== $single ) {
+						return [];
+					}
+
+					return '_previewshare_token:' . $hash === $key
+						? $link
+						: [ $hash => $link ];
+				}
+			);
+		Functions\expect( 'update_post_meta' )->never();
+
+		$result = $storage->extend_token_by_id( $hash );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'link_not_extendable', $result->get_error_code() );
+		$this->assertSame( [ 'status' => 409 ], $result->get_error_data() );
+	}
+
+	public function test_extend_token_by_id_rejects_links_outside_the_expiring_soon_window(): void {
+		$storage = $this->make_storage();
+		$hash    = hash_hmac( 'sha256', 'not-expiring-soon', self::HASH_KEY );
+		$post_id = 656;
+		$link    = [
+			'hash'           => $hash,
+			'label'          => 'Future review',
+			'created_at'     => time() - 60,
+			'created_by'     => 7,
+			'expires_at'     => time() + ( 2 * DAY_IN_SECONDS ),
+			'revoked'        => 0,
+			'last_viewed_at' => null,
+			'view_count'     => 0,
+		];
+
+		Functions\expect( 'get_option' )
+			->twice()
+			->with( 'previewshare_enable_caching', true )
+			->andReturn( false );
+		Functions\expect( 'get_posts' )->once()->andReturn( [ $post_id ] );
+		Functions\expect( 'get_post_meta' )
+			->once()
+			->andReturnUsing(
+				static function ( int $requested_post_id, string $key, bool $single ) use ( $post_id, $hash, $link ): array {
+					if ( $post_id !== $requested_post_id || true !== $single ) {
+						return [];
+					}
+
+					return '_previewshare_token:' . $hash === $key
+						? $link
+						: [ $hash => $link ];
+				}
+			);
+		Functions\expect( 'update_post_meta' )->never();
+
+		$result = $storage->extend_token_by_id( $hash );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'link_not_extendable', $result->get_error_code() );
+		$this->assertSame( [ 'status' => 409 ], $result->get_error_data() );
+	}
+
 	private function make_storage(): PostMetaStorage {
 		return new PostMetaStorage( new TokenService( self::HASH_KEY ) );
 	}
