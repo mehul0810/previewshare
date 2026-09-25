@@ -340,6 +340,70 @@ class PostMetaStorage {
 	}
 
 	/**
+	 * Return one status-filtered page and its exact total using the serialized record fields.
+	 *
+	 * @param string $status Link status.
+	 * @param int    $per_page Number of rows per page.
+	 * @param int    $page Page number.
+	 * @return array{items:list<LinkListItem>,total:int}
+	 */
+	public function list_tokens_by_status( string $status, int $per_page = 50, int $page = 1 ): array {
+		global $wpdb;
+
+		$per_page          = max( 1, min( 100, $per_page ) );
+		$offset            = ( max( 1, $page ) - 1 ) * $per_page;
+		$like              = $wpdb->esc_like( self::DETAIL_META_PREFIX ) . '%';
+		$created_by_marker = 's:10:"created_by";';
+		$revoked_marker    = 's:7:"revoked";';
+		$expires_marker    = 's:10:"expires_at";';
+		$created_by_offset = "INSTR(REVERSE(pm.meta_value), REVERSE('$created_by_marker'))";
+		$revoked_offset    = "INSTR(REVERSE(pm.meta_value), REVERSE('$revoked_marker'))";
+		$expires_offset    = "INSTR(REVERSE(pm.meta_value), REVERSE('$expires_marker'))";
+		$revoked_tail      = "SUBSTR(pm.meta_value, LENGTH(pm.meta_value) - $revoked_offset + 2)";
+		$expires_tail      = "SUBSTR(pm.meta_value, LENGTH(pm.meta_value) - $expires_offset + 2)";
+		$revoked           = "SUBSTR($revoked_tail, 1, INSTR($revoked_tail, ';') - 1)";
+		$expires           = "SUBSTR($expires_tail, 1, INSTR($expires_tail, ';') - 1)";
+		$revoked_present   = "$revoked_offset > 0 AND $revoked_offset < $created_by_offset";
+		$expires_present   = "$expires_offset > 0 AND $expires_offset < $created_by_offset";
+		$now               = time();
+
+		if ( 'revoked' === $status ) {
+			$status_where = "$revoked_present AND CAST(SUBSTRING($revoked, 3) AS UNSIGNED) > 0";
+			$status_args  = [];
+		} elseif ( 'expired' === $status ) {
+			$status_where = "NOT ($revoked_present AND CAST(SUBSTRING($revoked, 3) AS UNSIGNED) > 0) AND $expires_present AND 'N' <> $expires AND CAST(SUBSTRING($expires, 3) AS UNSIGNED) <= %d";
+			$status_args  = [ $now ];
+		} else {
+			$status_where = "NOT ($revoked_present AND CAST(SUBSTRING($revoked, 3) AS UNSIGNED) > 0) AND (NOT $expires_present OR 'N' = $expires OR CAST(SUBSTRING($expires, 3) AS UNSIGNED) > %d)";
+			$status_args  = [ $now ];
+		}
+
+		$base = "FROM {$wpdb->postmeta} pm
+			INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+			WHERE pm.meta_key LIKE %s
+				AND p.post_type <> %s
+				AND ($status_where)";
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- The fixed status clause is generated above; values are passed as placeholders.
+		$count_sql = $wpdb->prepare( "SELECT COUNT(*) $base", ...array_merge( [ $like, 'revision' ], $status_args ) );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared -- Exact status count is evaluated by MySQL from serialized fields; the prepared query returns one scalar.
+		$total = max( 0, (int) $wpdb->get_var( $count_sql ) );
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- The fixed status clause is generated above; values are passed as placeholders.
+		$list_sql = $wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $base contains fixed SQL expressions; all values are placeholders.
+			"SELECT pm.post_id, pm.meta_key, pm.meta_value $base ORDER BY pm.meta_id DESC LIMIT %d OFFSET %d",
+			...array_merge( [ $like, 'revision' ], $status_args, [ $per_page, $offset ] )
+		);
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared -- Status-filtered page is bounded and uses the prepared SQL built above.
+		$rows = $wpdb->get_results( $list_sql, ARRAY_A );
+
+		return [
+			'items' => is_array( $rows ) ? $this->format_link_rows( $rows ) : [],
+			'total' => $total,
+		];
+	}
+
+	/**
 	 * Flush object cache entries for tokens that belong to a post.
 	 *
 	 * @param int $post_id Post ID.

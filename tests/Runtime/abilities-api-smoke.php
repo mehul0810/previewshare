@@ -356,6 +356,82 @@ previewshare_abilities_runtime_assert_status(
 $admin_generated = $admin_generate_response->get_data();
 $admin_raw_token = previewshare_abilities_runtime_token_from_url( $admin_generated['url'] );
 
+$status_probe_ids = [];
+foreach ( [
+	'active-marker'  => 's:7:"revoked";i:1; s:10:"expires_at";i:1;',
+	'expired-boundary' => 'Expired status boundary',
+	'revoked-boundary' => 'Revoked status boundary',
+] as $probe => $label ) {
+	$probe_response = previewshare_abilities_runtime_request(
+		'POST',
+		'/wp-abilities/v1/abilities/previewshare/generate-preview-link/run',
+		[ 'label' => $label, 'post_id' => $post_id ]
+	);
+	previewshare_abilities_runtime_assert_status( $probe_response, 200, "{$probe} status fixture generation" );
+	$status_probe_ids[ $probe ] = $probe_response->get_data()['token_id'];
+}
+
+$expired_meta_key = '_previewshare_token:' . $status_probe_ids['expired-boundary'];
+$expired_detail   = get_post_meta( $post_id, $expired_meta_key, true );
+previewshare_abilities_runtime_assert( is_array( $expired_detail ), 'Expired status fixture metadata is missing.' );
+$expired_detail['expires_at'] = time() - 1;
+$expired_detail['revoked']    = 0;
+update_post_meta( $post_id, $expired_meta_key, $expired_detail );
+
+$revoked_meta_key = '_previewshare_token:' . $status_probe_ids['revoked-boundary'];
+$revoked_detail   = get_post_meta( $post_id, $revoked_meta_key, true );
+previewshare_abilities_runtime_assert( is_array( $revoked_detail ), 'Revoked status fixture metadata is missing.' );
+$revoked_detail['expires_at'] = time() - 1;
+$revoked_detail['revoked']    = 1;
+update_post_meta( $post_id, $revoked_meta_key, $revoked_detail );
+
+$active_filtered = previewshare_abilities_runtime_request(
+	'GET',
+	'/wp-abilities/v1/abilities/previewshare/list-preview-links/run',
+	[ 'page' => 1, 'per_page' => 1, 'status' => 'active' ]
+);
+previewshare_abilities_runtime_assert_status( $active_filtered, 200, 'Administrator active filtered inventory' );
+$active_data = $active_filtered->get_data();
+previewshare_abilities_runtime_assert(
+	2 === $active_data['total']
+		&& 1 === count( $active_data['items'] )
+		&& $status_probe_ids['active-marker'] === $active_data['items'][0]['token_id'],
+	'Active filtered page/count did not handle the crafted serialized marker label.'
+);
+$active_page_two = previewshare_abilities_runtime_request(
+	'GET',
+	'/wp-abilities/v1/abilities/previewshare/list-preview-links/run',
+	[ 'page' => 2, 'per_page' => 1, 'status' => 'active' ]
+);
+previewshare_abilities_runtime_assert(
+	2 === $active_page_two->get_data()['total']
+		&& 1 === count( $active_page_two->get_data()['items'] )
+		&& $admin_generated['token_id'] === $active_page_two->get_data()['items'][0]['token_id'],
+	'Active filtered pagination did not return the second matching link.'
+);
+$expired_filtered = previewshare_abilities_runtime_request(
+	'GET',
+	'/wp-abilities/v1/abilities/previewshare/list-preview-links/run',
+	[ 'page' => 1, 'per_page' => 1, 'status' => 'expired' ]
+);
+previewshare_abilities_runtime_assert(
+	1 === $expired_filtered->get_data()['total']
+		&& $status_probe_ids['expired-boundary'] === $expired_filtered->get_data()['items'][0]['token_id'],
+	'Expired status boundary filter or total is incorrect.'
+);
+$revoked_filtered = previewshare_abilities_runtime_request(
+	'GET',
+	'/wp-abilities/v1/abilities/previewshare/list-preview-links/run',
+	[ 'page' => 1, 'per_page' => 10, 'status' => 'revoked' ]
+);
+$revoked_data = $revoked_filtered->get_data();
+previewshare_abilities_runtime_assert(
+	2 === $revoked_data['total']
+		&& in_array( $status_probe_ids['revoked-boundary'], array_column( $revoked_data['items'], 'token_id' ), true )
+		&& ! in_array( $status_probe_ids['revoked-boundary'], array_column( $expired_filtered->get_data()['items'], 'token_id' ), true ),
+	'Revocation did not take precedence over an expired timestamp.'
+);
+
 $list_response = previewshare_abilities_runtime_request(
 	'GET',
 	'/wp-abilities/v1/abilities/previewshare/list-preview-links/run',
@@ -421,6 +497,9 @@ echo 'PREVIEWSHARE_ABILITIES_RUNTIME_RECEIPT=' . wp_json_encode(
 			'editor_owner_post_revocation',
 			'malformed_token_identifier_rejected',
 			'administrator_inventory_redacted',
+			'status_filtered_page_count',
+			'expired_revoked_precedence',
+			'serialized_marker_label',
 			'administrator_revocation_redacted',
 		],
 		'mode'       => 'native',
