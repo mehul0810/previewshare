@@ -280,29 +280,7 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		'PreviewShare tokens request'
 	);
 	await expect( page.locator( '#previewshare-settings-app' ) ).toBeVisible();
-		( response ) =>
-			response.request().method() === 'GET' &&
-			responseMatchesRoute( response, '/previewshare/v1/settings' )
-	);
-	const tokensResponse = page.waitForResponse(
-		( response ) =>
-			response.request().method() === 'GET' &&
-			responseMatchesRoute( response, '/previewshare/v1/tokens' )
-	);
 
-	await admin.visitAdminPage(
-		'options-general.php',
-		'page=previewshare_settings'
-	);
-	await expectSuccessfulResponse(
-		settingsResponse,
-		'PreviewShare settings request'
-	);
-	await expectSuccessfulResponse(
-		tokensResponse,
-		'PreviewShare tokens request'
-	);
-	await expect( page.locator( '#previewshare-settings-app' ) ).toBeVisible();
 	const tablist = page.getByRole( 'tablist', {
 		name: 'PreviewShare settings',
 	} );
