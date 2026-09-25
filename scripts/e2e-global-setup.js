@@ -49,31 +49,27 @@ async function getRestNonceFromAdminPage( requestContext ) {
 	}
 
 	const html = await adminPage.text();
-	const settingsMatch = html.match(
-		/\b(?:wpApiSettings|previewshare_settings)\s*=\s*(\{[\s\S]*?\})\s*;/
-	);
+	const settingsMatch = html.match( /\b(?:wpApiSettings|previewshare_settings)\s*=\s*/ );
 	if ( ! settingsMatch ) {
+		const title = html.match( /<title>([^<]*)<\/title>/i )?.[ 1 ] || 'unknown';
+		const scriptIds = [ ...html.matchAll( /<script\b[^>]*\bid=["']([^"']+)["']/gi ) ]
+			.map( ( match ) => match[ 1 ] )
+			.join( ', ' );
 		throw new Error(
-			`Could not find REST settings on the PreviewShare admin page (${ adminPage.url() }, ${ html.length } bytes).`
+			`Could not find REST settings on the PreviewShare admin page (${ adminPage.url() }, title: ${ title }, app mount: ${ html.includes( 'previewshare-settings-app' ) }, permission denied: ${ /You do not have sufficient permissions/i.test( html ) }, scripts: ${ scriptIds || 'none' }).`
 		);
 	}
 
-	let settings;
-	try {
-		settings = JSON.parse( settingsMatch[ 1 ] );
-	} catch {
+	const nonceMatch = html
+		.slice( settingsMatch.index + settingsMatch[ 0 ].length )
+		.match( /["']nonce["']\s*:\s*["']([^"']+)["']/ );
+	if ( ! nonceMatch || ! nonceMatch[ 1 ] ) {
 		throw new Error(
-			'Could not parse the REST settings on the authenticated PreviewShare admin page.'
+			'The localized REST settings on the PreviewShare admin page did not include a nonce.'
 		);
 	}
 
-	if ( typeof settings.nonce !== 'string' || ! settings.nonce ) {
-		throw new Error(
-			'The REST settings on the authenticated PreviewShare admin page did not include a nonce.'
-		);
-	}
-
-	return settings.nonce;
+	return nonceMatch[ 1 ];
 }
 
 async function loginWithForm( requestContext ) {
