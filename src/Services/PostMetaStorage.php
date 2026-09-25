@@ -370,7 +370,11 @@ class PostMetaStorage {
 	 * @return bool
 	 */
 	public function revoke_token_by_id( string $id ): bool {
-		$hash    = sanitize_key( $id );
+		if ( 1 !== preg_match( '/\\A[a-f0-9]{64}\\z/', $id ) ) {
+			return false;
+		}
+
+		$hash    = $id;
 		$post_id = $this->get_post_id_by_hash( $hash );
 
 		if ( ! $post_id ) {
@@ -378,6 +382,43 @@ class PostMetaStorage {
 		}
 
 		return $this->revoke_token_hash_for_post( $post_id, $hash );
+	}
+
+	/**
+	 * Get an opaque preview link context by its inventory identifier.
+	 *
+	 * This returns no raw token material and is intended for authenticated
+	 * management operations that already know the stored identifier.
+	 *
+	 * @param string $id Link ID/hash.
+	 * @return array{id:string,post_id:int,label:string,expires_at:int|null,status:string}|null Link context, or null when not found.
+	 */
+	public function get_token_context_by_id( string $id ): ?array {
+		if ( 1 !== preg_match( '/\\A[a-f0-9]{64}\\z/', $id ) ) {
+			return null;
+		}
+
+		$hash = $id;
+
+		$post_id = $this->get_post_id_by_hash( $hash );
+
+		if ( ! $post_id ) {
+			return null;
+		}
+
+		$link = $this->get_link_record( $post_id, $hash );
+
+		if ( ! $link ) {
+			return null;
+		}
+
+		return [
+			'id'         => $hash,
+			'post_id'    => $post_id,
+			'label'      => $link['label'],
+			'expires_at' => $link['expires_at'],
+			'status'     => $this->get_link_status( $link ),
+		];
 	}
 
 	/**

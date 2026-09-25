@@ -137,6 +137,7 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 * Added an Expiring soon view and a fixed 24-hour extension action for eligible preview links.
 * Added a verified plugin catalog with product-specific descriptions and destinations.
 * Added browser lifecycle coverage for secure preview access, expiration, revocation, and published-content behavior.
+* Added permission-checked WordPress Abilities for generating, listing, and revoking preview links on WordPress 6.9 and newer.
 * Added optional reviewer approvals, change requests, and comments per preview link, with editor history, stale-approval status, and 90-day feedback retention.
 
 = 1.0.2 =
