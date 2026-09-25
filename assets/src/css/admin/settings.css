@@ -902,3 +902,168 @@ body.previewshare-settings-screen #wpbody-content {
 		white-space: nowrap;
 	}
 }
+
+
+/* Responsive inventory table used on WordPress versions before the DataViews React runtime. */
+.previewshare-legacy-inventory {
+	display: grid;
+	gap: 16px;
+}
+
+.previewshare-legacy-toolbar {
+	display: grid;
+	grid-template-columns: minmax(260px, 1fr) minmax(180px, 240px);
+	gap: 16px;
+	align-items: end;
+}
+
+.previewshare-legacy-toolbar .components-base-control {
+	margin-bottom: 0;
+}
+
+.previewshare-legacy-table-wrap {
+	overflow: hidden;
+	border: 1px solid var(--previewshare-border);
+	border-radius: 10px;
+	background: var(--previewshare-surface);
+}
+
+.previewshare-legacy-link-table {
+	width: 100%;
+	border-collapse: collapse;
+	color: var(--previewshare-ink);
+}
+
+.previewshare-legacy-link-table th,
+.previewshare-legacy-link-table td {
+	padding: 14px 16px;
+	border-bottom: 1px solid var(--previewshare-border);
+	text-align: start;
+	vertical-align: top;
+}
+
+.previewshare-legacy-link-table th {
+	background: #f8fafc;
+	color: #475467;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+}
+
+.previewshare-legacy-link-table tbody tr:last-child td {
+	border-bottom: 0;
+}
+
+.previewshare-legacy-link-table .previewshare-content-cell small {
+	display: block;
+	margin-top: 4px;
+	color: var(--previewshare-muted);
+	font-size: 12px;
+}
+
+.previewshare-legacy-row-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.previewshare-legacy-pagination {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.previewshare-legacy-pagination span {
+	margin-inline-end: auto;
+	color: var(--previewshare-muted);
+	font-size: 13px;
+}
+
+@media screen and (max-width: 782px) {
+
+	.previewshare-legacy-toolbar {
+		grid-template-columns: 1fr;
+	}
+
+	.previewshare-legacy-table-wrap {
+		overflow: visible;
+		border: 0;
+		background: transparent;
+	}
+
+	.previewshare-legacy-link-table,
+	.previewshare-legacy-link-table tbody {
+		display: block;
+		width: 100%;
+	}
+
+	.previewshare-legacy-link-table thead {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		clip-path: inset(50%);
+	}
+
+	.previewshare-legacy-link-table tbody tr {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 4px 16px;
+		margin-bottom: 12px;
+		padding: 12px;
+		border: 1px solid var(--previewshare-border);
+		border-radius: 10px;
+		background: var(--previewshare-surface);
+	}
+
+	.previewshare-legacy-link-table tbody td {
+		display: flex;
+		min-width: 0;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 10px 4px;
+		border-bottom: 1px solid #edf1f6;
+		overflow-wrap: anywhere;
+	}
+
+	.previewshare-legacy-link-table tbody td::before {
+		flex: 0 0 auto;
+		color: var(--previewshare-muted);
+		content: attr(data-label);
+		font-size: 12px;
+		font-weight: 600;
+	}
+
+	.previewshare-legacy-link-table tbody td[data-label="Actions"] {
+		grid-column: 1 / -1;
+	}
+
+	.previewshare-legacy-row-actions {
+		justify-content: flex-end;
+	}
+
+	.previewshare-legacy-pagination {
+		flex-wrap: wrap;
+		justify-content: space-between;
+	}
+}
+
+@media screen and (max-width: 480px) {
+
+	.previewshare-legacy-link-table tbody tr {
+		grid-template-columns: 1fr;
+	}
+
+	.previewshare-legacy-link-table tbody td[data-label="Actions"] {
+		grid-column: auto;
+	}
+
+	.previewshare-legacy-pagination .components-button {
+		flex: 1 1 auto;
+		justify-content: center;
+	}
+}
