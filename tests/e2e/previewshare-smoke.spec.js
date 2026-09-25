@@ -233,6 +233,28 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 			tablist.getByRole( 'tab', { name: tabName, exact: true } )
 		).toBeVisible();
 	}
+	const overviewTab = tablist.getByRole( 'tab', {
+		name: 'Overview',
+		exact: true,
+	} );
+	await overviewTab.focus();
+	await overviewTab.press( 'ArrowRight' );
+	const previewLinksTab = tablist.getByRole( 'tab', {
+		name: 'Preview links',
+		exact: true,
+	} );
+	await expect( previewLinksTab ).toHaveAttribute( 'aria-selected', 'true' );
+	const focusStyle = await previewLinksTab.evaluate( ( tab ) => {
+		const style = window.getComputedStyle( tab );
+		return {
+			outlineStyle: style.outlineStyle,
+			outlineWidth: Number.parseFloat( style.outlineWidth ),
+		};
+	} );
+	expect( focusStyle.outlineStyle ).toBe( 'solid' );
+	expect( focusStyle.outlineWidth ).toBeGreaterThanOrEqual( 2 );
+	await previewLinksTab.press( 'Home' );
+	await expect( overviewTab ).toHaveAttribute( 'aria-selected', 'true' );
 	await expect(
 		page.getByText( 'Active links', { exact: true } )
 	).toBeVisible();

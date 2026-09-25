@@ -35,6 +35,42 @@ async function findRestRoot( requestContext, baseURL ) {
 	throw new Error( 'Could not find the WordPress REST API root.' );
 }
 
+async function getRestNonceFromAdminPage( requestContext ) {
+	const adminPage = await requestContext.get( 'wp-admin/' );
+	if ( ! adminPage.ok() ) {
+		throw new Error(
+			`Could not load the WordPress admin page to read its REST nonce (HTTP ${ adminPage.status() }).`
+		);
+	}
+
+	const html = await adminPage.text();
+	const settingsMatch = html.match(
+		/\bwpApiSettings\s*=\s*(\{[^;]+\})\s*;/
+	);
+	if ( ! settingsMatch ) {
+		throw new Error(
+			'Could not find the WordPress REST settings on the authenticated admin page.'
+		);
+	}
+
+	let settings;
+	try {
+		settings = JSON.parse( settingsMatch[ 1 ] );
+	} catch {
+		throw new Error(
+			'Could not parse the WordPress REST settings on the authenticated admin page.'
+		);
+	}
+
+	if ( typeof settings.nonce !== 'string' || ! settings.nonce ) {
+		throw new Error(
+			'The WordPress REST settings on the authenticated admin page did not include a nonce.'
+		);
+	}
+
+	return settings.nonce;
+}
+
 async function globalSetup( config ) {
 	const { storageState, baseURL } = config.projects[ 0 ].use;
 	const storageStatePath =
@@ -43,7 +79,18 @@ async function globalSetup( config ) {
 	const requestUtils = new RequestUtils( requestContext, { baseURL } );
 
 	try {
-		const nonce = await requestUtils.login();
+		let nonce;
+		try {
+			nonce = await requestUtils.login();
+		} catch ( error ) {
+			nonce = await getRestNonceFromAdminPage( requestContext ).catch(
+				( fallbackError ) => {
+					throw new Error(
+						`Could not retrieve a WordPress REST nonce. The standard endpoint failed (${ error.message }); the admin-page fallback failed (${ fallbackError.message }).`
+					);
+				}
+			);
+		}
 		const rootURL = await findRestRoot( requestContext, baseURL );
 		const { cookies } = await requestContext.storageState();
 
