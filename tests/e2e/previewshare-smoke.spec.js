@@ -501,10 +501,21 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await page.getByRole( 'tab', { name: 'Preview links' } ).click();
 	const modernInventory = page.locator( '.previewshare-dataviews' );
 	const legacyInventory = page.locator( '.previewshare-legacy-inventory' );
+	const availableInventory = page.locator(
+		'.previewshare-dataviews, .previewshare-legacy-inventory'
+	);
+	await expect( availableInventory ).toBeVisible();
 	const usingLegacyInventory = await legacyInventory.isVisible();
 	const inventoryTable = usingLegacyInventory
 		? legacyInventory
 		: modernInventory;
+	const expiringStatus = inventoryTable.locator(
+		'.previewshare-status.is-expiring_soon'
+	);
+	const extendButton = inventoryTable.getByRole( 'button', {
+		name: 'Extend',
+		exact: true,
+	} );
 	await expect( inventoryTable ).toBeVisible();
 	const desktopPageWidth = await page.evaluate(
 		() => document.documentElement.scrollWidth
@@ -539,14 +550,6 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		() => document.documentElement.scrollWidth
 	);
 	expect( mobilePageWidth ).toBeLessThanOrEqual( 390 );
-	const expiringStatus = inventoryTable.locator(
-		'.previewshare-status.is-expiring_soon'
-	);
-	const extendButton = inventoryTable.getByRole( 'button', {
-		name: 'Extend',
-		exact: true,
-	} );
-
 	if ( usingLegacyInventory ) {
 		const statusCell = expiringStatus.locator(
 			'xpath=ancestor::td[1]'
