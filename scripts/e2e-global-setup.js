@@ -122,6 +122,11 @@ async function loginWithForm( page, baseURL ) {
 	await page
 		.locator( '#user_pass' )
 		.fill( process.env.WP_PASSWORD || 'password' );
+	// WordPress's optional test-cookie preflight is unreliable on the wp-env
+	// localhost port. Verify the authenticated cookie directly by loading wp-admin.
+	await page
+		.locator( 'input[name="testcookie"]' )
+		.evaluate( ( input ) => input.remove() );
 	await page.locator( '#wp-submit' ).click();
 
 	const loginError = page.locator( '#login_error' );
