@@ -382,12 +382,27 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		() => document.documentElement.scrollWidth
 	);
 	expect( mobilePageWidth ).toBeLessThanOrEqual( 390 );
-	await inventoryTable.evaluate( ( element ) => {
+	const inventoryViewport = inventoryTable.locator(
+		'.dataviews-layout__container'
+	);
+	const inventoryScrollMetrics = await inventoryViewport.evaluate(
+		( element ) => ( {
+			clientWidth: element.clientWidth,
+			scrollWidth: element.scrollWidth,
+		} )
+	);
+	expect( inventoryScrollMetrics.scrollWidth ).toBeGreaterThan(
+		inventoryScrollMetrics.clientWidth
+	);
+	await inventoryViewport.evaluate( ( element ) => {
 		element.scrollLeft = element.scrollWidth;
 	} );
-	const mobileExtendBounds = await page
-		.getByRole( 'button', { name: 'Extend', exact: true } )
-		.boundingBox();
+	const extendButton = page.getByRole( 'button', {
+		name: 'Extend',
+		exact: true,
+	} );
+	await expect( extendButton ).toBeInViewport();
+	const mobileExtendBounds = await extendButton.boundingBox();
 	expect( mobileExtendBounds ).not.toBeNull();
 	expect(
 		mobileExtendBounds.x + mobileExtendBounds.width
@@ -399,7 +414,7 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await page.setViewportSize( { width: 1280, height: 900 } );
 	const [ extendResponse ] = await Promise.all( [
 		page.waitForResponse( isExtendPreviewResponse ),
-		page.getByRole( 'button', { name: 'Extend', exact: true } ).click(),
+		extendButton.click(),
 	] );
 	await expectSuccessfulResponse( extendResponse, 'Extend preview link' );
 	const extendedLink = await extendResponse.json();
