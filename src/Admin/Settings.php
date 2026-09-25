@@ -91,6 +91,13 @@ class Settings {
 			'before'
 		);
 
+		// Newer WordPress component packages expect this React hook; use the nearest supported admin hook on WordPress 5.8.
+		wp_add_inline_script(
+			'previewshare-settings',
+			'if ( window.wp && window.wp.element && typeof window.wp.element.useInsertionEffect !== "function" && typeof window.wp.element.useLayoutEffect === "function" ) { window.wp.element.useInsertionEffect = window.wp.element.useLayoutEffect; }',
+			'before'
+		);
+
 		wp_localize_script(
 			'previewshare-settings',
 			'previewshare_settings',
