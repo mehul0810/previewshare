@@ -111,6 +111,10 @@ Expired tokens stop resolving to content. The editor panel will show the expired
 
 Yes, if an editor enables reviewer responses for a specific preview link. Anyone with that link can approve, request changes, or leave a comment. Editors can require a name and email address, review the history, and resolve change requests. Revoking or expiring the link stops new responses.
 
+= When does an approval need review again? =
+
+PreviewShare marks an approval stale when saved post text, metadata, taxonomy terms, or featured-image details change. Content pulled from external services or other posts can change independently; editors should request a new response when that happens.
+
 = How long is reviewer feedback kept? =
 
 Responses, comments, and any name or email supplied by the reviewer are stored as private WordPress records and scheduled for automatic deletion after 90 days. The records are available through WordPress personal-data export and erasure tools when an email address was supplied. Site owners should include this use in their privacy notice and ensure WordPress scheduled tasks run reliably.

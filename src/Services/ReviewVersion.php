@@ -23,6 +23,56 @@ final class ReviewVersion {
 	 * @return string
 	 */
 	public static function fingerprint( \WP_Post $post ): string {
+		$metadata = get_post_meta( (int) $post->ID );
+		$metadata = is_array( $metadata ) ? $metadata : [];
+		foreach ( array_keys( $metadata ) as $key ) {
+			if ( 0 === strpos( (string) $key, '_previewshare_' ) || in_array( $key, [ '_edit_lock', '_edit_last' ], true ) ) {
+				unset( $metadata[ $key ] );
+			}
+		}
+		ksort( $metadata, SORT_STRING );
+
+		$taxonomies = get_object_taxonomies( (string) $post->post_type, 'names' );
+		$taxonomies = is_array( $taxonomies ) ? array_values( $taxonomies ) : [];
+		sort( $taxonomies, SORT_STRING );
+		$terms = [];
+		if ( $taxonomies ) {
+			foreach ( $taxonomies as $taxonomy ) {
+				$assigned = get_object_term_cache( (int) $post->ID, $taxonomy );
+				if ( false === $assigned ) {
+					$assigned = wp_get_object_terms( (int) $post->ID, $taxonomy );
+				}
+				if ( ! is_array( $assigned ) ) {
+					continue;
+				}
+				foreach ( $assigned as $term ) {
+					$terms[] = [
+						'id'          => (int) $term->term_id,
+						'taxonomy'    => (string) $term->taxonomy,
+						'slug'        => (string) $term->slug,
+						'name'        => (string) $term->name,
+						'description' => (string) $term->description,
+						'parent'      => (int) $term->parent,
+					];
+				}
+			}
+			usort(
+				$terms,
+				static function ( array $left, array $right ): int {
+					return strcmp( $left['taxonomy'] . ':' . $left['id'], $right['taxonomy'] . ':' . $right['id'] );
+				}
+			);
+		}
+
+		$thumbnail_id = isset( $metadata['_thumbnail_id'][0] ) ? (int) $metadata['_thumbnail_id'][0] : 0;
+		$thumbnail    = $thumbnail_id ? get_post( $thumbnail_id ) : null;
+		$image        = $thumbnail ? [
+			'post_modified_gmt' => (string) $thumbnail->post_modified_gmt,
+			'post_title'        => (string) $thumbnail->post_title,
+			'post_excerpt'      => (string) $thumbnail->post_excerpt,
+			'metadata'          => get_post_meta( $thumbnail_id ),
+		] : null;
+
 		return hash(
 			'sha256',
 			(string) wp_json_encode(
@@ -30,6 +80,9 @@ final class ReviewVersion {
 					(string) $post->post_title,
 					(string) $post->post_content,
 					(string) $post->post_excerpt,
+					$metadata,
+					$terms,
+					$image,
 				]
 			)
 		);

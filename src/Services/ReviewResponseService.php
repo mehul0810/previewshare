@@ -96,10 +96,13 @@ final class ReviewResponseService {
 			return new \WP_Error( 'review_duplicate', __( 'This response was already received.', 'previewshare' ), [ 'status' => 409 ] );
 		}
 
-		$review_id = wp_insert_post(
+		$created_gmt = current_time( 'mysql', true );
+		$review_id   = wp_insert_post(
 			[
 				'post_type'       => self::POST_TYPE,
 				'post_status'     => 'private',
+				'post_date'       => get_date_from_gmt( $created_gmt ),
+				'post_date_gmt'   => $created_gmt,
 				'post_parent'     => $post_id,
 				'post_title'      => __( 'PreviewShare review response', 'previewshare' ),
 				'post_content'    => $comment,
@@ -174,6 +177,62 @@ final class ReviewResponseService {
 	public function latest( int $post_id, string $link_hash ): ?array {
 		$history = $this->history( $post_id, $link_hash );
 		return $history[0] ?? null;
+	}
+
+	/**
+	 * Fetch the latest response for every link on an inventory page in one query.
+	 *
+	 * @param array<string,int> $link_owners Link hash mapped to owning post ID.
+	 * @return array<string,array<string,mixed>> Latest response data keyed by link hash.
+	 */
+	public function latest_for_links( array $link_owners ): array {
+		if ( ! $link_owners ) {
+			return [];
+		}
+
+		global $wpdb;
+		$post_ids          = array_values( array_unique( array_map( 'intval', array_values( $link_owners ) ) ) );
+		$post_placeholders = implode( ', ', array_fill( 0, count( $post_ids ), '%d' ) );
+		$link_placeholders = implode( ', ', array_fill( 0, count( $link_owners ), '%s' ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table names are WordPress-owned; IN placeholders are generated above.
+		$sql       = "SELECT links.meta_value AS link_hash, MAX(reviews.ID) AS response_id, MIN(reviews.post_parent) AS post_id
+			FROM {$wpdb->posts} AS reviews
+			INNER JOIN {$wpdb->postmeta} AS links ON links.post_id = reviews.ID
+			WHERE reviews.post_type = %s AND reviews.post_status = %s AND links.meta_key = %s
+			AND reviews.post_parent IN ({$post_placeholders}) AND links.meta_value IN ({$link_placeholders})
+			GROUP BY links.meta_value";
+		$arguments = array_merge( [ self::POST_TYPE, 'private', '_previewshare_link_hash' ], $post_ids, array_keys( $link_owners ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Bounded inventory read must reflect current review state.
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $arguments ), ARRAY_A );
+		if ( ! is_array( $rows ) || $wpdb->last_error ) {
+			$result = [];
+			foreach ( $link_owners as $hash => $post_id ) {
+				$latest = $this->latest( $post_id, $hash );
+				if ( $latest ) {
+					$result[ $hash ] = $latest;
+				}
+			}
+			return $result;
+		}
+
+		$ids = array_map( 'intval', array_column( $rows, 'response_id' ) );
+		if ( $ids ) {
+			update_meta_cache( 'post', $ids );
+		}
+		$result = [];
+		foreach ( $rows as $row ) {
+			$hash = (string) $row['link_hash'];
+			if ( ! isset( $link_owners[ $hash ] ) || $link_owners[ $hash ] !== (int) $row['post_id'] ) {
+				continue;
+			}
+			$id              = (int) $row['response_id'];
+			$result[ $hash ] = [
+				'response_type' => (string) get_post_meta( $id, '_previewshare_response_type', true ),
+				'content_hash'  => (string) get_post_meta( $id, '_previewshare_content_hash', true ),
+				'resolved_at'   => (int) get_post_meta( $id, '_previewshare_resolved_at', true ),
+			];
+		}
+		return $result;
 	}
 
 	/**
