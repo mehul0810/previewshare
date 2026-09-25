@@ -84,10 +84,15 @@ async function ensurePreviewSharePanelOpen( page ) {
 }
 
 async function visitEditor( admin, postId ) {
-	await admin.visitAdminPage(
-		'post.php',
-		`post=${ postId }&action=edit`
-	);
+	if ( /WordPress#5\.8(?:\.|$)/.test( process.env.WP_ENV_CORE || '' ) ) {
+		await admin.visitAdminPage(
+			'post.php',
+			`post=${ postId }&action=edit`
+		);
+		return;
+	}
+
+	await admin.editPost( postId );
 }
 
 function isGeneratePreviewResponse( response ) {
