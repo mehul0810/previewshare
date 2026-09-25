@@ -385,7 +385,7 @@ class PostMetaStorage {
 				AND ($status_where)";
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- The fixed status clause is generated above; values are passed as placeholders.
 		$count_sql = $wpdb->prepare( "SELECT COUNT(*) $base", ...array_merge( [ $like, 'revision' ], $status_args ) );
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared -- Exact status count is evaluated by MySQL from serialized fields; the prepared query returns one scalar.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter -- SQL fragments are fixed local expressions and all variable values are passed through $wpdb->prepare; exact status count returns one scalar.
 		$total = max( 0, (int) $wpdb->get_var( $count_sql ) );
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- The fixed status clause is generated above; values are passed as placeholders.
@@ -394,7 +394,7 @@ class PostMetaStorage {
 			"SELECT pm.post_id, pm.meta_key, pm.meta_value $base ORDER BY pm.meta_id DESC LIMIT %d OFFSET %d",
 			...array_merge( [ $like, 'revision' ], $status_args, [ $per_page, $offset ] )
 		);
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared -- Status-filtered page is bounded and uses the prepared SQL built above.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter -- SQL fragments are fixed local expressions and all variable values are passed through $wpdb->prepare; the page is bounded.
 		$rows = $wpdb->get_results( $list_sql, ARRAY_A );
 
 		return [
