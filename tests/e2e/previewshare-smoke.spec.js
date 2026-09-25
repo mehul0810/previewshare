@@ -71,6 +71,14 @@ function runWpCli( command, args ) {
 }
 
 async function ensurePreviewSharePanelOpen( page ) {
+	const welcomeGuide = page.getByText( 'Welcome to the block editor', {
+		exact: true,
+	} );
+	if ( await welcomeGuide.isVisible() ) {
+		await page.keyboard.press( 'Escape' );
+		await expect( welcomeGuide ).not.toBeVisible();
+	}
+
 	const panelToggle = page.getByRole( 'button', {
 		name: 'PreviewShare',
 		exact: true,
