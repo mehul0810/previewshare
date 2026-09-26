@@ -72,6 +72,10 @@ final class ReviewController {
 						'required' => true,
 						'type' => 'string',
 					],
+					'content_snapshot' => [
+						'required' => true,
+						'type' => 'string',
+					],
 					'name'          => [
 						'required' => false,
 						'type' => 'string',
@@ -192,6 +196,13 @@ final class ReviewController {
 		if ( ! preg_match( '/^[a-zA-Z0-9-]{16,80}$/', $request_id ) ) {
 			return new \WP_Error( 'review_invalid_request', __( 'Please refresh the page and try again.', 'previewshare' ), [ 'status' => 400 ] );
 		}
+		$content_fingerprint = ReviewVersion::verify_snapshot( (string) $request->get_param( 'content_snapshot' ), $hash );
+		if ( null === $content_fingerprint ) {
+			return new \WP_Error( 'review_invalid_snapshot', __( 'Please refresh the page and try again.', 'previewshare' ), [ 'status' => 400 ] );
+		}
+		if ( 'approve' === $type && ! hash_equals( $content_fingerprint, ReviewVersion::fingerprint( $post ) ) ) {
+			return new \WP_Error( 'review_stale_version', __( 'This content changed after you opened the preview. Refresh the page to review the latest version before approving.', 'previewshare' ), [ 'status' => 409 ] );
+		}
 		if ( strlen( $name ) > 120 || strlen( $email ) > 190 || strlen( $comment ) > 5000 ) {
 			return new \WP_Error( 'review_too_long', __( 'Your response is too long. Shorten it and try again.', 'previewshare' ), [ 'status' => 400 ] );
 		}
@@ -209,7 +220,7 @@ final class ReviewController {
 		$result         = $this->reviews->create_response(
 			$post_id,
 			$hash,
-			ReviewVersion::fingerprint( $post ),
+			$content_fingerprint,
 			$type,
 			$name,
 			$email,

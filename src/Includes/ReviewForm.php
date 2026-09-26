@@ -8,6 +8,7 @@
 namespace PreviewShare\Includes;
 
 use PreviewShare\Services\PostMetaStorage;
+use PreviewShare\Services\ReviewVersion;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -63,6 +64,7 @@ final class ReviewForm {
 					'unavailable' => __( 'This browser cannot send a response securely.', 'previewshare' ),
 					'sending'     => __( 'Sending your response…', 'previewshare' ),
 					'failed'      => __( 'Your response could not be sent. Please try again.', 'previewshare' ),
+					'stale'       => __( 'This content changed after you opened the preview. Refresh the page to review the latest version before approving.', 'previewshare' ),
 					'duplicate'   => __( 'Your response was already received.', 'previewshare' ),
 					'received'    => __( 'Your response was received.', 'previewshare' ),
 				],
@@ -88,7 +90,10 @@ final class ReviewForm {
 				<p class="previewshare-review__eyebrow"><?php esc_html_e( 'PREVIEWSHARE REVIEW', 'previewshare' ); ?></p>
 				<h2 id="previewshare-review-title"><?php esc_html_e( 'Share your feedback', 'previewshare' ); ?></h2>
 				<p><?php esc_html_e( 'Your response is shared with the editor of this draft. It does not publish the content.', 'previewshare' ); ?></p>
-				<form id="previewshare-review-form">
+				<form id="previewshare-review-form" method="post" action="<?php echo esc_url( rest_url( 'previewshare/v1/reviews/submit' ) ); ?>">
+					<input type="hidden" name="token" value="<?php echo esc_attr( $context['token'] ); ?>">
+					<input type="hidden" name="request_id" value="<?php echo esc_attr( $context['request_id'] ); ?>">
+					<input type="hidden" name="content_snapshot" value="<?php echo esc_attr( $context['content_snapshot'] ); ?>">
 					<fieldset>
 						<legend><?php esc_html_e( 'Your response', 'previewshare' ); ?></legend>
 						<label><input type="radio" name="response_type" value="approve" checked> <?php esc_html_e( 'Approve', 'previewshare' ); ?></label>
@@ -120,7 +125,7 @@ final class ReviewForm {
 	/**
 	 * Resolve the current opted-in preview without exposing response data.
 	 *
-	 * @return array{token:string,link:array<string,mixed>}|null
+	 * @return array{token:string,link:array<string,mixed>,content_snapshot:string,request_id:string}|null
 	 */
 	private function current_link(): ?array {
 		$token = (string) get_query_var( 'previewshare_token' );
@@ -146,8 +151,10 @@ final class ReviewForm {
 		}
 
 		return [
-			'token' => $token,
-			'link'  => $context['link'],
+			'token'            => $token,
+			'link'             => $context['link'],
+			'content_snapshot' => ReviewVersion::issue_snapshot( $post, $context['hash'] ),
+			'request_id'       => wp_generate_uuid4(),
 		];
 	}
 }

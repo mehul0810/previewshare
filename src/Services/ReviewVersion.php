@@ -89,6 +89,35 @@ final class ReviewVersion {
 	}
 
 	/**
+	 * Issue a link-bound signature for the content version rendered to a reviewer.
+	 *
+	 * @param \WP_Post $post Reviewed post.
+	 * @param string   $link_hash HMAC link identifier.
+	 * @return string
+	 */
+	public static function issue_snapshot( \WP_Post $post, string $link_hash ): string {
+		$fingerprint = self::fingerprint( $post );
+		$signature   = hash_hmac( 'sha256', $link_hash . ':' . $fingerprint, wp_salt( 'auth' ) );
+		return $fingerprint . '.' . $signature;
+	}
+
+	/**
+	 * Verify a snapshot issued by this site for this preview link.
+	 *
+	 * @param string $snapshot Signed content fingerprint from the form.
+	 * @param string $link_hash HMAC link identifier.
+	 * @return string|null Fingerprint when valid, otherwise null.
+	 */
+	public static function verify_snapshot( string $snapshot, string $link_hash ): ?string {
+		if ( ! preg_match( '/^([a-f0-9]{64})\.([a-f0-9]{64})$/', $snapshot, $matches ) ) {
+			return null;
+		}
+
+		$expected = hash_hmac( 'sha256', $link_hash . ':' . $matches[1], wp_salt( 'auth' ) );
+		return hash_equals( $expected, $matches[2] ) ? $matches[1] : null;
+	}
+
+	/**
 	 * Derive the current editorial state from the latest response.
 	 *
 	 * @param array<string,mixed>|null $response Latest response, if present.

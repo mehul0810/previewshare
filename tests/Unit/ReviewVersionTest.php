@@ -63,6 +63,18 @@ class ReviewVersionTest extends TestCase {
 		self::assertSame( 'pending', ReviewVersion::state( [ 'response_type' => 'request_changes', 'resolved_at' => 123 ], 'current' ) );
 	}
 
+	public function test_snapshot_is_signed_for_its_link_and_rejects_tampering(): void {
+		Functions\when( 'wp_salt' )->justReturn( 'test-site-secret' );
+		$post     = new \WP_Post( [ 'ID' => 42, 'post_content' => 'Draft A' ] );
+		$snapshot = ReviewVersion::issue_snapshot( $post, 'link-hash-a' );
+		$tampered = ( '0' === $snapshot[0] ? '1' : '0' ) . substr( $snapshot, 1 );
+
+		self::assertSame( ReviewVersion::fingerprint( $post ), ReviewVersion::verify_snapshot( $snapshot, 'link-hash-a' ) );
+		self::assertNull( ReviewVersion::verify_snapshot( $snapshot, 'link-hash-b' ) );
+		self::assertNull( ReviewVersion::verify_snapshot( $tampered, 'link-hash-a' ) );
+		self::assertNull( ReviewVersion::verify_snapshot( 'client-supplied-version', 'link-hash-a' ) );
+	}
+
 	public function test_custom_field_and_featured_image_changes_make_approval_stale(): void {
 		$post          = new \WP_Post( [ 'ID' => 42, 'post_content' => 'Draft' ] );
 		$reviewed_hash = ReviewVersion::fingerprint( $post );

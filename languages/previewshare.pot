@@ -293,24 +293,29 @@ msgstr ""
 msgid "You are not allowed to manage preview links for this content."
 msgstr ""
 
-#: src/Includes/ReviewForm.php:61
+#: src/Includes/ReviewForm.php:64
 msgid "This browser cannot send a response securely."
 msgstr ""
 
-#: src/Includes/ReviewForm.php:62
+#: src/Includes/ReviewForm.php:65
 msgid "Sending your response…"
 msgstr ""
 
-#: src/Includes/ReviewForm.php:63
+#: src/Includes/ReviewForm.php:66
 msgid "Your response could not be sent. Please try again."
 msgstr ""
 
-#: src/Includes/ReviewForm.php:64
+#: src/Includes/ReviewForm.php:68
 msgid "Your response was already received."
 msgstr ""
 
-#: src/Includes/ReviewForm.php:65
+#: src/Includes/ReviewForm.php:69
 msgid "Your response was received."
+msgstr ""
+
+#: src/Includes/ReviewForm.php:67
+#: src/REST/ReviewController.php:204
+msgid "This content changed after you opened the preview. Refresh the page to review the latest version before approving."
 msgstr ""
 
 #: src/Includes/ReviewForm.php:86
@@ -398,7 +403,8 @@ msgstr ""
 msgid "Choose a valid response."
 msgstr ""
 
-#: src/REST/ReviewController.php:193
+#: src/REST/ReviewController.php:197
+#: src/REST/ReviewController.php:201
 msgid "Please refresh the page and try again."
 msgstr ""
 

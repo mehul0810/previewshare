@@ -835,6 +835,7 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	const form = anonymous.locator( '#previewshare-review-form' );
 	await expect( form ).toBeVisible();
 	await expect( form.getByRole( 'textbox', { name: 'Name' } ) ).toHaveAttribute( 'required', '' );
+	await expect( form.locator( '[name="content_snapshot"]' ) ).toHaveValue( /^[a-f0-9]{64}\.[a-f0-9]{64}$/ );
 	await anonymous.screenshot( {
 		path: testInfo.outputPath( 'previewshare-review-desktop.png' ),
 		fullPage: true,
@@ -852,6 +853,12 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	await form
 		.getByRole( 'textbox', { name: 'Email' } )
 		.fill( 'reviewer@example.test' );
+	runWpCli( FIXTURE_WP_CLI, [
+		'post',
+		'update',
+		String( post.id ),
+		'--post_content=Revised review draft before approval.',
+	] );
 	const [ submitResponse ] = await Promise.all( [
 		anonymous.waitForResponse( ( response ) =>
 			responseMatchesRoute(
@@ -861,15 +868,29 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 		),
 		form.getByRole( 'button', { name: 'Send response' } ).click(),
 	] );
-	expect( submitResponse.status() ).toBe( 201 );
+	expect( submitResponse.status() ).toBe( 409 );
 	await expect( form.getByRole( 'status' ) ).toHaveText(
-		'Your response was received.'
+		'This content changed after you opened the preview. Refresh the page to review the latest version before approving.'
 	);
-	const replay = await anonymousContext.request.post(
-		new URL( '/wp-json/previewshare/v1/reviews/submit', baseURL ).toString(),
-		{ data: submitResponse.request().postDataJSON() }
-	);
-	expect( replay.status() ).toBe( 409 );
+	const noJsContext = await browser.newContext( {
+		baseURL,
+		javaScriptEnabled: false,
+		storageState: { cookies: [], origins: [] },
+	} );
+	const noJsReviewer = await noJsContext.newPage();
+	await noJsReviewer.goto( previewUrl );
+	const noJsForm = noJsReviewer.locator( '#previewshare-review-form' );
+	await noJsForm.getByRole( 'textbox', { name: 'Name' } ).fill( 'Review Tester' );
+	await noJsForm.getByRole( 'textbox', { name: 'Email' } ).fill( 'reviewer@example.test' );
+	const [ noJsResponse ] = await Promise.all( [
+		noJsReviewer.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		noJsForm.getByRole( 'button', { name: 'Send response' } ).click(),
+	] );
+	expect( noJsResponse.status() ).toBe( 201 );
+	await expect( noJsReviewer.locator( 'body' ) ).toContainText( '"received":true' );
+	await noJsContext.close();
 
 	await page.reload();
 	await ensurePreviewSharePanelOpen( page );
@@ -884,7 +905,7 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 		'post',
 		'update',
 		String( post.id ),
-		'--post_content=Revised review draft.',
+		'--post_content=Another revised review draft.',
 	] );
 	await page.reload();
 	await ensurePreviewSharePanelOpen( page );

@@ -53,18 +53,23 @@ if ( form && config ) {
 					token: config.token,
 					response_type: data.get( 'response_type' ),
 					request_id: requestId,
+					content_snapshot: data.get( 'content_snapshot' ),
 					name: data.get( 'name' ),
 					email: data.get( 'email' ),
 					comment: data.get( 'comment' ),
 				} ),
 			} );
 			const result = await response.json();
-			if ( ! response.ok && response.status !== 409 ) {
+			if ( result.code === 'review_stale_version' ) {
+				message.textContent = config.messages.stale;
+				return;
+			}
+			if ( ! response.ok && result.code !== 'review_duplicate' ) {
 				throw new Error( result.message || config.messages.failed );
 			}
 
 			message.textContent =
-				response.status === 409
+				result.code === 'review_duplicate'
 					? config.messages.duplicate
 					: config.messages.received;
 			form.reset();
