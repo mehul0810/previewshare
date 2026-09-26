@@ -401,7 +401,7 @@ class PostMetaStorageTest extends TestCase {
 		foreach ( [ [ 'active', null, 0 ], [ 'expired', $now - 1, 0 ], [ 'revoked', $now - 1, 1 ], [ 'future', $now + 60, 0 ] ] as $index => $state ) {
 			$row                    = $this->make_link_row( $index );
 			$detail                 = maybe_unserialize( $row['meta_value'] );
-			$detail['label']        = 0 === $index ? 's:7:"revoked";i:1; s:10:"expires_at";i:1;' : $detail['label'];
+			$detail['label']        = 0 === $index ? '日本語 s:7:"revoked";i:1; s:10:"expires_at";i:1;' : $detail['label'];
 			$detail['expires_at']   = $state[1];
 			$detail['revoked']      = $state[2];
 			$row['meta_value']      = serialize( $detail );
@@ -426,6 +426,7 @@ class PostMetaStorageTest extends TestCase {
 		$this->assertSame( 2, $fake_wpdb->get_var_calls );
 		$this->assertStringContainsString( 'INSTR(REVERSE(pm.meta_value)', $fake_wpdb->last_result_query );
 		$this->assertStringContainsString( 'SUBSTR(pm.meta_value', $fake_wpdb->last_result_query );
+		$this->assertStringContainsString( 'SUBSTR(pm.meta_value, 1 - INSTR(REVERSE(pm.meta_value)', $fake_wpdb->last_result_query );
 		$this->assertStringContainsString( 'created_by', $fake_wpdb->last_result_query );
 	}
 

@@ -359,8 +359,8 @@ class PostMetaStorage {
 		$created_by_offset = "INSTR(REVERSE(pm.meta_value), REVERSE('$created_by_marker'))";
 		$revoked_offset    = "INSTR(REVERSE(pm.meta_value), REVERSE('$revoked_marker'))";
 		$expires_offset    = "INSTR(REVERSE(pm.meta_value), REVERSE('$expires_marker'))";
-		$revoked_tail      = "SUBSTR(pm.meta_value, LENGTH(pm.meta_value) - $revoked_offset + 2)";
-		$expires_tail      = "SUBSTR(pm.meta_value, LENGTH(pm.meta_value) - $expires_offset + 2)";
+		$revoked_tail      = "SUBSTR(pm.meta_value, 1 - $revoked_offset)";
+		$expires_tail      = "SUBSTR(pm.meta_value, 1 - $expires_offset)";
 		$revoked           = "SUBSTR($revoked_tail, 1, INSTR($revoked_tail, ';') - 1)";
 		$expires           = "SUBSTR($expires_tail, 1, INSTR($expires_tail, ';') - 1)";
 		$revoked_present   = "$revoked_offset > 0 AND $revoked_offset < $created_by_offset";
