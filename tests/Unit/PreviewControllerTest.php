@@ -197,7 +197,7 @@ class PreviewControllerTest extends TestCase {
 			->andReturn( false );
 		$storage->shouldReceive( 'store_token' )
 			->once()
-			->with( 42, 'generated-token', 12, 'Client review' )
+			->with( 42, 'generated-token', 12, 'Client review', false, false )
 			->andReturn( true );
 
 		$response = $controller->generate(
@@ -244,7 +244,7 @@ class PreviewControllerTest extends TestCase {
 			->andReturn( false );
 		$storage->shouldReceive( 'store_token' )
 			->once()
-			->with( 42, 'generated-token', 12, 'Client review' )
+			->with( 42, 'generated-token', 12, 'Client review', false, false )
 			->andReturn( false );
 
 		$response = $controller->generate(

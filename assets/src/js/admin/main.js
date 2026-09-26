@@ -28,11 +28,250 @@ const PluginDocumentSettingPanel =
 	EditorDocumentSettingPanel ||
 	window.wp?.editPost?.PluginDocumentSettingPanel;
 
+const reviewStateLabels = {
+	pending: __( 'Awaiting response', 'previewshare' ),
+	approved: __( 'Approved', 'previewshare' ),
+	stale: __( 'Approval needs review after edit', 'previewshare' ),
+	changes_requested: __( 'Changes requested', 'previewshare' ),
+	commented: __( 'Comment received', 'previewshare' ),
+};
+
+const responseLabels = {
+	approve: __( 'Approved', 'previewshare' ),
+	request_changes: __( 'Requested changes', 'previewshare' ),
+	comment: __( 'Commented', 'previewshare' ),
+};
+
+const ReviewLinkControls = ( { link, postId, onPolicySaved, notify } ) => {
+	const [ expanded, setExpanded ] = useState( false );
+	const [ busy, setBusy ] = useState( false );
+	const [ state, setState ] = useState( 'pending' );
+	const [ history, setHistory ] = useState( [] );
+	const [ page, setPage ] = useState( 1 );
+	const [ hasMore, setHasMore ] = useState( false );
+
+	const request = ( path, method = 'GET', data ) =>
+		wp.apiFetch( {
+			path,
+			method,
+			...( data ? { data } : {} ),
+			headers: {
+				'X-WP-Nonce': window.previewshare_rest?.nonce || '',
+			},
+		} );
+
+	const loadHistory = async ( nextPage = 1 ) => {
+		setBusy( true );
+		try {
+			const result = await request(
+				`/previewshare/v1/reviews/history?post_id=${ postId }&id=${ encodeURIComponent(
+					link.id
+				) }&page=${ nextPage }`
+			);
+			setState( result.state );
+			setHistory( ( previous ) =>
+				nextPage === 1
+					? result.history
+					: [ ...previous, ...result.history ]
+			);
+			setPage( nextPage );
+			setHasMore( result.history.length === 50 );
+		} catch {
+			notify(
+				'error',
+				__( 'Review history could not be loaded.', 'previewshare' )
+			);
+		} finally {
+			setBusy( false );
+		}
+	};
+
+	const setPolicy = async ( key, value ) => {
+		setBusy( true );
+		try {
+			await request( '/previewshare/v1/reviews/policy', 'POST', {
+				post_id: postId,
+				id: link.id,
+				responses_enabled:
+					key === 'responses_enabled'
+						? value
+						: link.responses_enabled,
+				identity_required:
+					key === 'identity_required'
+						? value
+						: link.identity_required,
+			} );
+			await onPolicySaved();
+			notify( 'success', __( 'Review settings saved.', 'previewshare' ) );
+		} catch {
+			notify(
+				'error',
+				__( 'Review settings could not be saved.', 'previewshare' )
+			);
+		} finally {
+			setBusy( false );
+		}
+	};
+
+	const resolve = async ( responseId ) => {
+		setBusy( true );
+		try {
+			await request( '/previewshare/v1/reviews/resolve', 'POST', {
+				post_id: postId,
+				id: link.id,
+				response_id: responseId,
+			} );
+			await loadHistory();
+			notify(
+				'success',
+				__( 'Change request resolved.', 'previewshare' )
+			);
+		} catch {
+			notify(
+				'error',
+				__( 'Change request could not be resolved.', 'previewshare' )
+			);
+		} finally {
+			setBusy( false );
+		}
+	};
+
+	return (
+		<div className="previewshare-panel__review">
+			<Button
+				variant="link"
+				aria-expanded={ expanded }
+				onClick={ () => {
+					setExpanded( ! expanded );
+					if ( ! expanded ) {
+						loadHistory();
+					}
+				} }
+			>
+				{ expanded
+					? __( 'Hide review', 'previewshare' )
+					: __( 'Review settings and history', 'previewshare' ) }
+			</Button>
+			{ expanded && (
+				<div className="previewshare-panel__review-details">
+					<ToggleControl
+						label={ __(
+							'Allow reviewer responses',
+							'previewshare'
+						) }
+						checked={ !! link.responses_enabled }
+						disabled={ busy || link.revoked || link.expired }
+						onChange={ ( value ) =>
+							setPolicy( 'responses_enabled', value )
+						}
+					/>
+					{ link.responses_enabled && (
+						<ToggleControl
+							label={ __(
+								'Require name and email',
+								'previewshare'
+							) }
+							checked={ !! link.identity_required }
+							disabled={ busy || link.revoked || link.expired }
+							onChange={ ( value ) =>
+								setPolicy( 'identity_required', value )
+							}
+						/>
+					) }
+					<p
+						className="previewshare-panel__review-state"
+						role="status"
+					>
+						{ reviewStateLabels[ state ] ||
+							reviewStateLabels.pending }
+					</p>
+					<p className="description">
+						{ __(
+							'Responses and reviewer identity are removed after 90 days. Revoking the link stops new responses and keeps existing history until then.',
+							'previewshare'
+						) }
+					</p>
+					{ history.length > 0 ? (
+						<ol className="previewshare-panel__review-history">
+							{ history.map( ( response ) => (
+								<li key={ response.id }>
+									<strong>
+										{
+											responseLabels[
+												response.response_type
+											]
+										}
+									</strong>
+									<span>
+										{ response.reviewer_name ||
+											__(
+												'Anonymous reviewer',
+												'previewshare'
+											) }
+										{ response.reviewer_email
+											? ` (${ response.reviewer_email })`
+											: '' }
+									</span>
+									<time
+										dateTime={ new Date(
+											response.created_at * 1000
+										).toISOString() }
+									>
+										{ new Date(
+											response.created_at * 1000
+										).toLocaleString() }
+									</time>
+									{ response.comment && (
+										<p>{ response.comment }</p>
+									) }
+									{ response.response_type ===
+										'request_changes' &&
+										! response.resolved_at && (
+											<Button
+												variant="secondary"
+												disabled={ busy }
+												onClick={ () =>
+													resolve( response.id )
+												}
+											>
+												{ __(
+													'Resolve',
+													'previewshare'
+												) }
+											</Button>
+										) }
+									{ !! response.resolved_at && (
+										<span>
+											{ __( 'Resolved', 'previewshare' ) }
+										</span>
+									) }
+								</li>
+							) ) }
+						</ol>
+					) : (
+						<p>{ __( 'No responses yet.', 'previewshare' ) }</p>
+					) }
+					{ hasMore && (
+						<Button
+							disabled={ busy }
+							onClick={ () => loadHistory( page + 1 ) }
+						>
+							{ __( 'Load more responses', 'previewshare' ) }
+						</Button>
+					) }
+				</div>
+			) }
+		</div>
+	);
+};
+
 const PreviewSharePanel = () => {
 	const [ previewUrl, setPreviewUrl ] = useState( '' );
 	const [ tokenMeta, setTokenMeta ] = useState( null );
 	const [ isGenerating, setIsGenerating ] = useState( false );
 	const [ linkLabel, setLinkLabel ] = useState( '' );
+	const [ responsesEnabled, setResponsesEnabled ] = useState( false );
+	const [ identityRequired, setIdentityRequired ] = useState( false );
 	const {
 		postId,
 		postType,
@@ -174,6 +413,8 @@ const PreviewSharePanel = () => {
 					post_id: postId,
 					ttl_hours: ttlHours,
 					label: linkLabel,
+					responses_enabled: responsesEnabled,
+					identity_required: responsesEnabled && identityRequired,
 				},
 			};
 
@@ -181,7 +422,9 @@ const PreviewSharePanel = () => {
 				fetchOptions.headers = Object.assign(
 					{},
 					fetchOptions.headers,
-					{ 'X-WP-Nonce': window.previewshare_rest.nonce }
+					{
+						'X-WP-Nonce': window.previewshare_rest.nonce,
+					}
 				);
 			}
 
@@ -241,7 +484,9 @@ const PreviewSharePanel = () => {
 				fetchOptions.headers = Object.assign(
 					{},
 					fetchOptions.headers,
-					{ 'X-WP-Nonce': window.previewshare_rest.nonce }
+					{
+						'X-WP-Nonce': window.previewshare_rest.nonce,
+					}
 				);
 			}
 
@@ -370,6 +615,30 @@ const PreviewSharePanel = () => {
 							) }
 						/>
 					</div>
+					<div className="previewshare-panel__field">
+						<ToggleControl
+							label={ __(
+								'Allow reviewer responses',
+								'previewshare'
+							) }
+							checked={ responsesEnabled }
+							onChange={ setResponsesEnabled }
+							help={ __(
+								'Reviewers can approve, request changes, or comment on this link. Responses are kept for 90 days.',
+								'previewshare'
+							) }
+						/>
+						{ responsesEnabled && (
+							<ToggleControl
+								label={ __(
+									'Require name and email',
+									'previewshare'
+								) }
+								checked={ identityRequired }
+								onChange={ setIdentityRequired }
+							/>
+						) }
+					</div>
 					<div className="previewshare-panel__actions">
 						<Button
 							variant="primary"
@@ -464,6 +733,12 @@ const PreviewSharePanel = () => {
 												) }
 											</span>
 										</span>
+										<ReviewLinkControls
+											link={ link }
+											postId={ postId }
+											onPolicySaved={ fetchTokenMeta }
+											notify={ notify }
+										/>
 									</li>
 								) ) }
 							</ul>
