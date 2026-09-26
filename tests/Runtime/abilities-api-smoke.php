@@ -358,7 +358,7 @@ $admin_raw_token = previewshare_abilities_runtime_token_from_url( $admin_generat
 
 $status_probe_ids = [];
 foreach ( [
-	'active-marker'  => 's:7:"revoked";i:1; s:10:"expires_at";i:1;',
+	'active-marker'  => '日本語 s:7:"revoked";i:1; s:10:"expires_at";i:1;',
 	'expired-boundary' => 'Expired status boundary',
 	'revoked-boundary' => 'Revoked status boundary',
 ] as $probe => $label ) {
@@ -422,14 +422,26 @@ previewshare_abilities_runtime_assert(
 $revoked_filtered = previewshare_abilities_runtime_request(
 	'GET',
 	'/wp-abilities/v1/abilities/previewshare/list-preview-links/run',
-	[ 'page' => 1, 'per_page' => 10, 'status' => 'revoked' ]
+	[ 'page' => 1, 'per_page' => 1, 'status' => 'revoked' ]
 );
 $revoked_data = $revoked_filtered->get_data();
 previewshare_abilities_runtime_assert(
 	2 === $revoked_data['total']
-		&& in_array( $status_probe_ids['revoked-boundary'], array_column( $revoked_data['items'], 'token_id' ), true )
+		&& 1 === count( $revoked_data['items'] )
+		&& $status_probe_ids['revoked-boundary'] === $revoked_data['items'][0]['token_id']
 		&& ! in_array( $status_probe_ids['revoked-boundary'], array_column( $expired_filtered->get_data()['items'], 'token_id' ), true ),
 	'Revocation did not take precedence over an expired timestamp.'
+);
+$revoked_page_two = previewshare_abilities_runtime_request(
+	'GET',
+	'/wp-abilities/v1/abilities/previewshare/list-preview-links/run',
+	[ 'page' => 2, 'per_page' => 1, 'status' => 'revoked' ]
+);
+previewshare_abilities_runtime_assert(
+	2 === $revoked_page_two->get_data()['total']
+		&& 1 === count( $revoked_page_two->get_data()['items'] )
+		&& $generated['token_id'] === $revoked_page_two->get_data()['items'][0]['token_id'],
+	'Revoked filtered pagination did not return the second matching link.'
 );
 
 $list_response = previewshare_abilities_runtime_request(
@@ -499,7 +511,8 @@ echo 'PREVIEWSHARE_ABILITIES_RUNTIME_RECEIPT=' . wp_json_encode(
 			'administrator_inventory_redacted',
 			'status_filtered_page_count',
 			'expired_revoked_precedence',
-			'serialized_marker_label',
+			'utf8_serialized_marker_label',
+			'revoked_filtered_pagination',
 			'administrator_revocation_redacted',
 		],
 		'mode'       => 'native',
