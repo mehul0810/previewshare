@@ -44,6 +44,7 @@ final class ReviewForm {
 		add_filter( 'comments_open', [ $this, 'close_native_comments' ], 10, 2 );
 		add_filter( 'pings_open', [ $this, 'close_native_comments' ], 10, 2 );
 		add_filter( 'comments_template', [ $this, 'hide_native_comments_template' ] );
+		add_filter( 'render_block', [ $this, 'hide_native_comments_blocks' ], 10, 3 );
 		add_filter( 'the_content', [ $this, 'append_to_content' ], 99 );
 		add_action( 'previewshare_review_comments_slot', [ $this, 'render' ] );
 		// Fallback for themes that omit the_content(); runs before footer scripts.
@@ -72,6 +73,25 @@ final class ReviewForm {
 	public function hide_native_comments_template( string $template ): string {
 		$context = $this->current_link( false );
 		return $context && (int) $context['post_id'] === get_the_ID() ? __DIR__ . '/preview-comments.php' : $template;
+	}
+
+	/**
+	 * Remove native comment blocks from the shared draft preview only.
+	 *
+	 * @param string $block_content Rendered block output.
+	 * @param array  $block Parsed block data.
+	 * @param object $instance Block instance with inherited context.
+	 * @return string
+	 */
+	public function hide_native_comments_blocks( string $block_content, array $block, $instance ): string {
+		if ( ! in_array( $block['blockName'] ?? '', [ 'core/comments', 'core/comment-template' ], true ) ) {
+			return $block_content;
+		}
+
+		$context = $this->current_link( false );
+		$post_id = isset( $instance->context['postId'] ) ? (int) $instance->context['postId'] : (int) get_the_ID();
+
+		return $context && (int) $context['post_id'] === $post_id ? '' : $block_content;
 	}
 
 	/**

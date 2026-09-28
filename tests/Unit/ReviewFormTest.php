@@ -130,4 +130,18 @@ class ReviewFormTest extends TestCase {
 		$this->token             = 'invalid-token';
 		$this->assertTrue( $this->form->close_native_comments( true, 42 ) );
 	}
+
+	public function test_shared_preview_suppresses_native_comment_blocks_for_its_post_only(): void {
+		$instance = new \stdClass();
+		$instance->context = [ 'postId' => 42 ];
+		$comments_block = [ 'blockName' => 'core/comments' ];
+		$template_block = [ 'blockName' => 'core/comment-template' ];
+
+		$this->assertSame( '', $this->form->hide_native_comments_blocks( '<div>Comments</div>', $comments_block, $instance ) );
+		$this->assertSame( '', $this->form->hide_native_comments_blocks( '<li>Comment</li>', $template_block, $instance ) );
+
+		$instance->context = [ 'postId' => 99 ];
+		$this->assertSame( '<div>Comments</div>', $this->form->hide_native_comments_blocks( '<div>Comments</div>', $comments_block, $instance ) );
+		$this->assertSame( '<p>Other block</p>', $this->form->hide_native_comments_blocks( '<p>Other block</p>', [ 'blockName' => 'core/paragraph' ], $instance ) );
+	}
 }

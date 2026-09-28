@@ -70,6 +70,17 @@ function runWpCli( command, args ) {
 	} );
 }
 
+function runWpCliForOutput( command, args ) {
+	const [ executable, ...commandArgs ] = command
+		.trim()
+		.split( /\s+/ )
+		.filter( Boolean );
+
+	return execFileSync( executable, [ ...commandArgs, ...args ], {
+		encoding: 'utf8',
+	}).trim();
+}
+
 async function ensurePreviewSharePanelOpen( page ) {
 	const welcomeGuide = page.getByText( 'Welcome to the block editor', {
 		exact: true,
@@ -182,6 +193,7 @@ test.beforeEach( async ( { requestUtils } ) => {
 } );
 
 const createdPostIds = new Set();
+let originalTheme;
 
 test.afterEach( () => {
 	for ( const postId of createdPostIds ) {
@@ -194,6 +206,10 @@ test.afterEach( () => {
 	}
 
 	createdPostIds.clear();
+	if ( originalTheme ) {
+		runWpCli( FIXTURE_WP_CLI, [ 'theme', 'activate', originalTheme ] );
+		originalTheme = undefined;
+	}
 } );
 
 test( 'preview link admin, editor, public, invalid, expired, revoked, and post boundaries smoke test', async ( {
@@ -203,6 +219,12 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	browser,
 	baseURL,
 }, testInfo ) => {
+	originalTheme = runWpCliForOutput( FIXTURE_WP_CLI, [
+		'option',
+		'get',
+		'stylesheet',
+	] );
+	runWpCli( FIXTURE_WP_CLI, [ 'theme', 'activate', 'twentytwentyfive' ] );
 	const post = await requestUtils.createPost( {
 		title: postTitle,
 		content: postContent,
@@ -213,6 +235,15 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		},
 	} );
 	createdPostIds.add( post.id );
+	const nativeComment = `Existing native comment ${ Date.now() }`;
+	runWpCli( FIXTURE_WP_CLI, [
+		'comment',
+		'create',
+		`--comment_post_ID=${ post.id }`,
+		`--comment_content=${ nativeComment }`,
+		'--comment_author=PreviewShare E2E',
+		'--comment_approved=1',
+	] );
 
 	const browserDiagnostics = {
 		consoleErrors: [],
@@ -501,6 +532,7 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	).toBeVisible();
 	await expect( anonymous.locator( '#previewshare-review-form' ) ).toHaveCount( 0 );
 	await expect( anonymous.locator( '#commentform, #respond form' ) ).toHaveCount( 0 );
+	await expect( anonymous.getByText( nativeComment, { exact: true } ) ).toHaveCount( 0 );
 
 	const inventoryResponse = page.waitForResponse(
 		( responseCandidate ) =>
@@ -785,6 +817,15 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		String( publishedPost.id ),
 		'--comment_status=open',
 	] );
+	const publishedComment = `Published native comment ${ Date.now() }`;
+	runWpCli( FIXTURE_WP_CLI, [
+		'comment',
+		'create',
+		`--comment_post_ID=${ publishedPost.id }`,
+		`--comment_content=${ publishedComment }`,
+		'--comment_author=PreviewShare E2E',
+		'--comment_approved=1',
+	] );
 	const publishedPostResponse = await anonymous.goto(
 		`/?p=${ publishedPost.id }`
 	);
@@ -793,6 +834,7 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		anonymous.getByText( publishedPostContent, { exact: true } )
 	).toBeVisible();
 	await expect( anonymous.locator( '#commentform' ) ).toHaveCount( 1 );
+	await expect( anonymous.getByText( publishedComment, { exact: true } ) ).toBeVisible();
 	await anonymous.screenshot( {
 		path: testInfo.outputPath( 'previewshare-published-comments.png' ),
 		fullPage: true,
