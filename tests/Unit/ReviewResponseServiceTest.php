@@ -130,4 +130,150 @@ class ReviewResponseServiceTest extends TestCase {
 		self::assertSame( 'approve', $result['first']['response_type'] );
 		self::assertSame( 'request_changes', $result['second']['response_type'] );
 	}
+
+	public function test_cleanup_continues_a_bounded_backlog_and_preserves_younger_records(): void {
+		$queries = 0;
+		$cutoff_timestamp = time() - ( 90 * DAY_IN_SECONDS );
+		$cutoff           = gmdate( 'Y-m-d H:i:s', $cutoff_timestamp );
+		$records          = [];
+		for ( $id = 1; $id <= 2201; $id++ ) {
+			$records[ $id ] = gmdate( 'Y-m-d H:i:s', $cutoff_timestamp - 60 );
+		}
+		$records[2202] = gmdate( 'Y-m-d H:i:s', $cutoff_timestamp + 60 );
+		Functions\when( 'get_posts' )->alias(
+			static function ( array $args ) use ( &$queries, &$records ): array {
+				++$queries;
+				self::assertSame( 100, $args['posts_per_page'] );
+				self::assertSame( 'post_date_gmt', $args['date_query'][0]['column'] );
+				$expected_cutoff = gmdate( 'Y-m-d H:i:s', time() - ( 90 * DAY_IN_SECONDS ) );
+				self::assertLessThanOrEqual( 1, abs( strtotime( $expected_cutoff ) - strtotime( $args['date_query'][0]['before'] ) ) );
+				$eligible = [];
+				foreach ( $records as $id => $created_gmt ) {
+					if ( $created_gmt < $args['date_query'][0]['before'] ) {
+						$eligible[] = $id;
+					}
+				}
+				sort( $eligible );
+				return array_slice( $eligible, 0, $args['posts_per_page'] );
+			}
+		);
+		Functions\when( 'get_post_meta' )->justReturn( '' );
+		Functions\when( 'wp_delete_post' )->alias(
+			static function ( int $id ) use ( &$records ): bool {
+				unset( $records[ $id ] );
+				return true;
+			}
+		);
+		Functions\expect( 'delete_option' )->never();
+		Functions\expect( 'wp_next_scheduled' )->once()->with( 'previewshare_cleanup_reviews_continue' )->andReturn( false );
+		Functions\expect( 'wp_schedule_single_event' )->once()->andReturnUsing(
+			static function ( int $timestamp, string $hook ): bool {
+				self::assertSame( 'previewshare_cleanup_reviews_continue', $hook );
+				self::assertGreaterThanOrEqual( time() + 299, $timestamp );
+				self::assertLessThanOrEqual( time() + 300, $timestamp );
+				return true;
+			}
+		);
+		Functions\expect( 'wp_clear_scheduled_hook' )->once()->with( 'previewshare_cleanup_reviews_continue' )->andReturn( 1 );
+
+		$service = new ReviewResponseService();
+		$service->purge_expired();
+		self::assertCount( 202, $records );
+		$service->purge_expired();
+
+		self::assertSame( 23, $queries );
+		self::assertSame( [ 2202 ], array_keys( $records ) );
+	}
+
+	public function test_cleanup_schedule_is_deduplicated_and_deactivation_clears_both_events(): void {
+		$cleared_hooks = [];
+		$schedule_checks = 0;
+		Functions\when( 'wp_next_scheduled' )->alias(
+			static function ( string $hook ) use ( &$schedule_checks ): bool {
+				self::assertSame( 'previewshare_cleanup_reviews', $hook );
+				return 0 < $schedule_checks++;
+			}
+		);
+		Functions\expect( 'wp_schedule_event' )->once()->andReturnUsing(
+			static function ( int $timestamp, string $recurrence, string $hook ): bool {
+				self::assertSame( 'daily', $recurrence );
+				self::assertSame( 'previewshare_cleanup_reviews', $hook );
+				self::assertGreaterThanOrEqual( time() + 3599, $timestamp );
+				self::assertLessThanOrEqual( time() + 3600, $timestamp );
+				return true;
+			}
+		);
+		Functions\when( 'wp_clear_scheduled_hook' )->alias(
+			static function ( string $hook ) use ( &$cleared_hooks ): int {
+				$cleared_hooks[] = $hook;
+				return 1;
+			}
+		);
+
+		$service = new ReviewResponseService();
+		$service->schedule_cleanup();
+		$service->schedule_cleanup();
+		ReviewResponseService::unschedule_cleanup();
+		self::assertSame( 2, $schedule_checks );
+		self::assertSame( [ 'previewshare_cleanup_reviews', 'previewshare_cleanup_reviews_continue' ], $cleared_hooks );
+	}
+
+	public function test_cleanup_does_not_schedule_a_duplicate_continuation(): void {
+		$query = 0;
+		Functions\when( 'get_posts' )->alias(
+			static function () use ( &$query ): array {
+				++$query;
+				return range( 1, 100 );
+			}
+		);
+		Functions\when( 'get_post_meta' )->justReturn( '' );
+		Functions\when( 'wp_delete_post' )->justReturn( true );
+		Functions\expect( 'wp_next_scheduled' )->once()->with( 'previewshare_cleanup_reviews_continue' )->andReturn( true );
+		Functions\expect( 'wp_schedule_single_event' )->never();
+		Functions\expect( 'wp_clear_scheduled_hook' )->never();
+
+		( new ReviewResponseService() )->purge_expired();
+
+		self::assertSame( 20, $query );
+	}
+
+	public function test_continuation_hook_is_registered_to_drain_expired_reviews(): void {
+		$registered_actions = [];
+		Functions\when( 'add_action' )->alias(
+			static function ( string $hook ) use ( &$registered_actions ): void {
+				$registered_actions[] = $hook;
+			}
+		);
+		Functions\when( 'add_filter' )->justReturn( [] );
+
+		( new ReviewResponseService() )->register();
+
+		self::assertContains( 'previewshare_cleanup_reviews_continue', $registered_actions );
+	}
+
+	public function test_cleanup_keeps_submission_marker_when_deletion_fails_and_uses_slow_retry(): void {
+		$queries = 0;
+		Functions\when( 'get_posts' )->alias(
+			static function () use ( &$queries ): array {
+				++$queries;
+				return [ 1 ];
+			}
+		);
+		Functions\when( 'get_post_meta' )->justReturn( 'previewshare_review_request_key' );
+		Functions\when( 'wp_delete_post' )->justReturn( false );
+		Functions\expect( 'delete_option' )->never();
+		Functions\expect( 'wp_next_scheduled' )->once()->with( 'previewshare_cleanup_reviews_continue' )->andReturn( false );
+		Functions\expect( 'wp_schedule_single_event' )->once()->andReturnUsing(
+			static function ( int $timestamp, string $hook ): bool {
+				self::assertSame( 'previewshare_cleanup_reviews_continue', $hook );
+				self::assertGreaterThanOrEqual( time() + ( HOUR_IN_SECONDS - 1 ), $timestamp );
+				self::assertLessThanOrEqual( time() + HOUR_IN_SECONDS, $timestamp );
+				return true;
+			}
+		);
+
+		( new ReviewResponseService() )->purge_expired();
+
+		self::assertSame( 1, $queries );
+	}
 }
