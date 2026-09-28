@@ -616,7 +616,14 @@ body.previewshare-settings-screen #wpbody-content {
 .previewshare-link-status-cell {
 	display: flex;
 	align-items: center;
+	flex-wrap: wrap;
 	gap: 8px;
+}
+
+.previewshare-review-state {
+	color: var(--previewshare-blue);
+	font-size: 12px;
+	font-weight: 600;
 }
 
 .previewshare-link-status-cell .components-button {

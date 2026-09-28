@@ -238,6 +238,18 @@ import {
 		);
 	}
 
+	function reviewStateLabel( state ) {
+		const labels = {
+			pending: __( 'Awaiting response', 'previewshare' ),
+			approved: __( 'Approved', 'previewshare' ),
+			stale: __( 'Approval needs review', 'previewshare' ),
+			changes_requested: __( 'Changes requested', 'previewshare' ),
+			commented: __( 'Comment received', 'previewshare' ),
+		};
+
+		return labels[ state ] || '';
+	}
+
 	function getPostTypeIcon( postType ) {
 		if ( postType === 'post' ) {
 			return post;
@@ -355,6 +367,13 @@ import {
 								? 'expiring_soon'
 								: item.status,
 						} ),
+						item.review_state
+							? el(
+									'span',
+									{ className: 'previewshare-review-state' },
+									reviewStateLabel( item.review_state )
+							  )
+							: null,
 						expiringSoon
 							? el(
 									Button,
@@ -1610,6 +1629,18 @@ import {
 														el( StatusBadge, {
 															status,
 														} ),
+														item.review_state
+															? el(
+																	'span',
+																	{
+																		className:
+																			'previewshare-review-state',
+																	},
+																	reviewStateLabel(
+																		item.review_state
+																	)
+															  )
+															: null,
 														expiringSoon
 															? el(
 																	Button,
@@ -2128,6 +2159,10 @@ import {
 						),
 						__(
 							'Added verified plugin cards in More plugins.',
+							'previewshare'
+						),
+						__(
+							'Added optional reviewer responses with approval tracking and 90-day retention.',
 							'previewshare'
 						),
 					],
