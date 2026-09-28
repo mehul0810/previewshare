@@ -78,9 +78,9 @@ final class ReviewForm {
 	/**
 	 * Remove native comment blocks from the shared draft preview only.
 	 *
-	 * @param string      $block_content Rendered block output.
-	 * @param array       $block Parsed block data.
-	 * @param object|null $instance Block instance with inherited context, unavailable on WordPress 5.8.
+	 * @param string               $block_content Rendered block output.
+	 * @param array<string, mixed> $block Parsed block data.
+	 * @param object|null          $instance Block instance with inherited context, unavailable on WordPress 5.8.
 	 * @return string
 	 */
 	public function hide_native_comments_blocks( string $block_content, array $block, ?object $instance = null ): string {
