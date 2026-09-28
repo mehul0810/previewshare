@@ -29,7 +29,7 @@ import {
 		useRef,
 		useState,
 	} = wp.element;
-	const { __, sprintf } = wp.i18n;
+	const { __, _n, sprintf } = wp.i18n;
 	const {
 		Button,
 		Icon,
@@ -486,7 +486,7 @@ import {
 		const [ compactInventory, setCompactInventory ] = useState(
 			() =>
 				typeof window.matchMedia === 'function' &&
-				window.matchMedia( '(max-width: 1100px)' ).matches
+				window.matchMedia( '(max-width: 1440px)' ).matches
 		);
 		const [ expiringOnly, setExpiringOnly ] = useState( false );
 		const [ loadingSettings, setLoadingSettings ] = useState( true );
@@ -513,7 +513,7 @@ import {
 				return undefined;
 			}
 
-			const media = window.matchMedia( '(max-width: 1100px)' );
+			const media = window.matchMedia( '(max-width: 1440px)' );
 			const onChange = () => setCompactInventory( media.matches );
 			media.addEventListener( 'change', onChange );
 			return () => media.removeEventListener( 'change', onChange );
@@ -1893,8 +1893,10 @@ import {
 					__( 'Preview links', 'previewshare' ),
 					sprintf(
 						/* translators: %d: Number of links. */
-						__(
+						_n(
+							'%d link in this site inventory.',
 							'%d links in this site inventory.',
+							totalTokens,
 							'previewshare'
 						),
 						totalTokens

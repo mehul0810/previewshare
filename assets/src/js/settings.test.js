@@ -136,6 +136,8 @@ function setupWordPressMocks() {
 		},
 		i18n: {
 			__: ( text ) => text,
+			_n: ( singular, plural, count ) =>
+				count === 1 ? singular : plural,
 			sprintf: ( format, ...args ) =>
 				format.replace( /%(\d+\$)?[sd]/g, ( match, position ) => {
 					const index = position
@@ -325,6 +327,9 @@ describe( 'PreviewShare responsive inventory', () => {
 		] );
 		expect( row.textContent ).toContain( 'Review draft' );
 		expect( row.textContent ).toContain( 'Client review' );
+		expect( document.body.textContent ).toContain(
+			'1 link in this site inventory.'
+		);
 		expect( findButton( 'Revoke link' ) ).toBeDefined();
 	} );
 } );

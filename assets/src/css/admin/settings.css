@@ -541,29 +541,30 @@ body.previewshare-settings-screen #wpbody-content {
 	border-top: 1px solid var(--previewshare-border);
 }
 
+/* DataViews sets every non-primary col to 1%; override that sizing intent. */
 .previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-first-data {
 	width: 25%;
 }
 
 .previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-label {
-	width: 12%;
+	width: 12% !important;
 }
 
 .previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-status {
-	width: 18%;
+	width: 18% !important;
 }
 
 .previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-view_count {
-	width: 7%;
+	width: 7% !important;
 }
 
 .previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-expires_at,
 .previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-last_viewed_at {
-	width: 15%;
+	width: 15% !important;
 }
 
 .previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-actions {
-	width: 8%;
+	width: 8% !important;
 }
 
 .previewshare-dataviews .dataviews-view-table__cell-content-wrapper {
@@ -1026,7 +1027,7 @@ body.previewshare-settings-screen #wpbody-content {
 	font-size: 13px;
 }
 
-@media screen and (max-width: 1100px) {
+@media screen and (max-width: 1440px) {
 
 	.previewshare-legacy-toolbar {
 		grid-template-columns: 1fr;
