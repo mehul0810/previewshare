@@ -392,6 +392,44 @@ class PostMetaStorageTest extends TestCase {
 		$this->assertSame( 1, $fake_wpdb->get_var_calls );
 	}
 
+	public function test_status_filtered_page_and_count_preserve_status_precedence(): void {
+		global $wpdb;
+
+		$previous_wpdb = $wpdb ?? null;
+		$now           = time();
+		$rows          = [];
+		foreach ( [ [ 'active', null, 0 ], [ 'expired', $now - 1, 0 ], [ 'revoked', $now - 1, 1 ], [ 'future', $now + 60, 0 ] ] as $index => $state ) {
+			$row                    = $this->make_link_row( $index );
+			$detail                 = maybe_unserialize( $row['meta_value'] );
+			$detail['label']        = 0 === $index ? '日本語 s:7:"revoked";i:1; s:10:"expires_at";i:1;' : $detail['label'];
+			$detail['expires_at']   = $state[1];
+			$detail['revoked']      = $state[2];
+			$row['meta_value']      = serialize( $detail );
+			$rows[]                 = $row;
+		}
+		$fake_wpdb = new FakePreviewShareWpdb( $rows );
+		$wpdb      = $fake_wpdb;
+		$storage   = $this->make_storage();
+
+		try {
+			$expired = $storage->list_tokens_by_status( 'expired', 1, 1 );
+			$revoked = $storage->list_tokens_by_status( 'revoked', 10, 1 );
+		} finally {
+			$wpdb = $previous_wpdb;
+		}
+
+		$this->assertSame( 1, $expired['total'] );
+		$this->assertSame( 'expired', $expired['items'][0]['status'] );
+		$this->assertSame( 1, $revoked['total'] );
+		$this->assertSame( 'revoked', $revoked['items'][0]['status'] );
+		$this->assertSame( 2, $fake_wpdb->get_results_calls );
+		$this->assertSame( 2, $fake_wpdb->get_var_calls );
+		$this->assertStringContainsString( 'INSTR(REVERSE(pm.meta_value)', $fake_wpdb->last_result_query );
+		$this->assertStringContainsString( 'SUBSTR(pm.meta_value', $fake_wpdb->last_result_query );
+		$this->assertStringContainsString( 'SUBSTR(pm.meta_value, 1 - INSTR(REVERSE(pm.meta_value)', $fake_wpdb->last_result_query );
+		$this->assertStringContainsString( 'created_by', $fake_wpdb->last_result_query );
+	}
+
 	public function test_extend_token_by_id_adds_twenty_four_hours_and_preserves_the_link(): void {
 		$storage = $this->make_storage();
 		$hash    = hash_hmac( 'sha256', 'extend-token', self::HASH_KEY );
@@ -674,6 +712,12 @@ class FakePreviewShareWpdb {
 	/** @var list<mixed> */
 	public $last_var_args = [];
 
+	/** @var string */
+	public $last_result_query = '';
+
+	/** @var string */
+	public $last_var_query = '';
+
 	/** @var list<mixed> */
 	private $last_prepare_args = [];
 
@@ -701,21 +745,24 @@ class FakePreviewShareWpdb {
 	 * @return list<array<string,mixed>>
 	 */
 	public function get_results( string $query, string $output ): array {
-		unset( $query, $output );
+		unset( $output );
 
 		$this->get_results_calls++;
+		$this->last_result_query = $query;
+		$this->last_var_query    = '';
 		$this->last_result_args = $this->last_prepare_args;
 
-		$per_page = isset( $this->last_prepare_args[2] ) ? (int) $this->last_prepare_args[2] : 50;
-		$offset   = isset( $this->last_prepare_args[3] ) ? (int) $this->last_prepare_args[3] : 0;
+		$pagination_index = false !== strpos( $query, '<= %d' ) || false !== strpos( $query, '> %d' ) ? 3 : 2;
+		$per_page         = isset( $this->last_prepare_args[ $pagination_index ] ) ? (int) $this->last_prepare_args[ $pagination_index ] : 50;
+		$offset           = isset( $this->last_prepare_args[ $pagination_index + 1 ] ) ? (int) $this->last_prepare_args[ $pagination_index + 1 ] : 0;
 
 		return array_slice( $this->matching_rows(), $offset, $per_page );
 	}
 
 	public function get_var( string $query ): int {
-		unset( $query );
-
 		$this->get_var_calls++;
+		$this->last_var_query = $query;
+		$this->last_result_query = '';
 		$this->last_var_args = $this->last_prepare_args;
 
 		return count( $this->matching_rows() );
@@ -725,13 +772,32 @@ class FakePreviewShareWpdb {
 	 * @return list<array<string,mixed>>
 	 */
 	private function matching_rows(): array {
-		return array_values(
+		$rows = array_values(
 			array_filter(
 				$this->rows,
 				static function( array $row ): bool {
 					return isset( $row['meta_key'] )
 						&& str_starts_with( (string) $row['meta_key'], '_previewshare_token:' )
 						&& 'revision' !== ( $row['post_type'] ?? '' );
+				}
+			)
+		);
+
+		if ( false === strpos( $this->last_result_query . $this->last_var_query, 'CAST(SUBSTR' ) ) {
+			return $rows;
+		}
+
+		$status = false !== strpos( $this->last_result_query . $this->last_var_query, '<= %d' ) ? 'expired' : ( false !== strpos( $this->last_result_query . $this->last_var_query, '> %d' ) ? 'active' : 'revoked' );
+
+		return array_values(
+			array_filter(
+				$rows,
+				static function( array $row ) use ( $status ): bool {
+					$detail = maybe_unserialize( $row['meta_value'] );
+					$now    = time();
+					$actual = ! empty( $detail['revoked'] ) ? 'revoked' : ( null !== $detail['expires_at'] && (int) $detail['expires_at'] <= $now ? 'expired' : 'active' );
+
+					return $status === $actual;
 				}
 			)
 		);

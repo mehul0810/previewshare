@@ -93,6 +93,9 @@ final class Plugin {
 
 		// Register REST controllers that use services (modular approach).
 		new REST\PreviewController( $token_service, $storage );
+
+		// Register optional WordPress 6.9+ Abilities API integration.
+		new Abilities\PreviewAbilities( $token_service, $storage );
 	}
 
 	/**
