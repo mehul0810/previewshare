@@ -484,6 +484,10 @@ msgstr ""
 msgid "Submitted (UTC)"
 msgstr ""
 
+#: src/Services/ReviewResponseService.php:494
+msgid "Some PreviewShare responses could not be removed. Please try again."
+msgstr ""
+
 #: assets/src/js/admin/main.js:32
 #: assets/src/js/settings.js:243
 msgid "Awaiting response"
