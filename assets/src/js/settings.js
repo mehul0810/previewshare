@@ -32,9 +32,9 @@ import {
 	const { __, _n, sprintf } = wp.i18n;
 	const {
 		Button,
+		CheckboxControl,
 		Icon,
 		Notice,
-		SelectControl,
 		Spinner,
 		TextControl,
 		ToggleControl,
@@ -428,6 +428,14 @@ import {
 		return Array.isArray( filter.value ) ? filter.value : [ filter.value ];
 	}
 
+	function normalizeSearchInput( input ) {
+		return String( input )
+			.normalize( 'NFD' )
+			.replace( /[\u0300-\u036f]/g, '' )
+			.trim()
+			.toLowerCase();
+	}
+
 	function ExternalLink( { href, icon, children, ariaLabel } ) {
 		return el(
 			'a',
@@ -490,7 +498,6 @@ import {
 			},
 		} );
 		const [ contentTypeSearch, setContentTypeSearch ] = useState( '' );
-		const [ inventoryStatus, setInventoryStatus ] = useState( 'all' );
 		const [ compactInventory, setCompactInventory ] = useState(
 			() =>
 				typeof window.matchMedia === 'function' &&
@@ -1450,31 +1457,36 @@ import {
 		}
 
 		function renderLegacyLinkTable( items ) {
+			const selectedStatuses = getFilterValues(
+				( view.filters || [] ).find(
+					( filter ) => filter.field === 'status'
+				)
+			);
 			const sortedItems = [ ...items ];
 			const sort = view.sort || {};
-			if ( sort.field ) {
-				const sortField = getTokenFields(
-					handleExtend,
-					workingTokenId
-				).find( ( field ) => field.id === sort.field );
-				if ( sortField ) {
-					sortedItems.sort( ( left, right ) => {
-						const leftValue = sortField.getValue( { item: left } );
-						const rightValue = sortField.getValue( {
-							item: right,
-						} );
-						const comparison = String(
-							leftValue || ''
-						).localeCompare(
-							String( rightValue || '' ),
-							undefined,
-							{ numeric: true, sensitivity: 'base' }
-						);
-						return 'asc' === sort.direction
-							? comparison
-							: -comparison;
-					} );
+			const sortField = getTokenFields(
+				handleExtend,
+				workingTokenId
+			).find( ( field ) => field.id === sort.field );
+			const getAriaSort = ( field ) => {
+				if ( ! field || sort.field !== field ) {
+					return 'none';
 				}
+
+				return 'asc' === sort.direction ? 'ascending' : 'descending';
+			};
+			if ( sortField ) {
+				sortedItems.sort( ( left, right ) => {
+					const leftValue = sortField.getValue( { item: left } );
+					const rightValue = sortField.getValue( { item: right } );
+					const comparison =
+						'integer' === sortField.type
+							? Number( leftValue ) - Number( rightValue )
+							: String( leftValue ?? '' ).localeCompare(
+									String( rightValue ?? '' )
+							  );
+					return 'asc' === sort.direction ? comparison : -comparison;
+				} );
 			}
 			const perPage = Math.max( 1, Number( view.perPage ) || 20 );
 			const totalPages = Math.max(
@@ -1512,14 +1524,11 @@ import {
 								page: 1,
 							} ) ),
 					} ),
-					el( SelectControl, {
-						label: __( 'Status', 'previewshare' ),
-						value: inventoryStatus,
-						options: [
-							{
-								label: __( 'All statuses', 'previewshare' ),
-								value: 'all',
-							},
+					el(
+						'fieldset',
+						{ className: 'previewshare-status-filters' },
+						el( 'legend', null, __( 'Status', 'previewshare' ) ),
+						...[
 							{
 								label: __( 'Active', 'previewshare' ),
 								value: 'active',
@@ -1536,41 +1545,58 @@ import {
 								label: __( 'Revoked', 'previewshare' ),
 								value: 'revoked',
 							},
-						],
-						onChange: ( status ) => {
-							setInventoryStatus( status );
-							setView( ( current ) => ( {
-								...current,
-								filters:
-									'all' === status
-										? ( current.filters || [] ).filter(
+						].map( ( option ) =>
+							el( CheckboxControl, {
+								key: option.value,
+								label: option.label,
+								checked: selectedStatuses.includes(
+									option.value
+								),
+								onChange: ( checked ) => {
+									setView( ( current ) => {
+										const currentFilters =
+											current.filters || [];
+										const statusFilter =
+											currentFilters.find(
 												( filter ) =>
-													filter.field !== 'status'
-										  )
-										: [
-												...(
-													current.filters || []
-												).filter(
+													filter.field === 'status'
+											);
+										const statuses = getFilterValues(
+											statusFilter
+										).filter(
+											( status ) =>
+												status !== option.value
+										);
+										if ( checked ) {
+											statuses.push( option.value );
+										}
+
+										return {
+											...current,
+											filters: [
+												...currentFilters.filter(
 													( filter ) =>
 														filter.field !==
 														'status'
 												),
-												{
-													field: 'status',
-													operator: 'isAny',
-													value:
-														'active' === status
-															? [
-																	'active',
-																	'expiring_soon',
-															  ]
-															: [ status ],
-												},
-										  ],
-								page: 1,
-							} ) );
-						},
-					} )
+												...( statuses.length
+													? [
+															{
+																field: 'status',
+																operator:
+																	'isAny',
+																value: statuses,
+															},
+													  ]
+													: [] ),
+											],
+											page: 1,
+										};
+									} );
+								},
+							} )
+						)
+					)
 				),
 				loadingTokens
 					? el(
@@ -1587,10 +1613,28 @@ import {
 									{
 										className:
 											'previewshare-legacy-link-table',
-										'aria-label': __(
-											'Preview link inventory',
-											'previewshare'
-										),
+										'aria-label': sortField
+											? sprintf(
+													/* translators: 1: Sort field. 2: Sort direction. */
+													__(
+														'Preview link inventory, sorted by %1$s %2$s',
+														'previewshare'
+													),
+													sortField.label,
+													'asc' === sort.direction
+														? __(
+																'ascending',
+																'previewshare'
+														  )
+														: __(
+																'descending',
+																'previewshare'
+														  )
+											  )
+											: __(
+													'Preview link inventory',
+													'previewshare'
+											  ),
 									},
 									el(
 										'thead',
@@ -1599,22 +1643,69 @@ import {
 											'tr',
 											null,
 											...[
-												__( 'Content', 'previewshare' ),
-												__( 'Label', 'previewshare' ),
-												__( 'Status', 'previewshare' ),
-												__( 'Views', 'previewshare' ),
-												__( 'Expires', 'previewshare' ),
-												__(
-													'Last viewed',
-													'previewshare'
-												),
-												__( 'Actions', 'previewshare' ),
-											].map( ( label ) =>
+												{
+													field: 'content',
+													label: __(
+														'Content',
+														'previewshare'
+													),
+												},
+												{
+													field: 'label',
+													label: __(
+														'Label',
+														'previewshare'
+													),
+												},
+												{
+													field: 'status',
+													label: __(
+														'Status',
+														'previewshare'
+													),
+												},
+												{
+													field: 'view_count',
+													label: __(
+														'Views',
+														'previewshare'
+													),
+												},
+												{
+													field: 'expires_at',
+													label: __(
+														'Expires',
+														'previewshare'
+													),
+												},
+												{
+													field: 'last_viewed_at',
+													label: __(
+														'Last viewed',
+														'previewshare'
+													),
+												},
+												{
+													field: null,
+													label: __(
+														'Actions',
+														'previewshare'
+													),
+												},
+											].map( ( { field, label } ) =>
 												el(
 													'th',
 													{
 														key: label,
 														scope: 'col',
+														...( field
+															? {
+																	'aria-sort':
+																		getAriaSort(
+																			field
+																		),
+															  }
+															: {} ),
 													},
 													label
 												)
@@ -1901,9 +1992,10 @@ import {
 			const processed = canRenderDataViews
 				? filterSortAndPaginate( visibleTokens, view, fields )
 				: null;
-			const normalizedSearch = String( view.search || '' )
-				.trim()
-				.toLowerCase();
+			const normalizedSearch = normalizeSearchInput( view.search || '' );
+			const searchableFields = fields.filter(
+				( field ) => field.enableGlobalSearch
+			);
 			const statusFilter = ( view.filters || [] ).find(
 				( filter ) => filter.field === 'status'
 			);
@@ -1914,21 +2006,14 @@ import {
 					: token.status;
 				const statusMatches =
 					selectedStatuses.length === 0 ||
-					selectedStatuses.includes( actualStatus ) ||
-					( selectedStatuses.includes( 'active' ) &&
-						'active' === token.status );
-				const searchable = [
-					token.post_title,
-					token.post_type,
-					token.label,
-					token.id,
-				]
-					.map( ( value ) => String( value || '' ) )
-					.join( ' ' )
-					.toLowerCase();
+					selectedStatuses.includes( actualStatus );
 				const searchMatches =
 					! normalizedSearch ||
-					searchable.includes( normalizedSearch );
+					searchableFields.some( ( field ) =>
+						normalizeSearchInput(
+							String( field.getValue( { item: token } ) )
+						).includes( normalizedSearch )
+					);
 
 				return statusMatches && searchMatches;
 			} );
@@ -2019,22 +2104,7 @@ import {
 								data: processed.data,
 								fields,
 								view,
-								onChangeView: ( nextView ) => {
-									const nextStatusFilter = (
-										nextView.filters || []
-									).find(
-										( filter ) => filter.field === 'status'
-									);
-									const statuses =
-										getFilterValues( nextStatusFilter );
-									setInventoryStatus(
-										statuses.includes( 'active' ) &&
-											statuses.includes( 'expiring_soon' )
-											? 'active'
-											: statuses[ 0 ] || 'all'
-									);
-									setView( nextView );
-								},
+								onChangeView: setView,
 								paginationInfo: processed.paginationInfo,
 								defaultLayouts: { table: {} },
 								config: {

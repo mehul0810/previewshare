@@ -622,17 +622,21 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	const linkSearch = page.getByRole( 'textbox', {
 		name: 'Search preview links',
 	} );
+	await linkSearch.fill( String( generatedLink.id ) );
+	await expect( extendButton ).toHaveCount( 0 );
 	await linkSearch.fill( 'E2E smoke' );
 	await expect( extendButton ).toBeVisible();
 	await linkSearch.fill( 'no matching preview link' );
 	await expect( extendButton ).toHaveCount( 0 );
-	await linkSearch.fill( '' );
-	const statusFilter = page.getByRole( 'combobox', {
-		name: 'Status',
-	} );
-	await statusFilter.selectOption( 'expired' );
+	await linkSearch.fill( 'E2E smoke' );
+	const expiredFilter = page.getByRole( 'checkbox', { name: 'Expired' } );
+	await expiredFilter.check();
 	await expect( extendButton ).toHaveCount( 0 );
-	await statusFilter.selectOption( 'active' );
+	await expiredFilter.uncheck();
+	const expiringFilter = page.getByRole( 'checkbox', {
+		name: 'Expiring soon',
+	} );
+	await expiringFilter.check();
 	await expect( extendButton ).toBeVisible();
 	await page.setViewportSize( { width: 1600, height: 900 } );
 	const hasModernRuntime = await page.evaluate(
@@ -654,8 +658,8 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await page.setViewportSize( { width: 1280, height: 900 } );
 	await expect( legacyInventory ).toBeVisible();
 	await expect(
-		legacyInventory.getByRole( 'combobox', { name: 'Status' } )
-	).toHaveValue( 'active' );
+		legacyInventory.getByRole( 'checkbox', { name: 'Expiring soon' } )
+	).toBeChecked();
 	await page.screenshot( {
 		path: testInfo.outputPath( 'previewshare-preview-links-expiring.png' ),
 		fullPage: true,

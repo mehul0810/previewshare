@@ -968,6 +968,23 @@ body.previewshare-settings-screen #wpbody-content {
 	margin-bottom: 0;
 }
 
+.previewshare-status-filters {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 12px;
+	min-width: 0;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.previewshare-status-filters legend {
+	width: 100%;
+	margin-bottom: 4px;
+	font-weight: 600;
+}
+
 .previewshare-legacy-table-wrap {
 	overflow: hidden;
 	border: 1px solid var(--previewshare-border);
