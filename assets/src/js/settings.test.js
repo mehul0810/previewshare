@@ -551,7 +551,7 @@ describe( 'PreviewShare responsive inventory', () => {
 				id: 'token-id-search-must-not-match',
 				post_id: 42,
 				post_title: 'A review',
-				label: 'R\u00e9vision client',
+				label: 'Søren client',
 				status: 'active',
 				expires_at: 1800000000,
 			},
@@ -573,7 +573,7 @@ describe( 'PreviewShare responsive inventory', () => {
 			)
 		).toHaveLength( 0 );
 		await act( async () => {
-			findInput( 'Search preview links' ).value = 'revision';
+			findInput( 'Search preview links' ).value = 'soren';
 			Simulate.change( findInput( 'Search preview links' ) );
 			await flushPromises();
 		} );
@@ -587,7 +587,7 @@ describe( 'PreviewShare responsive inventory', () => {
 			await flushPromises();
 		} );
 		expect( window.__previewshareDataViewsProps.view.search ).toBe(
-			'revision'
+			'soren'
 		);
 	} );
 } );

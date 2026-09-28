@@ -1,4 +1,5 @@
 import { DataViews, filterSortAndPaginate } from '@wordpress/dataviews/wp';
+import removeAccents from 'remove-accents';
 import {
 	check,
 	copy,
@@ -429,11 +430,7 @@ import {
 	}
 
 	function normalizeSearchInput( input ) {
-		return String( input )
-			.normalize( 'NFD' )
-			.replace( /[\u0300-\u036f]/g, '' )
-			.trim()
-			.toLowerCase();
+		return removeAccents( String( input ).trim().toLowerCase() );
 	}
 
 	function ExternalLink( { href, icon, children, ariaLabel } ) {
