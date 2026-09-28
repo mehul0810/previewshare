@@ -1217,14 +1217,18 @@ msgstr ""
 msgid "PreviewShare settings"
 msgstr ""
 
-#: src/Services/ReviewResponseService.php:501
+#: src/Services/ReviewResponseService.php:494
+msgid "PreviewShare could not restart this erasure request. Please try again."
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:504
 msgid "PreviewShare could not resume this erasure page. Please restart the erasure request."
 msgstr ""
 
-#: src/Services/ReviewResponseService.php:511, src/Services/ReviewResponseService.php:530
+#: src/Services/ReviewResponseService.php:514, src/Services/ReviewResponseService.php:533
 msgid "PreviewShare could not check for responses to erase. Please try the erasure request again."
 msgstr ""
 
-#: src/Services/ReviewResponseService.php:564
+#: src/Services/ReviewResponseService.php:567
 msgid "PreviewShare could not save erasure progress. Please restart the erasure request."
 msgstr ""
