@@ -793,6 +793,10 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		anonymous.getByText( publishedPostContent, { exact: true } )
 	).toBeVisible();
 	await expect( anonymous.locator( '#commentform' ) ).toHaveCount( 1 );
+	await anonymous.screenshot( {
+		path: testInfo.outputPath( 'previewshare-published-comments.png' ),
+		fullPage: true,
+	} );
 
 	await anonymousContext.close();
 } );
