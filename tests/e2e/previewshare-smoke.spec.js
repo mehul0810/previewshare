@@ -522,11 +522,9 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	const previousExpiry = generatedLink.expires_at;
 	await page.getByRole( 'tab', { name: 'Preview links' } ).click();
 	const modernInventory = page.locator( '.previewshare-dataviews' );
-	const legacyInventory = page.locator( '.previewshare-legacy-inventory' );
-	const availableInventory = page.locator(
-		'.previewshare-dataviews, .previewshare-legacy-inventory'
+	const legacyInventory = page.locator(
+		'.previewshare-tab-content > .previewshare-legacy-inventory'
 	);
-	await expect( availableInventory ).toBeVisible();
 	const usingLegacyInventory = await legacyInventory.isVisible();
 	const inventoryTable = usingLegacyInventory
 		? legacyInventory
@@ -539,6 +537,42 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		exact: true,
 	} );
 	await expect( inventoryTable ).toBeVisible();
+	if ( ! usingLegacyInventory ) {
+		const lastViewedHeader = modernInventory.locator( 'th', {
+			hasText: 'Last viewed',
+		} );
+		const lastViewedCell = modernInventory.locator(
+			'tbody tr:first-child td:nth-child(6)'
+		);
+		await expect( lastViewedHeader ).toBeInViewport();
+		await expect( lastViewedCell ).toBeInViewport();
+		const lastViewedBounds = await modernInventory.evaluate(
+			( container ) => {
+				const header = Array.from(
+					container.querySelectorAll( 'th' )
+				).find( ( cell ) =>
+					cell.textContent.includes( 'Last viewed' )
+				);
+				const value = container.querySelector(
+					'tbody tr:first-child td:nth-child(6)'
+				);
+				const actions = container.querySelector(
+					'th.dataviews-view-table__actions-column'
+				);
+				return {
+					headerRight: header.getBoundingClientRect().right,
+					valueRight: value.getBoundingClientRect().right,
+					actionsLeft: actions.getBoundingClientRect().left,
+				};
+			}
+		);
+		expect( lastViewedBounds.headerRight ).toBeLessThanOrEqual(
+			lastViewedBounds.actionsLeft
+		);
+		expect( lastViewedBounds.valueRight ).toBeLessThanOrEqual(
+			lastViewedBounds.actionsLeft
+		);
+	}
 	const desktopPageWidth = await page.evaluate(
 		() => document.documentElement.scrollWidth
 	);
@@ -568,91 +602,48 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		fullPage: true,
 	} );
 	await page.setViewportSize( { width: 390, height: 844 } );
+	const mobileInventory = legacyInventory;
+	await expect( mobileInventory ).toBeVisible();
+	const mobileStatus = mobileInventory.locator(
+		'.previewshare-status.is-expiring_soon'
+	);
+	const mobileCard = mobileStatus.locator( 'xpath=ancestor::tr[1]' );
+	for ( const label of [
+		'Content',
+		'Label',
+		'Status',
+		'Views',
+		'Expires',
+		'Last viewed',
+		'Actions',
+	] ) {
+		const cell = mobileCard.locator( `td[data-label="${ label }"]` );
+		await expect( cell ).toBeVisible();
+		await expect( cell ).not.toBeEmpty();
+	}
+	await expect( mobileCard ).toContainText( generatedLink.post_title );
+	await expect( mobileCard ).toContainText( generatedLink.label );
+	const mobileExtendButton = mobileCard.getByRole( 'button', {
+		name: 'Extend',
+		exact: true,
+	} );
+	await mobileExtendButton.focus();
+	await expect( mobileExtendButton ).toBeFocused();
+	await expect( mobileExtendButton ).toBeInViewport();
 	const mobilePageWidth = await page.evaluate(
 		() => document.documentElement.scrollWidth
 	);
 	expect( mobilePageWidth ).toBeLessThanOrEqual( 390 );
-	if ( usingLegacyInventory ) {
-		const statusCell = expiringStatus.locator(
-			'xpath=ancestor::td[1]'
-		);
-		const statusCard = statusCell.locator(
-			'xpath=ancestor::tr[1]'
-		);
-		const cardScrollMetrics = await statusCard.evaluate( ( card ) => ( {
-			clientWidth: card.clientWidth,
-			scrollWidth: card.scrollWidth,
-		} ) );
+	const cardScrollMetrics = await mobileCard.evaluate( ( card ) => ( {
+		clientWidth: card.clientWidth,
+		scrollWidth: card.scrollWidth,
+	} ) );
+	expect( cardScrollMetrics.scrollWidth ).toBeLessThanOrEqual(
+		cardScrollMetrics.clientWidth
+	);
+	await expect( mobileStatus ).toHaveText( 'Expiring soon' );
 
-		expect( cardScrollMetrics.scrollWidth ).toBeLessThanOrEqual(
-			cardScrollMetrics.clientWidth
-		);
-		const cellExtendButton = statusCell.getByRole( 'button', {
-			name: 'Extend',
-			exact: true,
-		} );
-		await expect( cellExtendButton ).toBeVisible();
-	} else {
-		const inventoryViewport = inventoryTable.locator(
-			'.dataviews-layout__container'
-		);
-		const inventoryScrollMetrics = await inventoryViewport.evaluate(
-			( element ) => ( {
-				clientWidth: element.clientWidth,
-				scrollWidth: element.scrollWidth,
-			} )
-		);
-		expect( inventoryScrollMetrics.scrollWidth ).toBeGreaterThan(
-			inventoryScrollMetrics.clientWidth
-		);
-		const mobileScrollLeft = await expiringStatus.evaluate( ( status ) => {
-			const viewport = status.closest( '.dataviews-layout__container' );
-			const viewportBounds = viewport.getBoundingClientRect();
-			const statusBounds = status.getBoundingClientRect();
-			const button = viewport.querySelector(
-				'.previewshare-link-status-cell button'
-			);
-			const actionsHeader = viewport.querySelector(
-				'th.dataviews-view-table__actions-column'
-			);
-			const safeLeft = viewportBounds.left + 16;
-
-			viewport.scrollLeft += statusBounds.left - safeLeft;
-			const visibleStatusBounds = status.getBoundingClientRect();
-			const visibleButtonBounds = button.getBoundingClientRect();
-			const visibleViewportBounds = viewport.getBoundingClientRect();
-			const actionsWidth = actionsHeader.getBoundingClientRect().width;
-
-			return {
-				scrollLeft: viewport.scrollLeft,
-				statusLeft: visibleStatusBounds.left,
-				statusRight: visibleStatusBounds.right,
-				buttonLeft: visibleButtonBounds.left,
-				buttonRight: visibleButtonBounds.right,
-				visibleLeft: visibleViewportBounds.left,
-				visibleRight: visibleViewportBounds.right - actionsWidth,
-			};
-		} );
-		expect( mobileScrollLeft.scrollLeft ).toBeGreaterThan( 0 );
-		expect( mobileScrollLeft.buttonLeft ).toBeGreaterThanOrEqual(
-			mobileScrollLeft.visibleLeft
-		);
-		expect( mobileScrollLeft.statusLeft ).toBeGreaterThanOrEqual(
-			mobileScrollLeft.visibleLeft
-		);
-		expect( mobileScrollLeft.statusRight ).toBeLessThanOrEqual(
-			mobileScrollLeft.visibleRight
-		);
-		expect( mobileScrollLeft.buttonRight ).toBeLessThanOrEqual(
-			mobileScrollLeft.visibleRight
-		);
-	}
-
-	await expect( expiringStatus ).toBeVisible();
-	await expect( expiringStatus ).toHaveText( 'Expiring soon' );
-	await expect( extendButton ).toBeInViewport();
-
-	const expiringStatusIsPainted = await expiringStatus.evaluate( ( status ) => {
+	const expiringStatusIsPainted = await mobileStatus.evaluate( ( status ) => {
 		const bounds = status.getBoundingClientRect();
 		const visibleElement = document.elementFromPoint(
 			bounds.left + bounds.width / 2,
@@ -662,17 +653,21 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		return status === visibleElement || status.contains( visibleElement );
 	} );
 	expect( expiringStatusIsPainted ).toBe( true );
-	const extendButtonIsPainted = await extendButton.evaluate( ( button ) => {
-		const bounds = button.getBoundingClientRect();
-		const visibleElement = document.elementFromPoint(
-			bounds.left + bounds.width / 2,
-			bounds.top + bounds.height / 2
-		);
+	const extendButtonIsPainted = await mobileExtendButton.evaluate(
+		( button ) => {
+			const bounds = button.getBoundingClientRect();
+			const visibleElement = document.elementFromPoint(
+				bounds.left + bounds.width / 2,
+				bounds.top + bounds.height / 2
+			);
 
-		return button === visibleElement || button.contains( visibleElement );
-	} );
+			return (
+				button === visibleElement || button.contains( visibleElement )
+			);
+		}
+	);
 	expect( extendButtonIsPainted ).toBe( true );
-	const mobileExtendBounds = await extendButton.boundingBox();
+	const mobileExtendBounds = await mobileExtendButton.boundingBox();
 	expect( mobileExtendBounds ).not.toBeNull();
 	expect(
 		mobileExtendBounds.x + mobileExtendBounds.width
@@ -762,6 +757,11 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 			} )
 			.last()
 	).toBeVisible();
+
+	await page.screenshot( {
+		path: testInfo.outputPath( 'previewshare-revoked-editor.png' ),
+		fullPage: true,
+	} );
 
 	const revokedPreviewResponse = await anonymous.goto(
 		regeneratedPreviewUrl

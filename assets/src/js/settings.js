@@ -483,6 +483,11 @@ import {
 		} );
 		const [ contentTypeSearch, setContentTypeSearch ] = useState( '' );
 		const [ inventoryStatus, setInventoryStatus ] = useState( 'all' );
+		const [ compactInventory, setCompactInventory ] = useState(
+			() =>
+				typeof window.matchMedia === 'function' &&
+				window.matchMedia( '(max-width: 1100px)' ).matches
+		);
 		const [ expiringOnly, setExpiringOnly ] = useState( false );
 		const [ loadingSettings, setLoadingSettings ] = useState( true );
 		const [ loadingTokens, setLoadingTokens ] = useState( true );
@@ -502,6 +507,17 @@ import {
 		const tokensRef = useRef( [] );
 		const nextInventoryPageRef = useRef( 1 );
 		const mountedRef = useRef( false );
+
+		useEffect( () => {
+			if ( typeof window.matchMedia !== 'function' ) {
+				return undefined;
+			}
+
+			const media = window.matchMedia( '(max-width: 1100px)' );
+			const onChange = () => setCompactInventory( media.matches );
+			media.addEventListener( 'change', onChange );
+			return () => media.removeEventListener( 'change', onChange );
+		}, [] );
 
 		useEffect( () => {
 			mountedRef.current = true;
@@ -1919,7 +1935,7 @@ import {
 							)
 					  )
 					: null,
-				! canRenderDataViews
+				! canRenderDataViews || compactInventory
 					? renderLegacyLinkTable( legacyTokens )
 					: el(
 							'div',
@@ -1943,7 +1959,9 @@ import {
 								),
 								empty: el(
 									'p',
-									{ className: 'previewshare-empty-state' },
+									{
+										className: 'previewshare-empty-state',
+									},
 									__(
 										'No preview links match this view.',
 										'previewshare'

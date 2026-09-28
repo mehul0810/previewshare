@@ -421,6 +421,7 @@ body.previewshare-settings-screen #wpbody-content {
 .previewshare-dataviews .dataviews-view-table th,
 .previewshare-dataviews .dataviews-view-table td {
 	font-size: 13px;
+	overflow-wrap: anywhere;
 }
 
 .previewshare-overview-table tr:last-child td {
@@ -535,15 +536,47 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-dataviews .dataviews-view-table {
+	table-layout: fixed;
+	width: 100%;
 	border-top: 1px solid var(--previewshare-border);
+}
+
+.previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-first-data {
+	width: 25%;
+}
+
+.previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-label {
+	width: 12%;
+}
+
+.previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-status {
+	width: 18%;
+}
+
+.previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-view_count {
+	width: 7%;
+}
+
+.previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-expires_at,
+.previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-last_viewed_at {
+	width: 15%;
+}
+
+.previewshare-dataviews .dataviews-view-table col.dataviews-view-table__col-actions {
+	width: 8%;
 }
 
 .previewshare-dataviews .dataviews-view-table__cell-content-wrapper {
 	min-height: 44px;
+	min-width: 0;
+	max-width: none;
+	white-space: normal;
 }
 
-.previewshare-dataviews .dataviews-view-table__actions-column {
-	width: 52px;
+.previewshare-dataviews .dataviews-view-table th.dataviews-view-table__actions-column,
+.previewshare-dataviews .dataviews-view-table td.dataviews-view-table__actions-column {
+	position: static;
+	width: auto;
 }
 
 .previewshare-dataviews .dataviews-search {
@@ -570,6 +603,10 @@ body.previewshare-settings-screen #wpbody-content {
 
 .previewshare-content-cell {
 	min-width: 180px;
+}
+
+.previewshare-dataviews .previewshare-content-cell {
+	min-width: 0;
 }
 
 .previewshare-content-cell small {
@@ -989,7 +1026,7 @@ body.previewshare-settings-screen #wpbody-content {
 	font-size: 13px;
 }
 
-@media screen and (max-width: 782px) {
+@media screen and (max-width: 1100px) {
 
 	.previewshare-legacy-toolbar {
 		grid-template-columns: 1fr;

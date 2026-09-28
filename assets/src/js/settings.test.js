@@ -98,6 +98,27 @@ function setupWordPressMocks() {
 				onChange: ( event ) => onChange( event.target.checked ),
 			} )
 		);
+	const SelectControl = ( { label, value, options, onChange } ) =>
+		createElement(
+			'label',
+			null,
+			label,
+			createElement(
+				'select',
+				{
+					'aria-label': label,
+					value,
+					onChange: ( event ) => onChange( event.target.value ),
+				},
+				options.map( ( option ) =>
+					createElement(
+						'option',
+						{ key: option.value, value: option.value },
+						option.label
+					)
+				)
+			)
+		);
 	const Notice = ( { children, className } ) =>
 		createElement( 'div', { className }, children );
 
@@ -127,6 +148,7 @@ function setupWordPressMocks() {
 			Button,
 			Icon: () => createElement( 'span' ),
 			Notice,
+			SelectControl,
 			Spinner: () => createElement( 'span' ),
 			TextControl,
 			ToggleControl,
@@ -239,6 +261,72 @@ afterEach( () => {
 	act( () => window.__previewshareTestUnmount() );
 	document.body.innerHTML = '';
 	jest.useRealTimers();
+	delete window.matchMedia;
+} );
+
+describe( 'PreviewShare responsive inventory', () => {
+	it( 'exposes every link detail when a modern screen becomes narrow', async () => {
+		let narrow = false;
+		let onViewportChange;
+		window.matchMedia = jest.fn( () => ( {
+			get matches() {
+				return narrow;
+			},
+			addEventListener: ( type, callback ) => {
+				if ( type === 'change' ) {
+					onViewportChange = callback;
+				}
+			},
+			removeEventListener: jest.fn(),
+		} ) );
+		const { initialSettings } = setupFetch( null, [
+			{
+				id: 'link-1',
+				post_id: 42,
+				post_title: 'Review draft',
+				post_type: 'post',
+				label: 'Client review',
+				status: 'active',
+				expires_at: 1800000000,
+				last_viewed_at: 1700000000,
+				view_count: 2,
+			},
+		] );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		expect(
+			document.querySelector( '.previewshare-dataviews' )
+		).not.toBeNull();
+
+		await act( async () => {
+			narrow = true;
+			onViewportChange();
+			await flushPromises();
+		} );
+		expect(
+			document.querySelector( '.previewshare-dataviews' )
+		).toBeNull();
+		const row = document.querySelector(
+			'.previewshare-legacy-link-table tbody tr'
+		);
+		expect(
+			Array.from( row.cells, ( cell ) => cell.dataset.label )
+		).toEqual( [
+			'Content',
+			'Label',
+			'Status',
+			'Views',
+			'Expires',
+			'Last viewed',
+			'Actions',
+		] );
+		expect( row.textContent ).toContain( 'Review draft' );
+		expect( row.textContent ).toContain( 'Client review' );
+		expect( findButton( 'Revoke link' ) ).toBeDefined();
+	} );
 } );
 
 describe( 'PreviewShare settings autosave', () => {
