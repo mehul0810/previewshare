@@ -524,7 +524,10 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	const generated = await response.json();
 	expect( generated.url ).toContain( '/preview/' );
 	await expectPreviewUrlVisible( page, generated.url );
-	const previewUrl = resolvePreviewUrlForTestServer( generated.url, baseURL );
+	const previewUrl = resolvePreviewUrlForTestServer(
+		generated.url,
+		baseURL
+	);
 	expect( new URL( previewUrl ).pathname ).toMatch(
 		/^\/preview\/[a-zA-Z0-9]+\/?$/
 	);
@@ -637,6 +640,9 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	);
 	if ( hasModernRuntime ) {
 		await expect( modernInventory ).toBeVisible();
+		await expect(
+			modernInventory.getByText( postTitle, { exact: true } )
+		).toBeVisible();
 		await expectCellTextToFit(
 			modernInventory.locator( 'thead th, tbody tr:first-child td' )
 		);
@@ -647,6 +653,9 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	}
 	await page.setViewportSize( { width: 1280, height: 900 } );
 	await expect( legacyInventory ).toBeVisible();
+	await expect(
+		legacyInventory.getByRole( 'combobox', { name: 'Status' } )
+	).toHaveValue( 'active' );
 	await page.screenshot( {
 		path: testInfo.outputPath( 'previewshare-preview-links-expiring.png' ),
 		fullPage: true,
@@ -874,10 +883,7 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	] );
 	expect( generatedResponse.status() ).toBe( 200 );
 	const generated = await generatedResponse.json();
-	const previewUrl = resolvePreviewUrlForTestServer(
-		generated.url,
-		baseURL
-	);
+	const previewUrl = resolvePreviewUrlForTestServer( generated.url, baseURL );
 
 	const anonymousContext = await browser.newContext( {
 		baseURL,

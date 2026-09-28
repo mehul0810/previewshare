@@ -420,6 +420,14 @@ import {
 		];
 	}
 
+	function getFilterValues( filter ) {
+		if ( ! filter ) {
+			return [];
+		}
+
+		return Array.isArray( filter.value ) ? filter.value : [ filter.value ];
+	}
+
 	function ExternalLink( { href, icon, children, ariaLabel } ) {
 		return el(
 			'a',
@@ -1442,16 +1450,42 @@ import {
 		}
 
 		function renderLegacyLinkTable( items ) {
+			const sortedItems = [ ...items ];
+			const sort = view.sort || {};
+			if ( sort.field ) {
+				const sortField = getTokenFields(
+					handleExtend,
+					workingTokenId
+				).find( ( field ) => field.id === sort.field );
+				if ( sortField ) {
+					sortedItems.sort( ( left, right ) => {
+						const leftValue = sortField.getValue( { item: left } );
+						const rightValue = sortField.getValue( {
+							item: right,
+						} );
+						const comparison = String(
+							leftValue || ''
+						).localeCompare(
+							String( rightValue || '' ),
+							undefined,
+							{ numeric: true, sensitivity: 'base' }
+						);
+						return 'asc' === sort.direction
+							? comparison
+							: -comparison;
+					} );
+				}
+			}
 			const perPage = Math.max( 1, Number( view.perPage ) || 20 );
 			const totalPages = Math.max(
 				1,
-				Math.ceil( items.length / perPage )
+				Math.ceil( sortedItems.length / perPage )
 			);
 			const currentPage = Math.min(
 				Math.max( 1, Number( view.page ) || 1 ),
 				totalPages
 			);
-			const pageItems = items.slice(
+			const pageItems = sortedItems.slice(
 				( currentPage - 1 ) * perPage,
 				currentPage * perPage
 			);
@@ -1491,6 +1525,10 @@ import {
 								value: 'active',
 							},
 							{
+								label: __( 'Expiring soon', 'previewshare' ),
+								value: 'expiring_soon',
+							},
+							{
 								label: __( 'Expired', 'previewshare' ),
 								value: 'expired',
 							},
@@ -1503,6 +1541,32 @@ import {
 							setInventoryStatus( status );
 							setView( ( current ) => ( {
 								...current,
+								filters:
+									'all' === status
+										? ( current.filters || [] ).filter(
+												( filter ) =>
+													filter.field !== 'status'
+										  )
+										: [
+												...(
+													current.filters || []
+												).filter(
+													( filter ) =>
+														filter.field !==
+														'status'
+												),
+												{
+													field: 'status',
+													operator: 'isAny',
+													value:
+														'active' === status
+															? [
+																	'active',
+																	'expiring_soon',
+															  ]
+															: [ status ],
+												},
+										  ],
 								page: 1,
 							} ) );
 						},
@@ -1840,10 +1904,19 @@ import {
 			const normalizedSearch = String( view.search || '' )
 				.trim()
 				.toLowerCase();
+			const statusFilter = ( view.filters || [] ).find(
+				( filter ) => filter.field === 'status'
+			);
+			const selectedStatuses = getFilterValues( statusFilter );
 			const legacyTokens = visibleTokens.filter( ( token ) => {
+				const actualStatus = isExpiringSoon( token )
+					? 'expiring_soon'
+					: token.status;
 				const statusMatches =
-					'all' === inventoryStatus ||
-					token.status === inventoryStatus;
+					selectedStatuses.length === 0 ||
+					selectedStatuses.includes( actualStatus ) ||
+					( selectedStatuses.includes( 'active' ) &&
+						'active' === token.status );
 				const searchable = [
 					token.post_title,
 					token.post_type,
@@ -1946,7 +2019,22 @@ import {
 								data: processed.data,
 								fields,
 								view,
-								onChangeView: setView,
+								onChangeView: ( nextView ) => {
+									const nextStatusFilter = (
+										nextView.filters || []
+									).find(
+										( filter ) => filter.field === 'status'
+									);
+									const statuses =
+										getFilterValues( nextStatusFilter );
+									setInventoryStatus(
+										statuses.includes( 'active' ) &&
+											statuses.includes( 'expiring_soon' )
+											? 'active'
+											: statuses[ 0 ] || 'all'
+									);
+									setView( nextView );
+								},
 								paginationInfo: processed.paginationInfo,
 								defaultLayouts: { table: {} },
 								config: {

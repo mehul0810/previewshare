@@ -11,8 +11,10 @@ jest.mock( '@wordpress/dataviews/wp', () => {
 	const { createElement } = require( '@wordpress/element' );
 
 	return {
-		DataViews: ( { data = [], fields = [], view = {} } ) =>
-			createElement(
+		DataViews: ( props ) => {
+			const { data = [], fields = [], view = {} } = props;
+			globalThis.__previewshareDataViewsProps = props;
+			return createElement(
 				'div',
 				{
 					'data-testid': 'previewshare-dataviews',
@@ -29,7 +31,8 @@ jest.mock( '@wordpress/dataviews/wp', () => {
 							.map( ( field ) => field.render( { item } ) )
 					)
 				)
-			),
+			);
+		},
 		filterSortAndPaginate: ( data ) => ( {
 			data,
 			paginationInfo: {
@@ -331,6 +334,115 @@ describe( 'PreviewShare responsive inventory', () => {
 			'1 link in this site inventory.'
 		);
 		expect( findButton( 'Revoke link' ) ).toBeDefined();
+	} );
+
+	it( 'preserves DataViews status and sort when resizing to the compact inventory', async () => {
+		let narrow = false;
+		let onViewportChange;
+		window.matchMedia = jest.fn( () => ( {
+			get matches() {
+				return narrow;
+			},
+			addEventListener: ( type, callback ) => {
+				if ( type === 'change' ) {
+					onViewportChange = callback;
+				}
+			},
+			removeEventListener: jest.fn(),
+		} ) );
+		const { initialSettings } = setupFetch( null, [
+			{
+				id: 'expired-z',
+				post_id: 42,
+				post_title: 'Zulu review',
+				post_type: 'post',
+				label: 'Client review',
+				status: 'expired',
+				expires_at: 1800000000,
+				last_viewed_at: 1700000000,
+				view_count: 2,
+			},
+			{
+				id: 'expired-a',
+				post_id: 43,
+				post_title: 'Alpha review',
+				post_type: 'post',
+				label: 'Client review',
+				status: 'expired',
+				expires_at: 1800000000,
+				last_viewed_at: 1700000000,
+				view_count: 1,
+			},
+			{
+				id: 'active-1',
+				post_id: 44,
+				post_title: 'Active review',
+				post_type: 'post',
+				label: 'Client review',
+				status: 'active',
+				expires_at: 1800000000,
+				last_viewed_at: 1700000000,
+				view_count: 3,
+			},
+		] );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+
+		await act( async () => {
+			window.__previewshareDataViewsProps.onChangeView( {
+				...window.__previewshareDataViewsProps.view,
+				filters: [
+					{
+						field: 'status',
+						operator: 'isAny',
+						value: [ 'expired' ],
+					},
+				],
+				sort: { field: 'content', direction: 'asc' },
+			} );
+			await flushPromises();
+		} );
+		await act( async () => {
+			narrow = true;
+			onViewportChange();
+			await flushPromises();
+		} );
+
+		const compactRows = Array.from(
+			document.querySelectorAll(
+				'.previewshare-legacy-link-table tbody tr'
+			)
+		);
+		expect( compactRows ).toHaveLength( 2 );
+		expect( compactRows[ 0 ].textContent ).toContain( 'Alpha review' );
+		expect( compactRows[ 1 ].textContent ).toContain( 'Zulu review' );
+		expect(
+			document.querySelector( '.previewshare-legacy-toolbar select' )
+				.value
+		).toBe( 'expired' );
+
+		await act( async () => {
+			narrow = false;
+			onViewportChange();
+			await flushPromises();
+		} );
+		expect(
+			document.querySelector( '.previewshare-dataviews' )
+		).not.toBeNull();
+		expect( window.__previewshareDataViewsProps.view.filters ).toEqual( [
+			{
+				field: 'status',
+				operator: 'isAny',
+				value: [ 'expired' ],
+			},
+		] );
+		expect( window.__previewshareDataViewsProps.view.sort ).toEqual( {
+			field: 'content',
+			direction: 'asc',
+		} );
 	} );
 } );
 
