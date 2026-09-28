@@ -78,18 +78,18 @@ final class ReviewForm {
 	/**
 	 * Remove native comment blocks from the shared draft preview only.
 	 *
-	 * @param string $block_content Rendered block output.
-	 * @param array  $block Parsed block data.
-	 * @param object $instance Block instance with inherited context.
+	 * @param string      $block_content Rendered block output.
+	 * @param array       $block Parsed block data.
+	 * @param object|null $instance Block instance with inherited context, unavailable on WordPress 5.8.
 	 * @return string
 	 */
-	public function hide_native_comments_blocks( string $block_content, array $block, $instance ): string {
+	public function hide_native_comments_blocks( string $block_content, array $block, ?object $instance = null ): string {
 		if ( ! in_array( $block['blockName'] ?? '', [ 'core/comments', 'core/comment-template' ], true ) ) {
 			return $block_content;
 		}
 
 		$context = $this->current_link( false );
-		$post_id = isset( $instance->context['postId'] ) ? (int) $instance->context['postId'] : (int) get_the_ID();
+		$post_id = $instance && isset( $instance->context['postId'] ) ? (int) $instance->context['postId'] : (int) get_the_ID();
 
 		return $context && (int) $context['post_id'] === $post_id ? '' : $block_content;
 	}

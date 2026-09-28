@@ -9,6 +9,9 @@ const postTitle = `PreviewShare e2e draft ${ Date.now() }`;
 const postContent = 'PreviewShare e2e draft content must stay unpublished.';
 const publishedPostContent = 'Published content remains publicly available.';
 const unavailablePreviewMessage = 'This preview link can no longer be opened.';
+const runBlockThemeCommentsRegression = /#7\.1(?:\.|$)/.test(
+	process.env.WP_ENV_CORE || ''
+);
 const previewShareRoutes = [
 	'/previewshare/v1/v2/generate',
 	'/previewshare/v1/settings',
@@ -219,12 +222,14 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	browser,
 	baseURL,
 }, testInfo ) => {
-	originalTheme = runWpCliForOutput( FIXTURE_WP_CLI, [
-		'option',
-		'get',
-		'stylesheet',
-	] );
-	runWpCli( FIXTURE_WP_CLI, [ 'theme', 'activate', 'twentytwentyfive' ] );
+	if ( runBlockThemeCommentsRegression ) {
+		originalTheme = runWpCliForOutput( FIXTURE_WP_CLI, [
+			'option',
+			'get',
+			'stylesheet',
+		] );
+		runWpCli( FIXTURE_WP_CLI, [ 'theme', 'activate', 'twentytwentyfive' ] );
+	}
 	const post = await requestUtils.createPost( {
 		title: postTitle,
 		content: postContent,
@@ -236,14 +241,16 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	} );
 	createdPostIds.add( post.id );
 	const nativeComment = `Existing native comment ${ Date.now() }`;
-	runWpCli( FIXTURE_WP_CLI, [
-		'comment',
-		'create',
-		`--comment_post_ID=${ post.id }`,
-		`--comment_content=${ nativeComment }`,
-		'--comment_author=PreviewShare E2E',
-		'--comment_approved=1',
-	] );
+	if ( runBlockThemeCommentsRegression ) {
+		runWpCli( FIXTURE_WP_CLI, [
+			'comment',
+			'create',
+			`--comment_post_ID=${ post.id }`,
+			`--comment_content=${ nativeComment }`,
+			'--comment_author=PreviewShare E2E',
+			'--comment_approved=1',
+		] );
+	}
 
 	const browserDiagnostics = {
 		consoleErrors: [],
@@ -532,7 +539,9 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	).toBeVisible();
 	await expect( anonymous.locator( '#previewshare-review-form' ) ).toHaveCount( 0 );
 	await expect( anonymous.locator( '#commentform, #respond form' ) ).toHaveCount( 0 );
-	await expect( anonymous.getByText( nativeComment, { exact: true } ) ).toHaveCount( 0 );
+	if ( runBlockThemeCommentsRegression ) {
+		await expect( anonymous.getByText( nativeComment, { exact: true } ) ).toHaveCount( 0 );
+	}
 
 	const inventoryResponse = page.waitForResponse(
 		( responseCandidate ) =>

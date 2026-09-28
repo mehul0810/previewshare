@@ -139,6 +139,7 @@ class ReviewFormTest extends TestCase {
 
 		$this->assertSame( '', $this->form->hide_native_comments_blocks( '<div>Comments</div>', $comments_block, $instance ) );
 		$this->assertSame( '', $this->form->hide_native_comments_blocks( '<li>Comment</li>', $template_block, $instance ) );
+		$this->assertSame( '', $this->form->hide_native_comments_blocks( '<div>Comments</div>', $comments_block ) );
 
 		$instance->context = [ 'postId' => 99 ];
 		$this->assertSame( '<div>Comments</div>', $this->form->hide_native_comments_blocks( '<div>Comments</div>', $comments_block, $instance ) );
