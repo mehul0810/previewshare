@@ -70,6 +70,35 @@ function runWpCli( command, args ) {
 	} );
 }
 
+function cleanupReviewChildren( parentId ) {
+	const php = `
+$parent_id = ${ Number( parentId ) };
+$args = array(
+	'post_type' => 'previewshare_review',
+	'post_status' => 'private',
+	'post_parent' => $parent_id,
+	'fields' => 'ids',
+	'posts_per_page' => -1,
+);
+foreach ( get_posts( $args ) as $review_id ) {
+	$option_name = (string) get_post_meta( $review_id, '_previewshare_submission_option', true );
+	if ( ! wp_delete_post( (int) $review_id, true ) ) {
+		fwrite( STDERR, 'Could not clean up fixture review ' . (int) $review_id . '.' );
+		exit( 1 );
+	}
+	if ( 0 === strpos( $option_name, 'previewshare_review_request_' ) ) {
+		delete_option( $option_name );
+	}
+}
+if ( get_posts( $args ) ) {
+	fwrite( STDERR, 'Fixture review children remain for parent ' . $parent_id . '.' );
+	exit( 1 );
+}
+`;
+
+	runWpCli( FIXTURE_WP_CLI, [ 'eval', php ] );
+}
+
 async function ensurePreviewSharePanelOpen( page ) {
 	const welcomeGuide = page.getByText( 'Welcome to the block editor', {
 		exact: true,
@@ -185,6 +214,7 @@ const createdPostIds = new Set();
 
 test.afterEach( () => {
 	for ( const postId of createdPostIds ) {
+		cleanupReviewChildren( postId );
 		runWpCli( FIXTURE_WP_CLI, [
 			'post',
 			'delete',
