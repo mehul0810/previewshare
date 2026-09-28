@@ -989,3 +989,92 @@ if ( get_posts( $args ) ) { fwrite( STDERR, 'Expired review records were not rem
 	runWpCli( FIXTURE_WP_CLI, [ 'eval', retentionProof ] );
 	await anonymousContext.close();
 } );
+
+test( 'privacy eraser paginates matching reviews, preserves other emails, and rejects stale reset state', async ( {
+	requestUtils,
+} ) => {
+	const parent = await requestUtils.createPost( {
+		title: `PreviewShare erasure ${ Date.now() }`,
+		content: 'Privacy erasure fixture parent.',
+		status: 'draft',
+	} );
+	createdPostIds.add( parent.id );
+
+	const erasureProof = `
+$parent_id = ${ Number( parent.id ) };
+$target_email = 'eraser-target-${ Number( parent.id ) }@example.test';
+$control_email = 'eraser-control-${ Number( parent.id ) }@example.test';
+$target_ids = array();
+for ( $index = 1; $index <= 101; $index++ ) {
+	$review_id = wp_insert_post( array(
+		'post_type' => 'previewshare_review',
+		'post_status' => 'private',
+		'post_parent' => $parent_id,
+		'post_title' => 'Privacy erasure target ' . $index,
+		'post_content' => 'Synthetic response for the isolated erasure fixture.',
+	), true );
+	if ( is_wp_error( $review_id ) ) { fwrite( STDERR, 'Could not create target review: ' . $review_id->get_error_message() ); exit( 1 ); }
+	update_post_meta( $review_id, '_previewshare_reviewer_email', $target_email );
+	if ( $index <= 100 ) { $target_ids[] = (int) $review_id; }
+}
+$control_id = wp_insert_post( array(
+	'post_type' => 'previewshare_review',
+	'post_status' => 'private',
+	'post_parent' => $parent_id,
+	'post_title' => 'Privacy erasure control',
+	'post_content' => 'This response belongs to another email.',
+), true );
+if ( is_wp_error( $control_id ) ) { fwrite( STDERR, 'Could not create control review: ' . $control_id->get_error_message() ); exit( 1 ); }
+update_post_meta( $control_id, '_previewshare_reviewer_email', $control_email );
+
+$erasers = apply_filters( 'wp_privacy_personal_data_erasers', array() );
+if ( empty( $erasers['previewshare-reviews']['callback'] ) ) { fwrite( STDERR, 'PreviewShare privacy eraser was not registered.' ); exit( 1 ); }
+$erase = $erasers['previewshare-reviews']['callback'];
+$fail_target_deletes = static function ( $delete, $post ) use ( $target_ids ) {
+	return in_array( (int) $post->ID, $target_ids, true ) ? false : $delete;
+};
+add_filter( 'pre_delete_post', $fail_target_deletes, 10, 3 );
+$first = call_user_func( $erase, $target_email, 1 );
+remove_filter( 'pre_delete_post', $fail_target_deletes, 10 );
+if ( is_wp_error( $first ) || ! empty( $first['done'] ) || empty( $first['items_retained'] ) ) { fwrite( STDERR, 'First erasure page did not retain the failed records and report more work.' ); exit( 1 ); }
+
+$second = call_user_func( $erase, $target_email, 2 );
+if ( is_wp_error( $second ) || empty( $second['done'] ) || empty( $second['items_removed'] ) || empty( $second['items_retained'] ) ) { fwrite( STDERR, 'Second erasure page did not remove the 101st record and report completion.' ); exit( 1 ); }
+$remaining_target = get_posts( array(
+	'post_type' => 'previewshare_review',
+	'post_status' => 'private',
+	'fields' => 'ids',
+	'posts_per_page' => -1,
+	'orderby' => 'ID',
+	'order' => 'ASC',
+	'meta_key' => '_previewshare_reviewer_email',
+	'meta_value' => $target_email,
+) );
+if ( array_map( 'intval', $remaining_target ) !== $target_ids ) { fwrite( STDERR, 'Erasure changed target records outside the first hundred failed deletions.' ); exit( 1 ); }
+if ( ! get_post( $control_id ) || $control_email !== get_post_meta( $control_id, '_previewshare_reviewer_email', true ) ) { fwrite( STDERR, 'Erasure changed the other-email control record.' ); exit( 1 ); }
+
+$cursor_key = 'previewshare_review_eraser_' . hash( 'sha256', $target_email );
+$stale_state = array( 'cursor' => (int) end( $target_ids ) + 1, 'items_removed' => true, 'items_retained' => true, 'next_page' => 3 );
+set_transient( $cursor_key, $stale_state, DAY_IN_SECONDS );
+// Re-expose stale progress after reset to model a transient backend with a stale read.
+$restore_stale_state = static function ( $transient ) use ( $cursor_key, $stale_state ) {
+	if ( $cursor_key === $transient ) { set_transient( $cursor_key, $stale_state, DAY_IN_SECONDS ); }
+};
+add_action( 'deleted_transient', $restore_stale_state, 10, 1 );
+$retry = call_user_func( $erase, $target_email, 1 );
+remove_action( 'deleted_transient', $restore_stale_state, 10 );
+delete_transient( $cursor_key );
+if ( ! is_wp_error( $retry ) || 'review_eraser_progress_reset_failed' !== $retry->get_error_code() ) { fwrite( STDERR, 'Fresh erasure retry did not fail closed when stale progress remained after reset.' ); exit( 1 ); }
+if ( count( get_posts( array(
+	'post_type' => 'previewshare_review',
+	'post_status' => 'private',
+	'fields' => 'ids',
+	'posts_per_page' => -1,
+	'orderby' => 'ID',
+	'order' => 'ASC',
+	'meta_key' => '_previewshare_reviewer_email',
+	'meta_value' => $target_email,
+) ) ) !== 100 ) { fwrite( STDERR, 'Failed retry did not leave the 100 undeleted target responses intact.' ); exit( 1 ); }
+`;
+	runWpCli( FIXTURE_WP_CLI, [ 'eval', erasureProof ] );
+} );
