@@ -490,6 +490,9 @@ final class ReviewResponseService {
 			delete_transient( $cursor_key );
 		}
 		$state = get_transient( $cursor_key );
+		if ( 1 >= $page && false !== $state ) {
+			return new \WP_Error( 'review_eraser_progress_reset_failed', __( 'PreviewShare could not restart this erasure request. Please try again.', 'previewshare' ) );
+		}
 		if (
 			1 < $page
 			&& (

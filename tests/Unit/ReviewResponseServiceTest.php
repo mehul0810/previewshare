@@ -367,6 +367,30 @@ class ReviewResponseServiceTest extends TestCase {
 		self::assertContains( 'previewshare_review_request_1', $deleted_options );
 	}
 
+	public function test_privacy_eraser_retry_fails_when_stale_cursor_cannot_be_reset(): void {
+		$records = $this->review_records( 101, 'reviewer@example.test' );
+		$previous_db = $GLOBALS['wpdb'] ?? null;
+		$GLOBALS['wpdb'] = $this->review_database( $records );
+		$transients = [];
+		$deleted_options = [];
+		$this->mock_eraser_state( $records, $transients, $deleted_options );
+		Functions\when( 'wp_delete_post' )->alias( static function ( int $id ) use ( &$records ) { if ( $id <= 100 ) { return false; } unset( $records[ $id ] ); return true; } );
+		try {
+			$service = new ReviewResponseService();
+			$first = $service->erase_by_email( 'reviewer@example.test', 1 );
+			$transients['__fail_delete'] = true;
+			$second = $service->erase_by_email( 'reviewer@example.test', 2 );
+			$retry = $service->erase_by_email( 'reviewer@example.test', 1 );
+		} finally {
+			$GLOBALS['wpdb'] = $previous_db;
+		}
+		self::assertFalse( $first['done'] );
+		self::assertTrue( $second['done'] );
+		self::assertInstanceOf( WP_Error::class, $retry );
+		self::assertSame( 'review_eraser_progress_reset_failed', $retry->get_error_code() );
+		self::assertSame( range( 1, 100 ), array_keys( $records ) );
+	}
+
 	public function test_privacy_eraser_query_failure_returns_an_error_without_claiming_completion(): void {
 		$records = $this->review_records( 1, 'reviewer@example.test' );
 		$previous_db = $GLOBALS['wpdb'] ?? null;
@@ -493,7 +517,11 @@ class ReviewResponseServiceTest extends TestCase {
 			$transients[ $key ] = $value;
 			return true;
 		} );
-		Functions\when( 'delete_transient' )->alias( static function ( string $key ) use ( &$transients ): bool { unset( $transients[ $key ] ); return true; } );
+		Functions\when( 'delete_transient' )->alias( static function ( string $key ) use ( &$transients ): bool {
+			if ( ! empty( $transients['__fail_delete'] ) ) { return false; }
+			unset( $transients[ $key ] );
+			return true;
+		} );
 		Functions\when( 'get_post_meta' )->alias( static function ( int $id ) use ( &$records ): string { return $records[ $id ]['marker'] ?? ''; } );
 		Functions\when( 'delete_option' )->alias( static function ( string $name ) use ( &$deleted_options ): bool { $deleted_options[] = $name; return true; } );
 	}
