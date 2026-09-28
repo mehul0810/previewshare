@@ -477,16 +477,22 @@ final class ReviewResponseService {
 	 */
 	public function erase_by_email( string $email_address, int $page = 1 ): array {
 		unset( $page );
-		$email = sanitize_email( $email_address );
-		$posts = '' === $email ? [] : $this->posts_for_email( $email, 1 );
+		$email          = sanitize_email( $email_address );
+		$posts          = '' === $email ? [] : $this->posts_for_email( $email, 1 );
+		$items_removed  = false;
+		$items_retained = false;
 		foreach ( $posts as $post ) {
-			$this->delete_response( (int) $post->ID );
+			if ( $this->delete_response( (int) $post->ID ) ) {
+				$items_removed = true;
+			} else {
+				$items_retained = true;
+			}
 		}
 		return [
-			'items_removed'  => ! empty( $posts ),
-			'items_retained' => false,
-			'messages'       => [],
-			'done'           => count( $posts ) < 100,
+			'items_removed'  => $items_removed,
+			'items_retained' => $items_retained,
+			'messages'       => $items_retained ? [ __( 'Some PreviewShare responses could not be removed. Please try again.', 'previewshare' ) ] : [],
+			'done'           => count( $posts ) < 100 && ! $items_retained,
 		];
 	}
 

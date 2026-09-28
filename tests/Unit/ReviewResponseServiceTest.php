@@ -276,4 +276,26 @@ class ReviewResponseServiceTest extends TestCase {
 
 		self::assertSame( 1, $queries );
 	}
+
+	public function test_privacy_eraser_reports_failed_deletion_as_retained_and_incomplete(): void {
+		Functions\when( 'sanitize_email' )->returnArg( 1 );
+		Functions\when( 'get_posts' )->alias(
+			static function ( array $args ): array {
+				self::assertSame( '_previewshare_reviewer_email', $args['meta_key'] );
+				self::assertSame( 'reviewer@example.test', $args['meta_value'] );
+				self::assertSame( 1, $args['paged'] );
+				return [ new \WP_Post( [ 'ID' => 91 ] ) ];
+			}
+		);
+		Functions\when( 'get_post_meta' )->justReturn( 'previewshare_review_request_91' );
+		Functions\expect( 'wp_delete_post' )->once()->with( 91, true )->andReturn( false );
+		Functions\expect( 'delete_option' )->never();
+
+		$result = ( new ReviewResponseService() )->erase_by_email( 'reviewer@example.test' );
+
+		self::assertFalse( $result['items_removed'] );
+		self::assertTrue( $result['items_retained'] );
+		self::assertSame( [ 'Some PreviewShare responses could not be removed. Please try again.' ], $result['messages'] );
+		self::assertFalse( $result['done'] );
+	}
 }
