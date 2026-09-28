@@ -320,6 +320,10 @@ final class ReviewResponseService {
 
 		while ( $processed < self::CLEANUP_LIMIT ) {
 			$ids = $this->query_review_ids( $cursor, self::CLEANUP_BATCH_SIZE, null, $cutoff );
+			if ( null === $ids ) {
+				$this->schedule_cleanup_continuation( HOUR_IN_SECONDS );
+				return;
+			}
 			if ( ! $ids ) {
 				break;
 			}
@@ -339,7 +343,14 @@ final class ReviewResponseService {
 			}
 		}
 
-		$more = self::CLEANUP_LIMIT === $processed && $this->query_review_ids( $cursor, 1, null, $cutoff );
+		$more = false;
+		if ( self::CLEANUP_LIMIT === $processed ) {
+			$more = $this->query_review_ids( $cursor, 1, null, $cutoff );
+			if ( null === $more ) {
+				$this->schedule_cleanup_continuation( HOUR_IN_SECONDS );
+				return;
+			}
+		}
 		if ( $more ) {
 			$this->schedule_cleanup_continuation( 5 * MINUTE_IN_SECONDS );
 			return;
@@ -470,22 +481,35 @@ final class ReviewResponseService {
 	 *
 	 * @param string $email_address Requested email.
 	 * @param int    $page WordPress privacy page.
-	 * @return array<string,mixed>
+	 * @return array<string,mixed>|\WP_Error
 	 */
-	public function erase_by_email( string $email_address, int $page = 1 ): array {
+	public function erase_by_email( string $email_address, int $page = 1 ) {
 		$email      = sanitize_email( $email_address );
 		$cursor_key = 'previewshare_review_eraser_' . hash( 'sha256', $email );
 		if ( 1 >= $page ) {
 			delete_transient( $cursor_key );
 		}
-		$state  = get_transient( $cursor_key );
+		$state = get_transient( $cursor_key );
+		if (
+			1 < $page
+			&& (
+				! is_array( $state )
+				|| (int) ( $state['next_page'] ?? 0 ) !== $page
+				|| ! isset( $state['cursor'], $state['items_removed'], $state['items_retained'] )
+			)
+		) {
+			return new \WP_Error( 'review_eraser_progress_missing', __( 'PreviewShare could not resume this erasure page. Please restart the erasure request.', 'previewshare' ) );
+		}
 		$state  = is_array( $state ) ? $state : [
-			'cursor' => 0,
-			'items_removed' => false,
+			'cursor'         => 0,
+			'items_removed'  => false,
 			'items_retained' => false,
 		];
 		$cursor = max( 0, (int) ( $state['cursor'] ?? 0 ) );
 		$ids    = '' === $email ? [] : $this->query_review_ids( $cursor, self::ERASER_BATCH_SIZE, $email );
+		if ( null === $ids ) {
+			return new \WP_Error( 'review_eraser_query_failed', __( 'PreviewShare could not check for responses to erase. Please try the erasure request again.', 'previewshare' ) );
+		}
 		foreach ( $ids as $id ) {
 			$id     = (int) $id;
 			$cursor = $id;
@@ -495,10 +519,22 @@ final class ReviewResponseService {
 				$state['items_retained'] = true;
 			}
 		}
-		$more = '' !== $email && $this->query_review_ids( $cursor, 1, $email );
+		$more = false;
+		if ( '' !== $email ) {
+			$more = $this->query_review_ids( $cursor, 1, $email );
+			if ( null === $more ) {
+				$progress = $this->save_eraser_progress( $cursor_key, $state, $cursor, $page - 1 );
+				if ( is_wp_error( $progress ) ) {
+					return $progress;
+				}
+				return new \WP_Error( 'review_eraser_query_failed', __( 'PreviewShare could not check for responses to erase. Please try the erasure request again.', 'previewshare' ) );
+			}
+		}
 		if ( $more ) {
-			$state['cursor'] = $cursor;
-			set_transient( $cursor_key, $state, DAY_IN_SECONDS );
+			$progress = $this->save_eraser_progress( $cursor_key, $state, $cursor, $page );
+			if ( is_wp_error( $progress ) ) {
+				return $progress;
+			}
 		} else {
 			delete_transient( $cursor_key );
 		}
@@ -508,6 +544,24 @@ final class ReviewResponseService {
 			'messages'       => $state['items_retained'] ? [ __( 'Some PreviewShare responses could not be removed. Please try again.', 'previewshare' ) ] : [],
 			'done'           => ! $more,
 		];
+	}
+
+	/**
+	 * Save eraser progress for the next WordPress callback page.
+	 *
+	 * @param string              $cursor_key Transient key.
+	 * @param array<string,mixed> $state Cumulative eraser state.
+	 * @param int                 $cursor Last attempted record ID.
+	 * @param int                 $page Current WordPress page.
+	 * @return true|\WP_Error
+	 */
+	private function save_eraser_progress( string $cursor_key, array $state, int $cursor, int $page ) {
+		$state['cursor']    = $cursor;
+		$state['next_page'] = $page + 1;
+		if ( set_transient( $cursor_key, $state, DAY_IN_SECONDS ) ) {
+			return true;
+		}
+		return new \WP_Error( 'review_eraser_progress_failed', __( 'PreviewShare could not save erasure progress. Please restart the erasure request.', 'previewshare' ) );
 	}
 
 	/**
@@ -529,9 +583,9 @@ final class ReviewResponseService {
 	 * @param int         $limit Maximum rows.
 	 * @param string|null $email Optional exact reviewer email.
 	 * @param string|null $cutoff Optional exclusive GMT creation-time upper bound.
-	 * @return array<int,int>
+	 * @return array<int,int>|null Null when the database query fails.
 	 */
-	private function query_review_ids( int $after_id, int $limit, ?string $email = null, ?string $cutoff = null ): array {
+	private function query_review_ids( int $after_id, int $limit, ?string $email = null, ?string $cutoff = null ): ?array {
 		global $wpdb;
 
 		$sql       = "SELECT reviews.ID FROM {$wpdb->posts} AS reviews";
@@ -550,7 +604,10 @@ final class ReviewResponseService {
 		$arguments[] = $limit;
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Bounded keyset query must progress across deletions and failed records.
 		$ids = $wpdb->get_col( $wpdb->prepare( $sql, $arguments ) );
-		return is_array( $ids ) ? array_map( 'intval', $ids ) : [];
+		if ( ( isset( $wpdb->last_error ) && '' !== $wpdb->last_error ) || ! is_array( $ids ) ) {
+			return null;
+		}
+		return array_map( 'intval', $ids );
 	}
 
 	/**

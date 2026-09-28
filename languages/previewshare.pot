@@ -1216,3 +1216,15 @@ msgstr ""
 #: assets/src/js/settings.js:2367
 msgid "PreviewShare settings"
 msgstr ""
+
+#: src/Services/ReviewResponseService.php:501
+msgid "PreviewShare could not resume this erasure page. Please restart the erasure request."
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:511, src/Services/ReviewResponseService.php:530
+msgid "PreviewShare could not check for responses to erase. Please try the erasure request again."
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:564
+msgid "PreviewShare could not save erasure progress. Please restart the erasure request."
+msgstr ""

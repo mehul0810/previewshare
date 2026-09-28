@@ -236,6 +236,59 @@ class ReviewResponseServiceTest extends TestCase {
 		self::assertSame( array_merge( range( 1, 2000 ), [ 2002 ] ), array_keys( $records ) );
 	}
 
+	public function test_cleanup_query_failure_keeps_existing_cursor_and_schedules_a_retry(): void {
+		$records = [];
+		$previous_db = $GLOBALS['wpdb'] ?? null;
+		$database = $this->review_database( $records );
+		$database->fail_query_at = [ 1 ];
+		$GLOBALS['wpdb'] = $database;
+		$options = [ 'previewshare_cleanup_reviews_cursor' => 35, 'previewshare_cleanup_reviews_failed' => true ];
+		Functions\when( 'get_option' )->alias( static function ( string $name, $default = false ) use ( &$options ) { return $options[ $name ] ?? $default; } );
+		Functions\expect( 'update_option' )->never();
+		Functions\expect( 'delete_option' )->never();
+		Functions\when( 'wp_next_scheduled' )->justReturn( false );
+		Functions\expect( 'wp_schedule_single_event' )->once()->andReturnUsing( static function ( int $timestamp, string $hook ): bool {
+			self::assertSame( 'previewshare_cleanup_reviews_continue', $hook );
+			self::assertGreaterThanOrEqual( time() + ( HOUR_IN_SECONDS - 1 ), $timestamp );
+			return true;
+		} );
+		Functions\expect( 'wp_clear_scheduled_hook' )->never();
+		try {
+			( new ReviewResponseService() )->purge_expired();
+		} finally {
+			$GLOBALS['wpdb'] = $previous_db;
+		}
+		self::assertSame( 35, $options['previewshare_cleanup_reviews_cursor'] );
+		self::assertTrue( $options['previewshare_cleanup_reviews_failed'] );
+	}
+
+	public function test_cleanup_lookahead_query_failure_keeps_completed_batch_cursor(): void {
+		$cutoff_timestamp = time() - ( 90 * DAY_IN_SECONDS );
+		$records = [];
+		for ( $id = 1; $id <= 2000; $id++ ) { $records[ $id ] = [ 'date' => gmdate( 'Y-m-d H:i:s', $cutoff_timestamp - 60 ), 'marker' => '' ]; }
+		$previous_db = $GLOBALS['wpdb'] ?? null;
+		$database = $this->review_database( $records );
+		$database->fail_query_at = [ 21 ];
+		$GLOBALS['wpdb'] = $database;
+		$options = [];
+		Functions\when( 'get_option' )->justReturn( 0 );
+		Functions\when( 'update_option' )->alias( static function ( string $name, $value ) use ( &$options ): bool { $options[ $name ] = $value; return true; } );
+		Functions\when( 'delete_option' )->alias( static function ( string $name ) use ( &$options ): bool { unset( $options[ $name ] ); return true; } );
+		Functions\when( 'get_post_meta' )->justReturn( '' );
+		Functions\when( 'wp_delete_post' )->alias( static function ( int $id ) use ( &$records ) { unset( $records[ $id ] ); return true; } );
+		Functions\when( 'wp_next_scheduled' )->justReturn( false );
+		Functions\expect( 'wp_schedule_single_event' )->once()->andReturn( true );
+		Functions\expect( 'wp_clear_scheduled_hook' )->never();
+		try {
+			( new ReviewResponseService() )->purge_expired();
+		} finally {
+			$GLOBALS['wpdb'] = $previous_db;
+		}
+		self::assertSame( [], $records );
+		self::assertSame( 2000, $options['previewshare_cleanup_reviews_cursor'] );
+		self::assertArrayNotHasKey( 'previewshare_cleanup_reviews_failed', $options );
+	}
+
 	public function test_privacy_eraser_moves_past_failed_first_hundred_and_removes_the_101st_record(): void {
 		$records = $this->review_records( 101, 'reviewer@example.test' );
 		$previous_db = $GLOBALS['wpdb'] ?? null;
@@ -314,6 +367,54 @@ class ReviewResponseServiceTest extends TestCase {
 		self::assertContains( 'previewshare_review_request_1', $deleted_options );
 	}
 
+	public function test_privacy_eraser_query_failure_returns_an_error_without_claiming_completion(): void {
+		$records = $this->review_records( 1, 'reviewer@example.test' );
+		$previous_db = $GLOBALS['wpdb'] ?? null;
+		$database = $this->review_database( $records );
+		$database->fail_query_at = [ 1 ];
+		$GLOBALS['wpdb'] = $database;
+		$transients = [];
+		$deleted_options = [];
+		$this->mock_eraser_state( $records, $transients, $deleted_options );
+		Functions\expect( 'wp_delete_post' )->never();
+		try {
+			$result = ( new ReviewResponseService() )->erase_by_email( 'reviewer@example.test', 1 );
+		} finally {
+			$GLOBALS['wpdb'] = $previous_db;
+		}
+		self::assertInstanceOf( WP_Error::class, $result );
+		self::assertSame( 'review_eraser_query_failed', $result->get_error_code() );
+	}
+
+	public function test_privacy_eraser_fails_closed_when_cursor_cannot_be_saved_or_resumed(): void {
+		$records = $this->review_records( 101, 'reviewer@example.test' );
+		$previous_db = $GLOBALS['wpdb'] ?? null;
+		$GLOBALS['wpdb'] = $this->review_database( $records );
+		$transients = [ '__fail_write' => true ];
+		$deleted_options = [];
+		$this->mock_eraser_state( $records, $transients, $deleted_options );
+		Functions\when( 'wp_delete_post' )->justReturn( false );
+		try {
+			$service = new ReviewResponseService();
+			$failed_write = $service->erase_by_email( 'reviewer@example.test', 1 );
+			$missing_after_write_failure = $service->erase_by_email( 'reviewer@example.test', 2 );
+			unset( $transients['__fail_write'] );
+			$first_page = $service->erase_by_email( 'reviewer@example.test', 1 );
+			$cursor_key = 'previewshare_review_eraser_' . hash( 'sha256', 'reviewer@example.test' );
+			unset( $transients[ $cursor_key ] );
+			$missing_after_eviction = $service->erase_by_email( 'reviewer@example.test', 2 );
+		} finally {
+			$GLOBALS['wpdb'] = $previous_db;
+		}
+		self::assertInstanceOf( WP_Error::class, $failed_write );
+		self::assertSame( 'review_eraser_progress_failed', $failed_write->get_error_code() );
+		self::assertInstanceOf( WP_Error::class, $missing_after_write_failure );
+		self::assertSame( 'review_eraser_progress_missing', $missing_after_write_failure->get_error_code() );
+		self::assertFalse( $first_page['done'] );
+		self::assertInstanceOf( WP_Error::class, $missing_after_eviction );
+		self::assertSame( 'review_eraser_progress_missing', $missing_after_eviction->get_error_code() );
+	}
+
 	public function test_continuation_hook_is_registered_to_drain_expired_reviews(): void {
 		$registered_actions = [];
 		Functions\when( 'add_action' )->alias( static function ( string $hook ) use ( &$registered_actions ): void { $registered_actions[] = $hook; } );
@@ -332,10 +433,19 @@ class ReviewResponseServiceTest extends TestCase {
 		return new class( $records ) {
 			public $posts = 'wp_posts';
 			public $postmeta = 'wp_postmeta';
+			public $last_error = '';
+			public $query_count = 0;
+			public $fail_query_at = [];
 			private $records;
 			public function __construct( array &$records ) { $this->records =& $records; }
 			public function prepare( string $sql, array $arguments ): array { return [ $sql, $arguments ]; }
-			public function get_col( array $prepared ): array {
+			public function get_col( array $prepared ): ?array {
+				++$this->query_count;
+				if ( in_array( $this->query_count, $this->fail_query_at, true ) ) {
+					$this->last_error = 'simulated database error';
+					return null;
+				}
+				$this->last_error = '';
 				[ $sql, $arguments ] = $prepared;
 				$after = (int) $arguments[2];
 				$email = false;
@@ -378,7 +488,11 @@ class ReviewResponseServiceTest extends TestCase {
 	private function mock_eraser_state( array &$records, array &$transients, array &$deleted_options ): void {
 		Functions\when( 'sanitize_email' )->returnArg( 1 );
 		Functions\when( 'get_transient' )->alias( static function ( string $key ) use ( &$transients ) { return $transients[ $key ] ?? false; } );
-		Functions\when( 'set_transient' )->alias( static function ( string $key, $value ) use ( &$transients ): bool { $transients[ $key ] = $value; return true; } );
+		Functions\when( 'set_transient' )->alias( static function ( string $key, $value ) use ( &$transients ): bool {
+			if ( ! empty( $transients['__fail_write'] ) ) { return false; }
+			$transients[ $key ] = $value;
+			return true;
+		} );
 		Functions\when( 'delete_transient' )->alias( static function ( string $key ) use ( &$transients ): bool { unset( $transients[ $key ] ); return true; } );
 		Functions\when( 'get_post_meta' )->alias( static function ( int $id ) use ( &$records ): string { return $records[ $id ]['marker'] ?? ''; } );
 		Functions\when( 'delete_option' )->alias( static function ( string $name ) use ( &$deleted_options ): bool { $deleted_options[] = $name; return true; } );
