@@ -1,4 +1,5 @@
 import { DataViews, filterSortAndPaginate } from '@wordpress/dataviews/wp';
+import removeAccents from 'remove-accents';
 import {
 	check,
 	copy,
@@ -29,12 +30,12 @@ import {
 		useRef,
 		useState,
 	} = wp.element;
-	const { __, sprintf } = wp.i18n;
+	const { __, _n, sprintf } = wp.i18n;
 	const {
 		Button,
+		CheckboxControl,
 		Icon,
 		Notice,
-		SelectControl,
 		Spinner,
 		TextControl,
 		ToggleControl,
@@ -420,6 +421,18 @@ import {
 		];
 	}
 
+	function getFilterValues( filter ) {
+		if ( ! filter ) {
+			return [];
+		}
+
+		return Array.isArray( filter.value ) ? filter.value : [ filter.value ];
+	}
+
+	function normalizeSearchInput( input ) {
+		return removeAccents( String( input ).trim().toLowerCase() );
+	}
+
 	function ExternalLink( { href, icon, children, ariaLabel } ) {
 		return el(
 			'a',
@@ -482,7 +495,11 @@ import {
 			},
 		} );
 		const [ contentTypeSearch, setContentTypeSearch ] = useState( '' );
-		const [ inventoryStatus, setInventoryStatus ] = useState( 'all' );
+		const [ compactInventory, setCompactInventory ] = useState(
+			() =>
+				typeof window.matchMedia === 'function' &&
+				window.matchMedia( '(max-width: 1440px)' ).matches
+		);
 		const [ expiringOnly, setExpiringOnly ] = useState( false );
 		const [ loadingSettings, setLoadingSettings ] = useState( true );
 		const [ loadingTokens, setLoadingTokens ] = useState( true );
@@ -502,6 +519,17 @@ import {
 		const tokensRef = useRef( [] );
 		const nextInventoryPageRef = useRef( 1 );
 		const mountedRef = useRef( false );
+
+		useEffect( () => {
+			if ( typeof window.matchMedia !== 'function' ) {
+				return undefined;
+			}
+
+			const media = window.matchMedia( '(max-width: 1440px)' );
+			const onChange = () => setCompactInventory( media.matches );
+			media.addEventListener( 'change', onChange );
+			return () => media.removeEventListener( 'change', onChange );
+		}, [] );
 
 		useEffect( () => {
 			mountedRef.current = true;
@@ -1426,16 +1454,47 @@ import {
 		}
 
 		function renderLegacyLinkTable( items ) {
+			const selectedStatuses = getFilterValues(
+				( view.filters || [] ).find(
+					( filter ) => filter.field === 'status'
+				)
+			);
+			const sortedItems = [ ...items ];
+			const sort = view.sort || {};
+			const sortField = getTokenFields(
+				handleExtend,
+				workingTokenId
+			).find( ( field ) => field.id === sort.field );
+			const getAriaSort = ( field ) => {
+				if ( ! field || sort.field !== field ) {
+					return 'none';
+				}
+
+				return 'asc' === sort.direction ? 'ascending' : 'descending';
+			};
+			if ( sortField ) {
+				sortedItems.sort( ( left, right ) => {
+					const leftValue = sortField.getValue( { item: left } );
+					const rightValue = sortField.getValue( { item: right } );
+					const comparison =
+						'integer' === sortField.type
+							? Number( leftValue ) - Number( rightValue )
+							: String( leftValue ?? '' ).localeCompare(
+									String( rightValue ?? '' )
+							  );
+					return 'asc' === sort.direction ? comparison : -comparison;
+				} );
+			}
 			const perPage = Math.max( 1, Number( view.perPage ) || 20 );
 			const totalPages = Math.max(
 				1,
-				Math.ceil( items.length / perPage )
+				Math.ceil( sortedItems.length / perPage )
 			);
 			const currentPage = Math.min(
 				Math.max( 1, Number( view.page ) || 1 ),
 				totalPages
 			);
-			const pageItems = items.slice(
+			const pageItems = sortedItems.slice(
 				( currentPage - 1 ) * perPage,
 				currentPage * perPage
 			);
@@ -1462,17 +1521,18 @@ import {
 								page: 1,
 							} ) ),
 					} ),
-					el( SelectControl, {
-						label: __( 'Status', 'previewshare' ),
-						value: inventoryStatus,
-						options: [
-							{
-								label: __( 'All statuses', 'previewshare' ),
-								value: 'all',
-							},
+					el(
+						'fieldset',
+						{ className: 'previewshare-status-filters' },
+						el( 'legend', null, __( 'Status', 'previewshare' ) ),
+						...[
 							{
 								label: __( 'Active', 'previewshare' ),
 								value: 'active',
+							},
+							{
+								label: __( 'Expiring soon', 'previewshare' ),
+								value: 'expiring_soon',
 							},
 							{
 								label: __( 'Expired', 'previewshare' ),
@@ -1482,15 +1542,58 @@ import {
 								label: __( 'Revoked', 'previewshare' ),
 								value: 'revoked',
 							},
-						],
-						onChange: ( status ) => {
-							setInventoryStatus( status );
-							setView( ( current ) => ( {
-								...current,
-								page: 1,
-							} ) );
-						},
-					} )
+						].map( ( option ) =>
+							el( CheckboxControl, {
+								key: option.value,
+								label: option.label,
+								checked: selectedStatuses.includes(
+									option.value
+								),
+								onChange: ( checked ) => {
+									setView( ( current ) => {
+										const currentFilters =
+											current.filters || [];
+										const statusFilter =
+											currentFilters.find(
+												( filter ) =>
+													filter.field === 'status'
+											);
+										const statuses = getFilterValues(
+											statusFilter
+										).filter(
+											( status ) =>
+												status !== option.value
+										);
+										if ( checked ) {
+											statuses.push( option.value );
+										}
+
+										return {
+											...current,
+											filters: [
+												...currentFilters.filter(
+													( filter ) =>
+														filter.field !==
+														'status'
+												),
+												...( statuses.length
+													? [
+															{
+																field: 'status',
+																operator:
+																	'isAny',
+																value: statuses,
+															},
+													  ]
+													: [] ),
+											],
+											page: 1,
+										};
+									} );
+								},
+							} )
+						)
+					)
 				),
 				loadingTokens
 					? el(
@@ -1507,10 +1610,28 @@ import {
 									{
 										className:
 											'previewshare-legacy-link-table',
-										'aria-label': __(
-											'Preview link inventory',
-											'previewshare'
-										),
+										'aria-label': sortField
+											? sprintf(
+													/* translators: 1: Sort field. 2: Sort direction. */
+													__(
+														'Preview link inventory, sorted by %1$s %2$s',
+														'previewshare'
+													),
+													sortField.label,
+													'asc' === sort.direction
+														? __(
+																'ascending',
+																'previewshare'
+														  )
+														: __(
+																'descending',
+																'previewshare'
+														  )
+											  )
+											: __(
+													'Preview link inventory',
+													'previewshare'
+											  ),
 									},
 									el(
 										'thead',
@@ -1519,22 +1640,69 @@ import {
 											'tr',
 											null,
 											...[
-												__( 'Content', 'previewshare' ),
-												__( 'Label', 'previewshare' ),
-												__( 'Status', 'previewshare' ),
-												__( 'Views', 'previewshare' ),
-												__( 'Expires', 'previewshare' ),
-												__(
-													'Last viewed',
-													'previewshare'
-												),
-												__( 'Actions', 'previewshare' ),
-											].map( ( label ) =>
+												{
+													field: 'content',
+													label: __(
+														'Content',
+														'previewshare'
+													),
+												},
+												{
+													field: 'label',
+													label: __(
+														'Label',
+														'previewshare'
+													),
+												},
+												{
+													field: 'status',
+													label: __(
+														'Status',
+														'previewshare'
+													),
+												},
+												{
+													field: 'view_count',
+													label: __(
+														'Views',
+														'previewshare'
+													),
+												},
+												{
+													field: 'expires_at',
+													label: __(
+														'Expires',
+														'previewshare'
+													),
+												},
+												{
+													field: 'last_viewed_at',
+													label: __(
+														'Last viewed',
+														'previewshare'
+													),
+												},
+												{
+													field: null,
+													label: __(
+														'Actions',
+														'previewshare'
+													),
+												},
+											].map( ( { field, label } ) =>
 												el(
 													'th',
 													{
 														key: label,
 														scope: 'col',
+														...( field
+															? {
+																	'aria-sort':
+																		getAriaSort(
+																			field
+																		),
+															  }
+															: {} ),
 													},
 													label
 												)
@@ -1821,25 +1989,28 @@ import {
 			const processed = canRenderDataViews
 				? filterSortAndPaginate( visibleTokens, view, fields )
 				: null;
-			const normalizedSearch = String( view.search || '' )
-				.trim()
-				.toLowerCase();
+			const normalizedSearch = normalizeSearchInput( view.search || '' );
+			const searchableFields = fields.filter(
+				( field ) => field.enableGlobalSearch
+			);
+			const statusFilter = ( view.filters || [] ).find(
+				( filter ) => filter.field === 'status'
+			);
+			const selectedStatuses = getFilterValues( statusFilter );
 			const legacyTokens = visibleTokens.filter( ( token ) => {
+				const actualStatus = isExpiringSoon( token )
+					? 'expiring_soon'
+					: token.status;
 				const statusMatches =
-					'all' === inventoryStatus ||
-					token.status === inventoryStatus;
-				const searchable = [
-					token.post_title,
-					token.post_type,
-					token.label,
-					token.id,
-				]
-					.map( ( value ) => String( value || '' ) )
-					.join( ' ' )
-					.toLowerCase();
+					selectedStatuses.length === 0 ||
+					selectedStatuses.includes( actualStatus );
 				const searchMatches =
 					! normalizedSearch ||
-					searchable.includes( normalizedSearch );
+					searchableFields.some( ( field ) =>
+						normalizeSearchInput(
+							String( field.getValue( { item: token } ) )
+						).includes( normalizedSearch )
+					);
 
 				return statusMatches && searchMatches;
 			} );
@@ -1877,8 +2048,10 @@ import {
 					__( 'Preview links', 'previewshare' ),
 					sprintf(
 						/* translators: %d: Number of links. */
-						__(
+						_n(
+							'%d link in this site inventory.',
 							'%d links in this site inventory.',
+							totalTokens,
 							'previewshare'
 						),
 						totalTokens
@@ -1919,7 +2092,7 @@ import {
 							)
 					  )
 					: null,
-				! canRenderDataViews
+				! canRenderDataViews || compactInventory
 					? renderLegacyLinkTable( legacyTokens )
 					: el(
 							'div',
@@ -1943,7 +2116,9 @@ import {
 								),
 								empty: el(
 									'p',
-									{ className: 'previewshare-empty-state' },
+									{
+										className: 'previewshare-empty-state',
+									},
 									__(
 										'No preview links match this view.',
 										'previewshare'
