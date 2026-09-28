@@ -16,9 +16,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 final class ReviewResponseService {
 
-	private const POST_TYPE      = 'previewshare_review';
-	private const RETENTION_DAYS = 90;
-	private const CLEANUP_HOOK   = 'previewshare_cleanup_reviews';
+	private const POST_TYPE          = 'previewshare_review';
+	private const RETENTION_DAYS     = 90;
+	private const CLEANUP_HOOK       = 'previewshare_cleanup_reviews';
+	private const CONTINUE_HOOK      = 'previewshare_cleanup_reviews_continue';
+	private const CLEANUP_LIMIT      = 2000;
+	private const CLEANUP_BATCH_SIZE = 100;
 
 	/**
 	 * Register lifecycle and privacy hooks.
@@ -29,6 +32,7 @@ final class ReviewResponseService {
 		add_action( 'init', [ $this, 'register_type' ], 20 );
 		add_action( 'init', [ $this, 'schedule_cleanup' ], 21 );
 		add_action( self::CLEANUP_HOOK, [ $this, 'purge_expired' ] );
+		add_action( self::CONTINUE_HOOK, [ $this, 'purge_expired' ] );
 		add_action( 'before_delete_post', [ $this, 'delete_for_post' ] );
 		add_filter( 'wp_privacy_personal_data_exporters', [ $this, 'register_exporter' ] );
 		add_filter( 'wp_privacy_personal_data_erasers', [ $this, 'register_eraser' ] );
@@ -75,6 +79,7 @@ final class ReviewResponseService {
 	 */
 	public static function unschedule_cleanup(): void {
 		wp_clear_scheduled_hook( self::CLEANUP_HOOK );
+		wp_clear_scheduled_hook( self::CONTINUE_HOOK );
 	}
 
 	/**
@@ -305,13 +310,15 @@ final class ReviewResponseService {
 	 * @return void
 	 */
 	public function purge_expired(): void {
-		$cutoff = gmdate( 'Y-m-d H:i:s', time() - ( self::RETENTION_DAYS * DAY_IN_SECONDS ) );
-		for ( $batch = 0; $batch < 20; $batch++ ) {
-			$ids = get_posts(
+		$cutoff    = gmdate( 'Y-m-d H:i:s', time() - ( self::RETENTION_DAYS * DAY_IN_SECONDS ) );
+		$processed = 0;
+		$stalled   = false;
+		for ( $batch = 0; $batch < ( self::CLEANUP_LIMIT / self::CLEANUP_BATCH_SIZE ); $batch++ ) {
+			$ids     = get_posts(
 				[
 					'post_type'      => self::POST_TYPE,
 					'post_status'    => 'private',
-					'posts_per_page' => 100,
+					'posts_per_page' => self::CLEANUP_BATCH_SIZE,
 					'fields'         => 'ids',
 					'orderby'        => 'ID',
 					'order'          => 'ASC',
@@ -324,13 +331,31 @@ final class ReviewResponseService {
 					],
 				]
 			);
+			$deleted = 0;
 			foreach ( $ids as $id ) {
-				$this->delete_response( (int) $id );
+				if ( $this->delete_response( (int) $id ) ) {
+					++$deleted;
+				}
 			}
-			if ( count( $ids ) < 100 ) {
+			$processed += count( $ids );
+			if ( $deleted < count( $ids ) ) {
+				$stalled = true;
+				break;
+			}
+			if ( count( $ids ) < self::CLEANUP_BATCH_SIZE ) {
 				break;
 			}
 		}
+
+		if ( self::CLEANUP_LIMIT === $processed || $stalled ) {
+			if ( ! wp_next_scheduled( self::CONTINUE_HOOK ) ) {
+				$delay = $stalled ? HOUR_IN_SECONDS : ( 5 * MINUTE_IN_SECONDS );
+				wp_schedule_single_event( time() + $delay, self::CONTINUE_HOOK );
+			}
+			return;
+		}
+
+		wp_clear_scheduled_hook( self::CONTINUE_HOOK );
 	}
 
 	/**
@@ -452,16 +477,22 @@ final class ReviewResponseService {
 	 */
 	public function erase_by_email( string $email_address, int $page = 1 ): array {
 		unset( $page );
-		$email = sanitize_email( $email_address );
-		$posts = '' === $email ? [] : $this->posts_for_email( $email, 1 );
+		$email          = sanitize_email( $email_address );
+		$posts          = '' === $email ? [] : $this->posts_for_email( $email, 1 );
+		$items_removed  = false;
+		$items_retained = false;
 		foreach ( $posts as $post ) {
-			$this->delete_response( (int) $post->ID );
+			if ( $this->delete_response( (int) $post->ID ) ) {
+				$items_removed = true;
+			} else {
+				$items_retained = true;
+			}
 		}
 		return [
-			'items_removed'  => ! empty( $posts ),
-			'items_retained' => false,
-			'messages'       => [],
-			'done'           => count( $posts ) < 100,
+			'items_removed'  => $items_removed,
+			'items_retained' => $items_retained,
+			'messages'       => $items_retained ? [ __( 'Some PreviewShare responses could not be removed. Please try again.', 'previewshare' ) ] : [],
+			'done'           => count( $posts ) < 100 || ! $items_removed,
 		];
 	}
 
@@ -513,13 +544,16 @@ final class ReviewResponseService {
 	 * Delete a record and its idempotency marker together.
 	 *
 	 * @param int $review_id Review record ID.
-	 * @return void
+	 * @return bool Whether the post and idempotency marker were removed.
 	 */
-	private function delete_response( int $review_id ): void {
+	private function delete_response( int $review_id ): bool {
 		$option_name = (string) get_post_meta( $review_id, '_previewshare_submission_option', true );
-		wp_delete_post( $review_id, true );
+		if ( ! wp_delete_post( $review_id, true ) ) {
+			return false;
+		}
 		if ( 0 === strpos( $option_name, 'previewshare_review_request_' ) ) {
 			delete_option( $option_name );
 		}
+		return true;
 	}
 }

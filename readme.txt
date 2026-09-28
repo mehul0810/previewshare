@@ -143,6 +143,7 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 * Added browser lifecycle coverage for secure preview access, expiration, revocation, and published-content behavior.
 * Added permission-checked WordPress Abilities for generating, listing, and revoking preview links on WordPress 6.9 and newer.
 * Added optional reviewer approvals, change requests, and comments per preview link, with editor history, stale-approval status, and 90-day feedback retention.
+* Continued bounded 90-day cleanup across large reviewer-response backlogs and reported privacy-erasure failures without retry loops.
 
 = 1.0.2 =
 * Validated preview-link editor and admin workflows with WordPress 7.1.

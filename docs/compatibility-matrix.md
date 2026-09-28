@@ -80,9 +80,9 @@ candidate outside approved proof channels.
 - PreviewShare cannot guarantee rendering correctness for every page builder,
   theme, cache, or third-party dynamic block. The site-level smoke protocol is
   the proof for those integrations.
-- No browser harness is part of the merged release branch yet. Issue #8 tracks
-  the Playwright fixture and must supply proof before relying on it for release
-  readiness.
+- The repository includes an owned `wp-env` and Playwright browser harness. Run
+  it with `npm run test:e2e`; it supplies isolated smoke proof, while the site-
+  level protocol above remains necessary for theme and integration coverage.
 - The administrative global link inventory uses page/total pagination. Large
   inventories need a separately scoped cursor or data-access redesign.
 
