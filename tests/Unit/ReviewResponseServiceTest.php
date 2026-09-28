@@ -277,7 +277,7 @@ class ReviewResponseServiceTest extends TestCase {
 		self::assertSame( 1, $queries );
 	}
 
-	public function test_privacy_eraser_reports_failed_deletion_as_retained_and_incomplete(): void {
+	public function test_privacy_eraser_reports_failed_deletion_on_short_page_without_retrying(): void {
 		Functions\when( 'sanitize_email' )->returnArg( 1 );
 		Functions\when( 'get_posts' )->alias(
 			static function ( array $args ): array {
@@ -296,6 +296,66 @@ class ReviewResponseServiceTest extends TestCase {
 		self::assertFalse( $result['items_removed'] );
 		self::assertTrue( $result['items_retained'] );
 		self::assertSame( [ 'Some PreviewShare responses could not be removed. Please try again.' ], $result['messages'] );
+		self::assertTrue( $result['done'] );
+	}
+
+	public function test_privacy_eraser_stops_when_a_full_page_makes_no_progress(): void {
+		Functions\when( 'sanitize_email' )->returnArg( 1 );
+		Functions\when( 'get_posts' )->alias(
+			static function (): array {
+				return array_map(
+					static function ( int $id ): \WP_Post {
+						return new \WP_Post( [ 'ID' => $id ] );
+					},
+					range( 1, 100 )
+				);
+			}
+		);
+		Functions\when( 'get_post_meta' )->justReturn( 'previewshare_review_request_key' );
+		Functions\expect( 'wp_delete_post' )->times( 100 )->andReturn( false );
+		Functions\expect( 'delete_option' )->never();
+
+		$result = ( new ReviewResponseService() )->erase_by_email( 'reviewer@example.test' );
+
+		self::assertFalse( $result['items_removed'] );
+		self::assertTrue( $result['items_retained'] );
+		self::assertTrue( $result['done'] );
+	}
+
+	public function test_privacy_eraser_continues_a_full_page_when_deletion_makes_progress(): void {
+		$deleted_ids = [];
+		Functions\when( 'sanitize_email' )->returnArg( 1 );
+		Functions\when( 'get_posts' )->alias(
+			static function (): array {
+				return array_map(
+					static function ( int $id ): \WP_Post {
+						return new \WP_Post( [ 'ID' => $id ] );
+					},
+					range( 1, 100 )
+				);
+			}
+		);
+		Functions\when( 'get_post_meta' )->alias(
+			static function ( int $id ): string {
+				return 'previewshare_review_request_' . $id;
+			}
+		);
+		Functions\when( 'wp_delete_post' )->alias(
+			static function ( int $id ) use ( &$deleted_ids ) {
+				if ( 1 === $id ) {
+					$deleted_ids[] = $id;
+					return true;
+				}
+				return false;
+			}
+		);
+		Functions\expect( 'delete_option' )->once()->with( 'previewshare_review_request_1' )->andReturn( true );
+
+		$result = ( new ReviewResponseService() )->erase_by_email( 'reviewer@example.test' );
+
+		self::assertSame( [ 1 ], $deleted_ids );
+		self::assertTrue( $result['items_removed'] );
+		self::assertTrue( $result['items_retained'] );
 		self::assertFalse( $result['done'] );
 	}
 }

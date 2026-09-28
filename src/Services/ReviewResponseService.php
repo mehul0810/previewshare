@@ -492,7 +492,7 @@ final class ReviewResponseService {
 			'items_removed'  => $items_removed,
 			'items_retained' => $items_retained,
 			'messages'       => $items_retained ? [ __( 'Some PreviewShare responses could not be removed. Please try again.', 'previewshare' ) ] : [],
-			'done'           => count( $posts ) < 100 && ! $items_retained,
+			'done'           => count( $posts ) < 100 || ! $items_removed,
 		];
 	}
 
