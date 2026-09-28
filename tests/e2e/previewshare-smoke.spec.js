@@ -499,6 +499,8 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		anonymous.getByText( postContent, { exact: true } )
 	).toBeVisible();
+	await expect( anonymous.locator( '#previewshare-review-form' ) ).toHaveCount( 0 );
+	await expect( anonymous.locator( '#commentform, #respond form' ) ).toHaveCount( 0 );
 
 	const inventoryResponse = page.waitForResponse(
 		( responseCandidate ) =>
@@ -777,6 +779,12 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		status: 'publish',
 	} );
 	createdPostIds.add( publishedPost.id );
+	runWpCli( FIXTURE_WP_CLI, [
+		'post',
+		'update',
+		String( publishedPost.id ),
+		'--comment_status=open',
+	] );
 	const publishedPostResponse = await anonymous.goto(
 		`/?p=${ publishedPost.id }`
 	);
@@ -784,6 +792,7 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		anonymous.getByText( publishedPostContent, { exact: true } )
 	).toBeVisible();
+	await expect( anonymous.locator( '#commentform' ) ).toHaveCount( 1 );
 
 	await anonymousContext.close();
 } );
@@ -834,6 +843,13 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	expect( publicResponse.status() ).toBe( 200 );
 	const form = anonymous.locator( '#previewshare-review-form' );
 	await expect( form ).toBeVisible();
+	await expect( form ).toHaveCount( 1 );
+	await expect( anonymous.locator( '#commentform, #respond form' ) ).toHaveCount( 0 );
+	await expect(
+		anonymous.locator(
+			'.entry-content #previewshare-review, .wp-block-post-content #previewshare-review'
+		)
+	).toHaveCount( 1 );
 	await expect( form.getByRole( 'textbox', { name: 'Name' } ) ).toHaveAttribute( 'required', '' );
 	await expect( form.locator( '[name="content_snapshot"]' ) ).toHaveValue( /^[a-f0-9]{64}\.[a-f0-9]{64}$/ );
 	await anonymous.screenshot( {
