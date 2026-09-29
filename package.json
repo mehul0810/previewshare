@@ -78,6 +78,7 @@
     "postcss-loader": "^8.2.1",
     "postcss-nested": "^7.0.2",
     "postcss-preset-env": "^9.5.4",
+    "remove-accents": "^0.5.0",
     "style-loader": "^3.3.4",
     "wp-pot": "^1.10.2"
   }
