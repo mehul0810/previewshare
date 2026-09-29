@@ -105,6 +105,12 @@ cp "${ZIP_PATH}" "${PACKAGE_DIR}/previewshare.zip"
 export WP_ENV_HOME="${E2E_DIR}/wp-env-home"
 WP_ENV_START_ATTEMPTED=1
 wp-env start
+ACTUAL_WP_VERSION="$(wp-env run cli wp core version | grep -E '^[0-9]+\.[0-9]+(\.[0-9]+)?$')"
+printf 'Installed WordPress core version: %s\n' "${ACTUAL_WP_VERSION}"
+if [ -n "${WP_ENV_CORE:-}" ] && [ "${ACTUAL_WP_VERSION}" != "${WP_ENV_CORE##*#}" ]; then
+	echo "WordPress fixture version does not match WP_ENV_CORE: ${WP_ENV_CORE}" >&2
+	exit 1
+fi
 wp-env run cli wp plugin install /var/www/html/wp-content/uploads/previewshare-e2e/previewshare.zip
 wp-env run cli wp plugin activate previewshare
 
