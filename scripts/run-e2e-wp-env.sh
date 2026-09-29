@@ -3,31 +3,68 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+	echo "PreviewShare package browser proof is CI-only; refusing to create a local fixture." >&2
+	exit 1
+fi
+
 E2E_DIR="$(mktemp -d "${TMPDIR:-/tmp}/previewshare-e2e.XXXXXX")"
 PACKAGE_DIR="${ROOT_DIR}/artifacts/e2e-package"
 PACKAGE_DIR_CREATED=0
 ZIP_PATH="${ROOT_DIR}/previewshare.zip"
 ZIP_CREATED=0
 WP_ENV_START_ATTEMPTED=0
-PRESERVE_FIXTURE=0
 
 cleanup() {
+	local exit_status=$?
+	local cleanup_failed=0
+	local stop_succeeded=1
+
+	trap - EXIT
 	if [ "${WP_ENV_START_ATTEMPTED}" -eq 1 ]; then
-		if ! wp-env cleanup --force; then
-			echo "Could not clean the owned wp-env fixture; preserving its package and state." >&2
-			PRESERVE_FIXTURE=1
+		if ! wp-env stop; then
+			echo "Could not stop the owned wp-env fixture; preserving its host package files." >&2
+			stop_succeeded=0
+			cleanup_failed=1
 		fi
+		echo "Leaving ${WP_ENV_HOME} for ephemeral GitHub runner teardown; no wp-env cleanup, destroy, or host permission changes." >&2
 	fi
-	if [ "${PRESERVE_FIXTURE}" -eq 0 ]; then
+	if [ "${stop_succeeded}" -eq 1 ]; then
 		if [ "${ZIP_CREATED}" -eq 1 ]; then
-			rm -f "${ZIP_PATH}"
+			if [ -L "${ZIP_PATH}" ]; then
+				echo "Refusing to remove symlinked plugin ZIP: ${ZIP_PATH}" >&2
+				cleanup_failed=1
+			elif [ -e "${ZIP_PATH}" ] && ! rm -f "${ZIP_PATH}"; then
+				echo "Could not remove task-created plugin ZIP: ${ZIP_PATH}" >&2
+				cleanup_failed=1
+			fi
 		fi
 		if [ "${PACKAGE_DIR_CREATED}" -eq 1 ]; then
-			rm -f "${PACKAGE_DIR}/previewshare.zip"
-			rmdir "${PACKAGE_DIR}"
+			if [ -L "${PACKAGE_DIR}" ] || [ ! -d "${PACKAGE_DIR}" ]; then
+				echo "Refusing to remove unexpected package path: ${PACKAGE_DIR}" >&2
+				cleanup_failed=1
+			elif { [ -e "${PACKAGE_DIR}/previewshare.zip" ] || [ -L "${PACKAGE_DIR}/previewshare.zip" ]; } && [ -L "${PACKAGE_DIR}/previewshare.zip" ]; then
+				echo "Refusing to remove symlinked package ZIP: ${PACKAGE_DIR}/previewshare.zip" >&2
+				cleanup_failed=1
+			elif { [ -e "${PACKAGE_DIR}/previewshare.zip" ] || [ -L "${PACKAGE_DIR}/previewshare.zip" ]; } && ! rm -f "${PACKAGE_DIR}/previewshare.zip"; then
+				echo "Could not remove task-created package ZIP: ${PACKAGE_DIR}/previewshare.zip" >&2
+				cleanup_failed=1
+			elif ! rmdir "${PACKAGE_DIR}"; then
+				echo "Could not remove task-created package directory: ${PACKAGE_DIR}" >&2
+				cleanup_failed=1
+			fi
 		fi
-		rm -rf "${E2E_DIR}"
 	fi
+	if [ "${WP_ENV_START_ATTEMPTED}" -eq 0 ]; then
+		if ! rm -rf "${E2E_DIR}"; then
+			echo "Could not remove task-created temp directory: ${E2E_DIR}" >&2
+			cleanup_failed=1
+		fi
+	fi
+	if [ "${cleanup_failed}" -eq 1 ] && [ "${exit_status}" -eq 0 ]; then
+		exit_status=1
+	fi
+	exit "${exit_status}"
 }
 
 trap cleanup EXIT
