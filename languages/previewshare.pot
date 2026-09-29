@@ -1050,11 +1050,21 @@ msgstr ""
 msgid "Search by content or label"
 msgstr ""
 
-#: assets/src/js/settings.js:1470
-msgid "All statuses"
+#. translators: 1: Sort field. 2: Sort direction.
+#: assets/src/js/settings.js:1617
+#, js-format
+msgid "Preview link inventory, sorted by %1$s %2$s"
 msgstr ""
 
-#: assets/src/js/settings.js:1510
+#: assets/src/js/settings.js:1623
+msgid "ascending"
+msgstr ""
+
+#: assets/src/js/settings.js:1627
+msgid "descending"
+msgstr ""
+
+#: assets/src/js/settings.js:1632
 msgid "Preview link inventory"
 msgstr ""
 
@@ -1090,8 +1100,10 @@ msgstr ""
 #. translators: %d: Number of links.
 #: assets/src/js/settings.js:1880
 #, js-format
-msgid "%d links in this site inventory."
-msgstr ""
+msgid "%d link in this site inventory."
+msgid_plural "%d links in this site inventory."
+msgstr[0] ""
+msgstr[1] ""
 
 #. translators: %d: Number of loaded expiring links.
 #: assets/src/js/settings.js:1905

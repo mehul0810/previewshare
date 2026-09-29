@@ -27,6 +27,13 @@ final class ReviewForm {
 	private $storage;
 
 	/**
+	 * Whether the reviewer form has been printed for this request.
+	 *
+	 * @var bool
+	 */
+	private $rendered = false;
+
+	/**
 	 * Initialize the review form hooks.
 	 *
 	 * @param PostMetaStorage $storage Preview-link storage.
@@ -34,9 +41,78 @@ final class ReviewForm {
 	public function __construct( PostMetaStorage $storage ) {
 		$this->storage = $storage;
 		add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_assets' ] );
-		// Render before WordPress prints footer scripts (priority 20), so the
-		// frontend bundle can bind to the form as soon as it executes.
+		add_filter( 'comments_open', [ $this, 'close_native_comments' ], 10, 2 );
+		add_filter( 'pings_open', [ $this, 'close_native_comments' ], 10, 2 );
+		add_filter( 'comments_template', [ $this, 'hide_native_comments_template' ] );
+		add_filter( 'render_block', [ $this, 'hide_native_comments_blocks' ], 10, 3 );
+		add_filter( 'the_content', [ $this, 'append_to_content' ], 99 );
+		add_action( 'previewshare_review_comments_slot', [ $this, 'render' ] );
+		// Fallback for themes that omit the_content(); runs before footer scripts.
 		add_action( 'wp_footer', [ $this, 'render' ], 10 );
+	}
+
+	/**
+	 * Disable WordPress comment and ping submission on the shared draft only.
+	 *
+	 * @param bool $open Whether submissions are otherwise open.
+	 * @param int  $post_id Post being checked.
+	 * @return bool
+	 */
+	public function close_native_comments( bool $open, int $post_id ): bool {
+		$context = $this->current_link( false );
+
+		return $context && (int) $context['post_id'] === $post_id ? false : $open;
+	}
+
+	/**
+	 * Remove the theme comment area from the shared draft preview.
+	 *
+	 * @param string $template Theme comments template path.
+	 * @return string
+	 */
+	public function hide_native_comments_template( string $template ): string {
+		$context = $this->current_link( false );
+		return $context && (int) $context['post_id'] === get_the_ID() ? __DIR__ . '/preview-comments.php' : $template;
+	}
+
+	/**
+	 * Remove native comment blocks from the shared draft preview only.
+	 *
+	 * @param string               $block_content Rendered block output.
+	 * @param array<string, mixed> $block Parsed block data.
+	 * @param object|null          $instance Block instance with inherited context, unavailable on WordPress 5.8.
+	 * @return string
+	 */
+	public function hide_native_comments_blocks( string $block_content, array $block, ?object $instance = null ): string {
+		if ( ! in_array( $block['blockName'] ?? '', [ 'core/comments', 'core/comment-template' ], true ) ) {
+			return $block_content;
+		}
+
+		$context = $this->current_link( false );
+		$post_id = $instance && isset( $instance->context['postId'] ) ? (int) $instance->context['postId'] : (int) get_the_ID();
+
+		return $context && (int) $context['post_id'] === $post_id ? '' : $block_content;
+	}
+
+	/**
+	 * Place the reviewer form immediately after the previewed post content.
+	 *
+	 * @param string $content Filtered post content.
+	 * @return string
+	 */
+	public function append_to_content( string $content ): string {
+		if ( $this->rendered || ! is_singular() || ! is_main_query() || ! in_the_loop() ) {
+			return $content;
+		}
+
+		$context = $this->current_link();
+		if ( ! $context || (int) $context['post_id'] !== get_the_ID() ) {
+			return $content;
+		}
+
+		ob_start();
+		$this->render();
+		return $content . ob_get_clean();
 	}
 
 	/**
@@ -78,12 +154,17 @@ final class ReviewForm {
 	 * @return void
 	 */
 	public function render(): void {
+		if ( $this->rendered ) {
+			return;
+		}
+
 		$context = $this->current_link();
 		if ( ! $context ) {
 			return;
 		}
 
-		$required = ! empty( $context['link']['identity_required'] );
+		$this->rendered = true;
+		$required       = ! empty( $context['link']['identity_required'] );
 		?>
 		<section id="previewshare-review" class="previewshare-review" aria-labelledby="previewshare-review-title">
 			<div class="previewshare-review__inner">
@@ -125,16 +206,17 @@ final class ReviewForm {
 	/**
 	 * Resolve the current opted-in preview without exposing response data.
 	 *
-	 * @return array{token:string,link:array<string,mixed>,content_snapshot:string,request_id:string}|null
+	 * @param bool $responses_required Whether this link must accept responses.
+	 * @return array{token:string,post_id:int,link:array<string,mixed>,content_snapshot?:string,request_id?:string}|null
 	 */
-	private function current_link(): ?array {
+	private function current_link( bool $responses_required = true ): ?array {
 		$token = (string) get_query_var( 'previewshare_token' );
 		if ( '' === $token ) {
 			return null;
 		}
 
 		$context = $this->storage->get_link_by_token( $token );
-		if ( ! $context || empty( $context['link']['responses_enabled'] ) ) {
+		if ( ! $context || ( $responses_required && empty( $context['link']['responses_enabled'] ) ) ) {
 			return null;
 		}
 
@@ -146,15 +228,22 @@ final class ReviewForm {
 			|| ! \previewshare_is_supported_post_type( (string) $post->post_type )
 			|| ! \previewshare_is_previewable_post_status( (string) $post->post_status )
 			|| 'publish' === $post->post_status
+			|| ! is_singular()
+			|| get_queried_object_id() !== $post_id
 		) {
 			return null;
 		}
 
-		return [
+		$result = [
 			'token'            => $token,
+			'post_id'          => $post_id,
 			'link'             => $context['link'],
-			'content_snapshot' => ReviewVersion::issue_snapshot( $post, $context['hash'] ),
-			'request_id'       => wp_generate_uuid4(),
 		];
+		if ( $responses_required ) {
+			$result['content_snapshot'] = ReviewVersion::issue_snapshot( $post, $context['hash'] );
+			$result['request_id']       = wp_generate_uuid4();
+		}
+
+		return $result;
 	}
 }

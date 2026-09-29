@@ -9,6 +9,9 @@ const postTitle = `PreviewShare e2e draft ${ Date.now() }`;
 const postContent = 'PreviewShare e2e draft content must stay unpublished.';
 const publishedPostContent = 'Published content remains publicly available.';
 const unavailablePreviewMessage = 'This preview link can no longer be opened.';
+const runBlockThemePreviewRegression = /#7\.1(?:\.|$)/.test(
+	process.env.WP_ENV_CORE || ''
+);
 const previewShareRoutes = [
 	'/previewshare/v1/v2/generate',
 	'/previewshare/v1/settings',
@@ -59,6 +62,55 @@ async function expectPreviewUrlVisible( page, url ) {
 	).toBeVisible();
 }
 
+async function expectCellTextToFit( cells ) {
+	const overflowingText = await cells.evaluateAll( ( elements ) => {
+		return elements.flatMap( ( cell ) => {
+			const bounds = cell.getBoundingClientRect();
+			const walker = document.createTreeWalker(
+				cell,
+				NodeFilter.SHOW_TEXT
+			);
+			const failures = [];
+			let node;
+			while ( ( node = walker.nextNode() ) ) {
+				if ( ! node.textContent.trim() ) {
+					continue;
+				}
+				const parent = node.parentElement;
+				if (
+					parent.closest(
+						'.screen-reader-text, .components-visually-hidden'
+					)
+				) {
+					continue;
+				}
+				const range = document.createRange();
+				range.selectNodeContents( node );
+				for ( const rect of range.getClientRects() ) {
+					if (
+						rect.width > 1 &&
+						rect.height > 1 &&
+						( rect.left < bounds.left - 1 ||
+							rect.right > bounds.right + 1 )
+					) {
+						failures.push( {
+							cell: cell.textContent.trim(),
+							text: node.textContent.trim(),
+							cellLeft: bounds.left,
+							cellRight: bounds.right,
+							textLeft: rect.left,
+							textRight: rect.right,
+						} );
+						break;
+					}
+				}
+			}
+			return failures;
+		} );
+	} );
+	expect( overflowingText ).toEqual( [] );
+}
+
 function runWpCli( command, args ) {
 	const [ executable, ...commandArgs ] = command
 		.trim()
@@ -68,6 +120,17 @@ function runWpCli( command, args ) {
 	execFileSync( executable, [ ...commandArgs, ...args ], {
 		stdio: 'inherit',
 	} );
+}
+
+function runWpCliForOutput( command, args ) {
+	const [ executable, ...commandArgs ] = command
+		.trim()
+		.split( /\s+/ )
+		.filter( Boolean );
+
+	return execFileSync( executable, [ ...commandArgs, ...args ], {
+		encoding: 'utf8',
+	}).trim();
 }
 
 function cleanupReviewChildren( parentId ) {
@@ -211,6 +274,7 @@ test.beforeEach( async ( { requestUtils } ) => {
 } );
 
 const createdPostIds = new Set();
+let originalTheme;
 
 test.afterEach( () => {
 	for ( const postId of createdPostIds ) {
@@ -224,6 +288,10 @@ test.afterEach( () => {
 	}
 
 	createdPostIds.clear();
+	if ( originalTheme ) {
+		runWpCli( FIXTURE_WP_CLI, [ 'theme', 'activate', originalTheme ] );
+		originalTheme = undefined;
+	}
 } );
 
 test( 'preview link admin, editor, public, invalid, expired, revoked, and post boundaries smoke test', async ( {
@@ -233,6 +301,14 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	browser,
 	baseURL,
 }, testInfo ) => {
+	if ( runBlockThemePreviewRegression ) {
+		originalTheme = runWpCliForOutput( FIXTURE_WP_CLI, [
+			'option',
+			'get',
+			'stylesheet',
+		] );
+		runWpCli( FIXTURE_WP_CLI, [ 'theme', 'activate', 'twentytwentyfive' ] );
+	}
 	const post = await requestUtils.createPost( {
 		title: postTitle,
 		content: postContent,
@@ -243,6 +319,17 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		},
 	} );
 	createdPostIds.add( post.id );
+	const nativeComment = `Existing native comment ${ Date.now() }`;
+	if ( runBlockThemePreviewRegression ) {
+		runWpCli( FIXTURE_WP_CLI, [
+			'comment',
+			'create',
+			`--comment_post_ID=${ post.id }`,
+			`--comment_content=${ nativeComment }`,
+			'--comment_author=PreviewShare E2E',
+			'--comment_approved=1',
+		] );
+	}
 
 	const browserDiagnostics = {
 		consoleErrors: [],
@@ -505,7 +592,10 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	const generated = await response.json();
 	expect( generated.url ).toContain( '/preview/' );
 	await expectPreviewUrlVisible( page, generated.url );
-	const previewUrl = resolvePreviewUrlForTestServer( generated.url, baseURL );
+	const previewUrl = resolvePreviewUrlForTestServer(
+		generated.url,
+		baseURL
+	);
 	expect( new URL( previewUrl ).pathname ).toMatch(
 		/^\/preview\/[a-zA-Z0-9]+\/?$/
 	);
@@ -529,6 +619,11 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		anonymous.getByText( postContent, { exact: true } )
 	).toBeVisible();
+	await expect( anonymous.locator( '#previewshare-review-form' ) ).toHaveCount( 0 );
+	await expect( anonymous.locator( '#commentform, #respond form' ) ).toHaveCount( 0 );
+	if ( runBlockThemePreviewRegression ) {
+		await expect( anonymous.getByText( nativeComment, { exact: true } ) ).toHaveCount( 0 );
+	}
 
 	const inventoryResponse = page.waitForResponse(
 		( responseCandidate ) =>
@@ -552,12 +647,11 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	const previousExpiry = generatedLink.expires_at;
 	await page.getByRole( 'tab', { name: 'Preview links' } ).click();
 	const modernInventory = page.locator( '.previewshare-dataviews' );
-	const legacyInventory = page.locator( '.previewshare-legacy-inventory' );
-	const availableInventory = page.locator(
-		'.previewshare-dataviews, .previewshare-legacy-inventory'
+	const legacyInventory = page.locator(
+		'.previewshare-tab-content > .previewshare-legacy-inventory'
 	);
-	await expect( availableInventory ).toBeVisible();
 	const usingLegacyInventory = await legacyInventory.isVisible();
+	expect( usingLegacyInventory ).toBe( true );
 	const inventoryTable = usingLegacyInventory
 		? legacyInventory
 		: modernInventory;
@@ -569,6 +663,28 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		exact: true,
 	} );
 	await expect( inventoryTable ).toBeVisible();
+	const desktopCard = expiringStatus.locator( 'xpath=ancestor::tr[1]' );
+	for ( const label of [
+		'Content',
+		'Label',
+		'Status',
+		'Views',
+		'Expires',
+		'Last viewed',
+		'Actions',
+	] ) {
+		const cell = desktopCard.locator( `td[data-label="${ label }"]` );
+		await expect( cell ).toBeVisible();
+		await expect( cell ).not.toBeEmpty();
+	}
+	await expectCellTextToFit( desktopCard.locator( 'td' ) );
+	const desktopCardWidths = await desktopCard.evaluate( ( card ) => ( {
+		client: card.clientWidth,
+		scroll: card.scrollWidth,
+	} ) );
+	expect( desktopCardWidths.scroll ).toBeLessThanOrEqual(
+		desktopCardWidths.client
+	);
 	const desktopPageWidth = await page.evaluate(
 		() => document.documentElement.scrollWidth
 	);
@@ -576,113 +692,94 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		page.getByRole( 'button', { name: 'Extend', exact: true } )
 	).toBeVisible();
-	if ( usingLegacyInventory ) {
-		const linkSearch = page.getByRole( 'textbox', {
-			name: 'Search preview links',
+	const linkSearch = page.getByRole( 'textbox', {
+		name: 'Search preview links',
+	} );
+	await linkSearch.fill( String( generatedLink.id ) );
+	await expect( extendButton ).toHaveCount( 0 );
+	await linkSearch.fill( 'E2E smoke' );
+	await expect( extendButton ).toBeVisible();
+	await linkSearch.fill( 'no matching preview link' );
+	await expect( extendButton ).toHaveCount( 0 );
+	await linkSearch.fill( 'E2E smoke' );
+	const expiredFilter = page.getByRole( 'checkbox', { name: 'Expired' } );
+	await expiredFilter.check();
+	await expect( extendButton ).toHaveCount( 0 );
+	await expiredFilter.uncheck();
+	const expiringFilter = page.getByRole( 'checkbox', {
+		name: 'Expiring soon',
+	} );
+	await expiringFilter.check();
+	await expect( extendButton ).toBeVisible();
+	await page.setViewportSize( { width: 1600, height: 900 } );
+	const hasModernRuntime = await page.evaluate(
+		() => typeof window.wp.element.useInsertionEffect === 'function'
+	);
+	if ( hasModernRuntime ) {
+		await expect( modernInventory ).toBeVisible();
+		await expect(
+			modernInventory.getByText( postTitle, { exact: true } )
+		).toBeVisible();
+		await expectCellTextToFit(
+			modernInventory.locator( 'thead th, tbody tr:first-child td' )
+		);
+		await page.screenshot( {
+			path: testInfo.outputPath( 'previewshare-preview-links-wide.png' ),
+			fullPage: true,
 		} );
-		await linkSearch.fill( 'E2E smoke' );
-		await expect( extendButton ).toBeVisible();
-		await linkSearch.fill( 'no matching preview link' );
-		await expect( extendButton ).toHaveCount( 0 );
-		await linkSearch.fill( '' );
-		const statusFilter = page.getByRole( 'combobox', {
-			name: 'Status',
-		} );
-		await statusFilter.selectOption( 'expired' );
-		await expect( extendButton ).toHaveCount( 0 );
-		await statusFilter.selectOption( 'active' );
-		await expect( extendButton ).toBeVisible();
 	}
+	await page.setViewportSize( { width: 1280, height: 900 } );
+	await expect( legacyInventory ).toBeVisible();
+	await expect(
+		legacyInventory.getByRole( 'checkbox', { name: 'Expiring soon' } )
+	).toBeChecked();
 	await page.screenshot( {
 		path: testInfo.outputPath( 'previewshare-preview-links-expiring.png' ),
 		fullPage: true,
 	} );
 	await page.setViewportSize( { width: 390, height: 844 } );
+	const mobileInventory = legacyInventory;
+	await expect( mobileInventory ).toBeVisible();
+	const mobileStatus = mobileInventory.locator(
+		'.previewshare-status.is-expiring_soon'
+	);
+	const mobileCard = mobileStatus.locator( 'xpath=ancestor::tr[1]' );
+	for ( const label of [
+		'Content',
+		'Label',
+		'Status',
+		'Views',
+		'Expires',
+		'Last viewed',
+		'Actions',
+	] ) {
+		const cell = mobileCard.locator( `td[data-label="${ label }"]` );
+		await expect( cell ).toBeVisible();
+		await expect( cell ).not.toBeEmpty();
+	}
+	await expect( mobileCard ).toContainText( generatedLink.post_title );
+	await expect( mobileCard ).toContainText( generatedLink.label );
+	const mobileExtendButton = mobileCard.getByRole( 'button', {
+		name: 'Extend',
+		exact: true,
+	} );
+	await mobileExtendButton.focus();
+	await expect( mobileExtendButton ).toBeFocused();
+	await expect( mobileExtendButton ).toBeInViewport();
 	const mobilePageWidth = await page.evaluate(
 		() => document.documentElement.scrollWidth
 	);
 	expect( mobilePageWidth ).toBeLessThanOrEqual( 390 );
-	if ( usingLegacyInventory ) {
-		const statusCell = expiringStatus.locator(
-			'xpath=ancestor::td[1]'
-		);
-		const statusCard = statusCell.locator(
-			'xpath=ancestor::tr[1]'
-		);
-		const cardScrollMetrics = await statusCard.evaluate( ( card ) => ( {
-			clientWidth: card.clientWidth,
-			scrollWidth: card.scrollWidth,
-		} ) );
+	const cardScrollMetrics = await mobileCard.evaluate( ( card ) => ( {
+		clientWidth: card.clientWidth,
+		scrollWidth: card.scrollWidth,
+	} ) );
+	expect( cardScrollMetrics.scrollWidth ).toBeLessThanOrEqual(
+		cardScrollMetrics.clientWidth
+	);
+	await expect( mobileStatus ).toHaveText( 'Expiring soon' );
 
-		expect( cardScrollMetrics.scrollWidth ).toBeLessThanOrEqual(
-			cardScrollMetrics.clientWidth
-		);
-		const cellExtendButton = statusCell.getByRole( 'button', {
-			name: 'Extend',
-			exact: true,
-		} );
-		await expect( cellExtendButton ).toBeVisible();
-	} else {
-		const inventoryViewport = inventoryTable.locator(
-			'.dataviews-layout__container'
-		);
-		const inventoryScrollMetrics = await inventoryViewport.evaluate(
-			( element ) => ( {
-				clientWidth: element.clientWidth,
-				scrollWidth: element.scrollWidth,
-			} )
-		);
-		expect( inventoryScrollMetrics.scrollWidth ).toBeGreaterThan(
-			inventoryScrollMetrics.clientWidth
-		);
-		const mobileScrollLeft = await expiringStatus.evaluate( ( status ) => {
-			const viewport = status.closest( '.dataviews-layout__container' );
-			const viewportBounds = viewport.getBoundingClientRect();
-			const statusBounds = status.getBoundingClientRect();
-			const button = viewport.querySelector(
-				'.previewshare-link-status-cell button'
-			);
-			const actionsHeader = viewport.querySelector(
-				'th.dataviews-view-table__actions-column'
-			);
-			const safeLeft = viewportBounds.left + 16;
-
-			viewport.scrollLeft += statusBounds.left - safeLeft;
-			const visibleStatusBounds = status.getBoundingClientRect();
-			const visibleButtonBounds = button.getBoundingClientRect();
-			const visibleViewportBounds = viewport.getBoundingClientRect();
-			const actionsWidth = actionsHeader.getBoundingClientRect().width;
-
-			return {
-				scrollLeft: viewport.scrollLeft,
-				statusLeft: visibleStatusBounds.left,
-				statusRight: visibleStatusBounds.right,
-				buttonLeft: visibleButtonBounds.left,
-				buttonRight: visibleButtonBounds.right,
-				visibleLeft: visibleViewportBounds.left,
-				visibleRight: visibleViewportBounds.right - actionsWidth,
-			};
-		} );
-		expect( mobileScrollLeft.scrollLeft ).toBeGreaterThan( 0 );
-		expect( mobileScrollLeft.buttonLeft ).toBeGreaterThanOrEqual(
-			mobileScrollLeft.visibleLeft
-		);
-		expect( mobileScrollLeft.statusLeft ).toBeGreaterThanOrEqual(
-			mobileScrollLeft.visibleLeft
-		);
-		expect( mobileScrollLeft.statusRight ).toBeLessThanOrEqual(
-			mobileScrollLeft.visibleRight
-		);
-		expect( mobileScrollLeft.buttonRight ).toBeLessThanOrEqual(
-			mobileScrollLeft.visibleRight
-		);
-	}
-
-	await expect( expiringStatus ).toBeVisible();
-	await expect( expiringStatus ).toHaveText( 'Expiring soon' );
-	await expect( extendButton ).toBeInViewport();
-
-	const expiringStatusIsPainted = await expiringStatus.evaluate( ( status ) => {
+	const expiringStatusIsPainted = await mobileStatus.evaluate( ( status ) => {
 		const bounds = status.getBoundingClientRect();
 		const visibleElement = document.elementFromPoint(
 			bounds.left + bounds.width / 2,
@@ -692,17 +789,21 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		return status === visibleElement || status.contains( visibleElement );
 	} );
 	expect( expiringStatusIsPainted ).toBe( true );
-	const extendButtonIsPainted = await extendButton.evaluate( ( button ) => {
-		const bounds = button.getBoundingClientRect();
-		const visibleElement = document.elementFromPoint(
-			bounds.left + bounds.width / 2,
-			bounds.top + bounds.height / 2
-		);
+	const extendButtonIsPainted = await mobileExtendButton.evaluate(
+		( button ) => {
+			const bounds = button.getBoundingClientRect();
+			const visibleElement = document.elementFromPoint(
+				bounds.left + bounds.width / 2,
+				bounds.top + bounds.height / 2
+			);
 
-		return button === visibleElement || button.contains( visibleElement );
-	} );
+			return (
+				button === visibleElement || button.contains( visibleElement )
+			);
+		}
+	);
 	expect( extendButtonIsPainted ).toBe( true );
-	const mobileExtendBounds = await extendButton.boundingBox();
+	const mobileExtendBounds = await mobileExtendButton.boundingBox();
 	expect( mobileExtendBounds ).not.toBeNull();
 	expect(
 		mobileExtendBounds.x + mobileExtendBounds.width
@@ -793,6 +894,11 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 			.last()
 	).toBeVisible();
 
+	await page.screenshot( {
+		path: testInfo.outputPath( 'previewshare-revoked-editor.png' ),
+		fullPage: true,
+	} );
+
 	const revokedPreviewResponse = await anonymous.goto(
 		regeneratedPreviewUrl
 	);
@@ -800,6 +906,10 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		anonymous.getByText( unavailablePreviewMessage )
 	).toBeVisible();
+	await anonymous.screenshot( {
+		path: testInfo.outputPath( 'previewshare-revoked-public-denial.png' ),
+		fullPage: true,
+	} );
 
 	const publishedPost = await requestUtils.createPost( {
 		title: `PreviewShare e2e published ${ Date.now() }`,
@@ -807,6 +917,21 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		status: 'publish',
 	} );
 	createdPostIds.add( publishedPost.id );
+	runWpCli( FIXTURE_WP_CLI, [
+		'post',
+		'update',
+		String( publishedPost.id ),
+		'--comment_status=open',
+	] );
+	const publishedComment = `Published native comment ${ Date.now() }`;
+	runWpCli( FIXTURE_WP_CLI, [
+		'comment',
+		'create',
+		`--comment_post_ID=${ publishedPost.id }`,
+		`--comment_content=${ publishedComment }`,
+		'--comment_author=PreviewShare E2E',
+		'--comment_approved=1',
+	] );
 	const publishedPostResponse = await anonymous.goto(
 		`/?p=${ publishedPost.id }`
 	);
@@ -814,6 +939,12 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		anonymous.getByText( publishedPostContent, { exact: true } )
 	).toBeVisible();
+	await expect( anonymous.locator( '#commentform' ) ).toHaveCount( 1 );
+	await expect( anonymous.getByText( publishedComment, { exact: true } ) ).toBeVisible();
+	await anonymous.screenshot( {
+		path: testInfo.outputPath( 'previewshare-published-comments.png' ),
+		fullPage: true,
+	} );
 
 	await anonymousContext.close();
 } );
@@ -826,12 +957,31 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	baseURL,
 }, testInfo ) => {
 	test.setTimeout( 180000 );
+	if ( runBlockThemePreviewRegression ) {
+		originalTheme = runWpCliForOutput( FIXTURE_WP_CLI, [
+			'option',
+			'get',
+			'stylesheet',
+		] );
+		runWpCli( FIXTURE_WP_CLI, [ 'theme', 'activate', 'twentytwentyfive' ] );
+	}
 	const post = await requestUtils.createPost( {
 		title: `PreviewShare review ${ Date.now() }`,
 		content: 'First review draft.',
 		status: 'draft',
 	} );
 	createdPostIds.add( post.id );
+	const nativeComment = `Existing reviewer-preview comment ${ Date.now() }`;
+	if ( runBlockThemePreviewRegression ) {
+		runWpCli( FIXTURE_WP_CLI, [
+			'comment',
+			'create',
+			`--comment_post_ID=${ post.id }`,
+			`--comment_content=${ nativeComment }`,
+			'--comment_author=PreviewShare E2E',
+			'--comment_approved=1',
+		] );
+	}
 
 	await visitEditor( admin, post.id );
 	await ensurePreviewSharePanelOpen( page );
@@ -850,10 +1000,7 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	] );
 	expect( generatedResponse.status() ).toBe( 200 );
 	const generated = await generatedResponse.json();
-	const previewUrl = resolvePreviewUrlForTestServer(
-		generated.url,
-		baseURL
-	);
+	const previewUrl = resolvePreviewUrlForTestServer( generated.url, baseURL );
 
 	const anonymousContext = await browser.newContext( {
 		baseURL,
@@ -864,6 +1011,28 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	expect( publicResponse.status() ).toBe( 200 );
 	const form = anonymous.locator( '#previewshare-review-form' );
 	await expect( form ).toBeVisible();
+	await expect( form ).toHaveCount( 1 );
+	await expect( anonymous.locator( '#commentform, #respond form' ) ).toHaveCount( 0 );
+	if ( runBlockThemePreviewRegression ) {
+		await expect( anonymous.getByText( nativeComment, { exact: true } ) ).toHaveCount( 0 );
+		const reviewFormFollowsContent = await anonymous.evaluate( () => {
+			const formElement = document.querySelector( '#previewshare-review-form' );
+			const content = formElement?.closest( '.wp-block-post-content' );
+			const contentParagraph = content?.querySelector( 'p' );
+
+			return Boolean(
+				contentParagraph &&
+				contentParagraph.compareDocumentPosition( formElement ) &
+					Node.DOCUMENT_POSITION_FOLLOWING
+			);
+		} );
+		expect( reviewFormFollowsContent ).toBe( true );
+	}
+	await expect(
+		anonymous.locator(
+			'.entry-content #previewshare-review, .wp-block-post-content #previewshare-review'
+		)
+	).toHaveCount( 1 );
 	await expect( form.getByRole( 'textbox', { name: 'Name' } ) ).toHaveAttribute( 'required', '' );
 	await expect( form.locator( '[name="content_snapshot"]' ) ).toHaveValue( /^[a-f0-9]{64}\.[a-f0-9]{64}$/ );
 	await anonymous.screenshot( {
@@ -963,6 +1132,9 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 		form.getByRole( 'button', { name: 'Send response' } ).click(),
 	] );
 	expect( changeResponse.status() ).toBe( 201 );
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Your response was received.'
+	);
 
 	await page.reload();
 	await ensurePreviewSharePanelOpen( page );
