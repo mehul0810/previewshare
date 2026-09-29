@@ -9,6 +9,9 @@ const postTitle = `PreviewShare e2e draft ${ Date.now() }`;
 const postContent = 'PreviewShare e2e draft content must stay unpublished.';
 const publishedPostContent = 'Published content remains publicly available.';
 const unavailablePreviewMessage = 'This preview link can no longer be opened.';
+const runBlockThemePreviewRegression = /#7\.1(?:\.|$)/.test(
+	process.env.WP_ENV_CORE || ''
+);
 const previewShareRoutes = [
 	'/previewshare/v1/v2/generate',
 	'/previewshare/v1/settings',
@@ -68,6 +71,17 @@ function runWpCli( command, args ) {
 	execFileSync( executable, [ ...commandArgs, ...args ], {
 		stdio: 'inherit',
 	} );
+}
+
+function runWpCliForOutput( command, args ) {
+	const [ executable, ...commandArgs ] = command
+		.trim()
+		.split( /\s+/ )
+		.filter( Boolean );
+
+	return execFileSync( executable, [ ...commandArgs, ...args ], {
+		encoding: 'utf8',
+	}).trim();
 }
 
 async function ensurePreviewSharePanelOpen( page ) {
@@ -182,6 +196,7 @@ test.beforeEach( async ( { requestUtils } ) => {
 } );
 
 const createdPostIds = new Set();
+let originalTheme;
 
 test.afterEach( () => {
 	for ( const postId of createdPostIds ) {
@@ -194,6 +209,10 @@ test.afterEach( () => {
 	}
 
 	createdPostIds.clear();
+	if ( originalTheme ) {
+		runWpCli( FIXTURE_WP_CLI, [ 'theme', 'activate', originalTheme ] );
+		originalTheme = undefined;
+	}
 } );
 
 test( 'preview link admin, editor, public, invalid, expired, revoked, and post boundaries smoke test', async ( {
@@ -203,6 +222,14 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	browser,
 	baseURL,
 }, testInfo ) => {
+	if ( runBlockThemePreviewRegression ) {
+		originalTheme = runWpCliForOutput( FIXTURE_WP_CLI, [
+			'option',
+			'get',
+			'stylesheet',
+		] );
+		runWpCli( FIXTURE_WP_CLI, [ 'theme', 'activate', 'twentytwentyfive' ] );
+	}
 	const post = await requestUtils.createPost( {
 		title: postTitle,
 		content: postContent,
@@ -213,6 +240,17 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		},
 	} );
 	createdPostIds.add( post.id );
+	const nativeComment = `Existing native comment ${ Date.now() }`;
+	if ( runBlockThemePreviewRegression ) {
+		runWpCli( FIXTURE_WP_CLI, [
+			'comment',
+			'create',
+			`--comment_post_ID=${ post.id }`,
+			`--comment_content=${ nativeComment }`,
+			'--comment_author=PreviewShare E2E',
+			'--comment_approved=1',
+		] );
+	}
 
 	const browserDiagnostics = {
 		consoleErrors: [],
@@ -499,6 +537,11 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		anonymous.getByText( postContent, { exact: true } )
 	).toBeVisible();
+	await expect( anonymous.locator( '#previewshare-review-form' ) ).toHaveCount( 0 );
+	await expect( anonymous.locator( '#commentform, #respond form' ) ).toHaveCount( 0 );
+	if ( runBlockThemePreviewRegression ) {
+		await expect( anonymous.getByText( nativeComment, { exact: true } ) ).toHaveCount( 0 );
+	}
 
 	const inventoryResponse = page.waitForResponse(
 		( responseCandidate ) =>
@@ -777,6 +820,21 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		status: 'publish',
 	} );
 	createdPostIds.add( publishedPost.id );
+	runWpCli( FIXTURE_WP_CLI, [
+		'post',
+		'update',
+		String( publishedPost.id ),
+		'--comment_status=open',
+	] );
+	const publishedComment = `Published native comment ${ Date.now() }`;
+	runWpCli( FIXTURE_WP_CLI, [
+		'comment',
+		'create',
+		`--comment_post_ID=${ publishedPost.id }`,
+		`--comment_content=${ publishedComment }`,
+		'--comment_author=PreviewShare E2E',
+		'--comment_approved=1',
+	] );
 	const publishedPostResponse = await anonymous.goto(
 		`/?p=${ publishedPost.id }`
 	);
@@ -784,6 +842,12 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		anonymous.getByText( publishedPostContent, { exact: true } )
 	).toBeVisible();
+	await expect( anonymous.locator( '#commentform' ) ).toHaveCount( 1 );
+	await expect( anonymous.getByText( publishedComment, { exact: true } ) ).toBeVisible();
+	await anonymous.screenshot( {
+		path: testInfo.outputPath( 'previewshare-published-comments.png' ),
+		fullPage: true,
+	} );
 
 	await anonymousContext.close();
 } );
@@ -796,12 +860,31 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	baseURL,
 }, testInfo ) => {
 	test.setTimeout( 180000 );
+	if ( runBlockThemePreviewRegression ) {
+		originalTheme = runWpCliForOutput( FIXTURE_WP_CLI, [
+			'option',
+			'get',
+			'stylesheet',
+		] );
+		runWpCli( FIXTURE_WP_CLI, [ 'theme', 'activate', 'twentytwentyfive' ] );
+	}
 	const post = await requestUtils.createPost( {
 		title: `PreviewShare review ${ Date.now() }`,
 		content: 'First review draft.',
 		status: 'draft',
 	} );
 	createdPostIds.add( post.id );
+	const nativeComment = `Existing reviewer-preview comment ${ Date.now() }`;
+	if ( runBlockThemePreviewRegression ) {
+		runWpCli( FIXTURE_WP_CLI, [
+			'comment',
+			'create',
+			`--comment_post_ID=${ post.id }`,
+			`--comment_content=${ nativeComment }`,
+			'--comment_author=PreviewShare E2E',
+			'--comment_approved=1',
+		] );
+	}
 
 	await visitEditor( admin, post.id );
 	await ensurePreviewSharePanelOpen( page );
@@ -834,6 +917,28 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	expect( publicResponse.status() ).toBe( 200 );
 	const form = anonymous.locator( '#previewshare-review-form' );
 	await expect( form ).toBeVisible();
+	await expect( form ).toHaveCount( 1 );
+	await expect( anonymous.locator( '#commentform, #respond form' ) ).toHaveCount( 0 );
+	if ( runBlockThemePreviewRegression ) {
+		await expect( anonymous.getByText( nativeComment, { exact: true } ) ).toHaveCount( 0 );
+		const reviewFormFollowsContent = await anonymous.evaluate( () => {
+			const formElement = document.querySelector( '#previewshare-review-form' );
+			const content = formElement?.closest( '.wp-block-post-content' );
+			const contentParagraph = content?.querySelector( 'p' );
+
+			return Boolean(
+				contentParagraph &&
+				contentParagraph.compareDocumentPosition( formElement ) &
+					Node.DOCUMENT_POSITION_FOLLOWING
+			);
+		} );
+		expect( reviewFormFollowsContent ).toBe( true );
+	}
+	await expect(
+		anonymous.locator(
+			'.entry-content #previewshare-review, .wp-block-post-content #previewshare-review'
+		)
+	).toHaveCount( 1 );
 	await expect( form.getByRole( 'textbox', { name: 'Name' } ) ).toHaveAttribute( 'required', '' );
 	await expect( form.locator( '[name="content_snapshot"]' ) ).toHaveValue( /^[a-f0-9]{64}\.[a-f0-9]{64}$/ );
 	await anonymous.screenshot( {
@@ -933,6 +1038,9 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 		form.getByRole( 'button', { name: 'Send response' } ).click(),
 	] );
 	expect( changeResponse.status() ).toBe( 201 );
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Your response was received.'
+	);
 
 	await page.reload();
 	await ensurePreviewSharePanelOpen( page );
