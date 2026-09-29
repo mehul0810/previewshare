@@ -27,6 +27,7 @@ on:
         options:
           - latest
           - '5.8.17'
+          - '7.1.2'
   push:
     branches:
       - main
