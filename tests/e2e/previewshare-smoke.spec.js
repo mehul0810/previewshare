@@ -955,7 +955,7 @@ test( 'anonymous reviewers can send comments by keyboard and expired links rejec
 	requestUtils,
 	browser,
 	baseURL,
-} ) => {
+}, testInfo ) => {
 	test.setTimeout( 180000 );
 	const post = await requestUtils.createPost( {
 		title: `PreviewShare anonymous comment ${ Date.now() }`,
@@ -984,6 +984,10 @@ test( 'anonymous reviewers can send comments by keyboard and expired links rejec
 	const anonymous = await anonymousContext.newPage();
 	const previewResponse = await anonymous.goto( previewUrl );
 	expect( previewResponse.status() ).toBe( 200 );
+	await anonymous.setViewportSize( { width: 320, height: 640 } );
+	expect(
+		await anonymous.evaluate( () => document.documentElement.scrollWidth )
+	).toBeLessThanOrEqual( 320 );
 	const form = anonymous.locator( '#previewshare-review-form' );
 	await expect(
 		form.getByRole( 'textbox', { name: 'Name' } )
@@ -1001,12 +1005,22 @@ test( 'anonymous reviewers can send comments by keyboard and expired links rejec
 	await anonymous.keyboard.press( 'Tab' );
 	const comment = form.getByRole( 'textbox', { name: 'Comment' } );
 	await expect( comment ).toBeFocused();
+	await expect( comment ).toHaveCSS( 'outline-color', 'rgb(37, 85, 170)' );
+	await anonymous.screenshot( {
+		path: testInfo.outputPath( 'previewshare-review-focus-field-mobile.png' ),
+		fullPage: true,
+	} );
 	await comment.pressSequentially( 'The draft reads clearly.' );
 	await anonymous.keyboard.press( 'Tab' );
 	await anonymous.keyboard.press( 'Tab' );
 	await anonymous.keyboard.press( 'Tab' );
 	const submitButton = form.getByRole( 'button', { name: 'Send response' } );
 	await expect( submitButton ).toBeFocused();
+	await expect( submitButton ).toHaveCSS( 'outline-color', 'rgb(37, 85, 170)' );
+	await anonymous.screenshot( {
+		path: testInfo.outputPath( 'previewshare-review-focus-mobile.png' ),
+		fullPage: true,
+	} );
 	const [ submitResponse ] = await Promise.all( [
 		anonymous.waitForResponse( ( response ) =>
 			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
