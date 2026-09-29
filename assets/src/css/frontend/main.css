@@ -97,7 +97,7 @@
 }
 
 .previewshare-review :is(input, textarea, button):focus-visible {
-	outline: 3px solid #9dbcf4;
+	outline: 3px solid #2555aa;
 	outline-offset: 2px;
 }
 
