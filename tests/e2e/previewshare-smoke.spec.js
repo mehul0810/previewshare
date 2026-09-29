@@ -949,6 +949,98 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await anonymousContext.close();
 } );
 
+test( 'anonymous reviewers can send comments by keyboard and expired links reject responses', async ( {
+	page,
+	admin,
+	requestUtils,
+	browser,
+	baseURL,
+} ) => {
+	test.setTimeout( 180000 );
+	const post = await requestUtils.createPost( {
+		title: `PreviewShare anonymous comment ${ Date.now() }`,
+		content: 'Draft for anonymous reviewer feedback.',
+		status: 'draft',
+	} );
+	createdPostIds.add( post.id );
+
+	await visitEditor( admin, post.id );
+	await ensurePreviewSharePanelOpen( page );
+	await page
+		.getByRole( 'checkbox', { name: 'Allow reviewer responses' } )
+		.check();
+	const [ generatedResponse ] = await Promise.all( [
+		page.waitForResponse( isGeneratePreviewResponse ),
+		page.getByRole( 'button', { name: 'Generate & copy' } ).click(),
+	] );
+	expect( generatedResponse.status() ).toBe( 200 );
+	const generated = await generatedResponse.json();
+	const previewUrl = resolvePreviewUrlForTestServer( generated.url, baseURL );
+
+	const anonymousContext = await browser.newContext( {
+		baseURL,
+		storageState: { cookies: [], origins: [] },
+	} );
+	const anonymous = await anonymousContext.newPage();
+	const previewResponse = await anonymous.goto( previewUrl );
+	expect( previewResponse.status() ).toBe( 200 );
+	const form = anonymous.locator( '#previewshare-review-form' );
+	await expect(
+		form.getByRole( 'textbox', { name: 'Name' } )
+	).not.toHaveAttribute( 'required', '' );
+	await expect(
+		form.getByRole( 'textbox', { name: 'Email' } )
+	).not.toHaveAttribute( 'required', '' );
+
+	const responseType = form.getByRole( 'radio', { name: 'Approve' } );
+	await responseType.focus();
+	await anonymous.keyboard.press( 'ArrowRight' );
+	await anonymous.keyboard.press( 'ArrowRight' );
+	await anonymous.keyboard.press( 'Space' );
+	await expect( form.getByRole( 'radio', { name: 'Comment' } ) ).toBeChecked();
+	await anonymous.keyboard.press( 'Tab' );
+	const comment = form.getByRole( 'textbox', { name: 'Comment' } );
+	await expect( comment ).toBeFocused();
+	await comment.pressSequentially( 'The draft reads clearly.' );
+	await anonymous.keyboard.press( 'Tab' );
+	await anonymous.keyboard.press( 'Tab' );
+	await anonymous.keyboard.press( 'Tab' );
+	const submitButton = form.getByRole( 'button', { name: 'Send response' } );
+	await expect( submitButton ).toBeFocused();
+	const [ submitResponse ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		anonymous.keyboard.press( 'Enter' ),
+	] );
+	expect( submitResponse.status() ).toBe( 201 );
+	const submittedBody = submitResponse.request().postDataJSON();
+	expect( submittedBody.response_type ).toBe( 'comment' );
+	expect( submittedBody.name ).toBe( '' );
+	expect( submittedBody.email ).toBe( '' );
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Your response was received.'
+	);
+
+	await expirePreviewLinkIfConfigured( { postId: post.id, previewUrl } );
+	const expiredPreviewResponse = await anonymous.goto( previewUrl );
+	expect( expiredPreviewResponse.status() ).toBe( 410 );
+	await expect(
+		anonymous.getByText( unavailablePreviewMessage )
+	).toBeVisible();
+	const staleSubmission = await anonymousContext.request.post(
+		new URL( '/wp-json/previewshare/v1/reviews/submit', baseURL ).toString(),
+		{
+			data: {
+				...submittedBody,
+				request_id: 'expired-link-stale-123456',
+			},
+		}
+	);
+	expect( staleSubmission.status() ).toBe( 410 );
+	await anonymousContext.close();
+} );
+
 test( 'opted-in reviewer responses stay private, follow content versions, and stop on revoke', async ( {
 	page,
 	admin,
