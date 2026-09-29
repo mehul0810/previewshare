@@ -1,6 +1,6 @@
 {
 	"mappings": {
-		"wp-content/plugins/previewshare": "."
+		"wp-content/uploads/previewshare-e2e": "./artifacts/e2e-package"
 	},
 	"port": 8889,
 	"testsPort": 8890,
