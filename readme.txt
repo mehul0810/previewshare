@@ -4,7 +4,7 @@ Tags: preview, draft preview, preview link, share draft, public preview
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.0.2
+Stable tag: 1.1.0
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -34,6 +34,8 @@ PreviewShare stores token hashes instead of plain-text tokens, adds noindex/nofo
 * Set a default expiration time for preview links from the PreviewShare settings screen.
 * Override the expiration time per post or page.
 * Create multiple labeled preview links for different reviewers.
+* Optionally collect approvals, change requests, and comments on individual preview links, with optional or required reviewer name and email.
+* See review history in the editor and the current review state in the preview-link inventory. Approvals are flagged for re-review after the draft changes.
 * Revoke preview access when a link should stop working.
 * View and manage preview link status, expiry, labels, and view counts from the settings screen.
 * Choose which public post types support public preview sharing.
@@ -105,6 +107,18 @@ PreviewShare stores token hashes and token metadata in `wp_postmeta`. Raw tokens
 
 Expired tokens stop resolving to content. The editor panel will show the expired state and re-enabling preview sharing generates a fresh token.
 
+= Can reviewers respond without a WordPress account? =
+
+Yes, if an editor enables reviewer responses for a specific preview link. Anyone with that link can approve, request changes, or leave a comment. Editors can require a name and email address, review the history, and resolve change requests. Revoking or expiring the link stops new responses.
+
+= When does an approval need review again? =
+
+PreviewShare marks an approval stale when saved post text, metadata, taxonomy terms, or featured-image details change. Content pulled from external services or other posts can change independently; editors should request a new response when that happens.
+
+= How long is reviewer feedback kept? =
+
+Responses, comments, and any name or email supplied by the reviewer are stored as private WordPress records. While PreviewShare is active, WordPress scheduled tasks remove records after 90 days. Deactivating or uninstalling PreviewShare stops that cleanup but preserves existing records in the site's database; reactivating it resumes cleanup. The records are available through WordPress personal-data export and erasure tools when an email address was supplied and PreviewShare is active. Site owners should describe this behavior in their privacy notice and ensure WordPress scheduled tasks run reliably.
+
 = Does PreviewShare expose private content publicly? =
 
 PreviewShare only exposes a specific content item to visitors who have a valid preview URL. Treat preview URLs like private sharing links and send them only to intended reviewers.
@@ -121,6 +135,15 @@ Production ZIP files are built from the source repository with:
 The release artifact includes compiled assets, Composer autoload files, `composer.json`, plugin PHP, languages, readme, and license files. Development files such as `node_modules`, source assets, CI configuration, tests, and build tooling are excluded from production ZIP files.
 
 == Changelog ==
+
+= 1.1.0 =
+* Redesigned the PreviewShare settings workspace across Overview, Preview Links, Content Types, Changelog, and More plugins.
+* Added an Expiring soon view and a fixed 24-hour extension action for eligible preview links.
+* Added a verified plugin catalog with product-specific descriptions and destinations.
+* Added browser lifecycle coverage for secure preview access, expiration, revocation, and published-content behavior.
+* Added permission-checked WordPress Abilities for generating, listing, and revoking preview links on WordPress 6.9 and newer.
+* Added optional reviewer approvals, change requests, and comments per preview link, with editor history, stale-approval status, and 90-day feedback retention.
+* Continued bounded 90-day cleanup across large reviewer-response backlogs and reported privacy-erasure failures without retry loops.
 
 = 1.0.2 =
 * Validated preview-link editor and admin workflows with WordPress 7.1.

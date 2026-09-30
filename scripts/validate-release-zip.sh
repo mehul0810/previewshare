@@ -39,7 +39,10 @@ required_paths=(
 	"${PLUGIN_SLUG}/config/constants.php"
 	"${PLUGIN_SLUG}/src/Plugin.php"
 	"${PLUGIN_SLUG}/assets/dist/js/previewshare-admin.min.js"
+	"${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.min.js"
+	"${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.min.asset.php"
 	"${PLUGIN_SLUG}/assets/dist/js/previewshare.min.js"
+	"${PLUGIN_SLUG}/languages/previewshare.pot"
 	"${PLUGIN_SLUG}/vendor/autoload.php"
 )
 
@@ -50,7 +53,25 @@ for required_path in "${required_paths[@]}"; do
 	fi
 done
 
-forbidden_pattern="^${PLUGIN_SLUG}/(\\.git|\\.github|\\.wordpress-org|node_modules|assets/src|tests|scripts|vendor/bin|phpstan|phpcs|composer\\.lock|package\\.json|package-lock\\.json|README\\.md|AGENTS\\.md|\\.distignore|\\.editorconfig|\\.gitignore|\\.babelrc|\\.phpunit\\.result\\.cache|postcss\\.config\\.js|webpack\\.config\\.js|wp-textdomain\\.js|previewshare\\.zip)(/|$)"
+if unzip -p "${ZIP_PATH}" "${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.min.asset.php" | grep -Eq "'(react-jsx-runtime|wp-primitives)'"; then
+	echo "Settings bundle depends on a script handle that WordPress 5.8 does not register." >&2
+	exit 1
+fi
+
+pot_content="$(unzip -p "${ZIP_PATH}" "${PLUGIN_SLUG}/languages/previewshare.pot")"
+required_translation_strings=(
+	'msgid "Settings saved."'
+	'msgid "Access extended by 24 hours. New expiry: %s."'
+)
+
+for translation_string in "${required_translation_strings[@]}"; do
+	if ! grep -Fq "${translation_string}" <<< "${pot_content}"; then
+		echo "Release zip translation template is missing: ${translation_string}" >&2
+		exit 1
+	fi
+done
+
+forbidden_pattern="^${PLUGIN_SLUG}/(\\.git|\\.github|\\.wordpress-org|node_modules|assets/src|tests|scripts|vendor/bin|phpstan|phpcs|composer\\.lock|package\\.json|package-lock\\.json|README\\.md|AGENTS\\.md|\\.distignore|\\.editorconfig|\\.gitignore|\\.babelrc|\\.phpunit\\.result\\.cache|\\.wp-env[^/]*\\.json|postcss\\.config\\.js|webpack\\.config\\.js|wp-textdomain\\.js|previewshare\\.zip)(/|$)"
 
 if grep -E "${forbidden_pattern}" "${LIST_FILE}"; then
 	echo "Release zip contains development-only files." >&2

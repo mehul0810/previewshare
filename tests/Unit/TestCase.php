@@ -72,6 +72,7 @@ abstract class TestCase extends PHPUnitTestCase {
 		if ( class_exists( '\PreviewShare\Container' ) ) {
 			\PreviewShare\Container::set( 'token_service', null );
 			\PreviewShare\Container::set( 'storage', null );
+			\PreviewShare\Container::set( 'reviews', null );
 		}
 
 		Monkey\tearDown();

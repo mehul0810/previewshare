@@ -10,6 +10,8 @@ namespace PreviewShare\REST;
 use PreviewShare\Container;
 use PreviewShare\Services\TokenService;
 use PreviewShare\Services\PostMetaStorage;
+use PreviewShare\Services\ReviewResponseService;
+use PreviewShare\Services\ReviewVersion;
 
 // Abort if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -77,6 +79,14 @@ class PreviewController {
 						'required' => false,
 						'type'     => 'string',
 					],
+					'responses_enabled' => [
+						'required' => false,
+						'type'     => 'boolean',
+					],
+					'identity_required' => [
+						'required' => false,
+						'type'     => 'boolean',
+					],
 				],
 			]
 		);
@@ -133,6 +143,25 @@ class PreviewController {
 			[
 				'methods'             => 'POST',
 				'callback'            => [ $this, 'revoke_by_id' ],
+				'permission_callback' => function () {
+					return current_user_can( 'manage_options' );
+				},
+				'args'                => [
+					'id' => [
+						'required' => true,
+						'type'     => 'string',
+					],
+				],
+			]
+		);
+
+		// Extend one expiring link by a fixed 24-hour interval.
+		register_rest_route(
+			'previewshare/v1',
+			'/tokens/extend',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'extend_by_id' ],
 				'permission_callback' => function () {
 					return current_user_can( 'manage_options' );
 				},
@@ -204,19 +233,70 @@ class PreviewController {
 		$per_page           = min( 100, $requested_per_page ? $requested_per_page : 50 );
 		$page               = $requested_page ? $requested_page : 1;
 		// Pull rows from post meta storage.
-		$rows  = $this->storage->list_tokens( $per_page, $page );
-		$total = $this->storage->count_tokens();
+		$rows        = $this->storage->list_tokens( $per_page, $page );
+		$total       = $this->storage->count_tokens();
+		$reviews     = Container::get( 'reviews' );
+		$link_owners = [];
+		if ( $reviews instanceof ReviewResponseService ) {
+			foreach ( $rows as $row ) {
+				if ( ! empty( $row['responses_enabled'] ) ) {
+					$link_owners[ (string) $row['id'] ] = (int) $row['post_id'];
+				}
+			}
+		}
+		$latest_responses  = $reviews instanceof ReviewResponseService ? $reviews->latest_for_links( $link_owners ) : [];
+		$approved_post_ids = [];
+		foreach ( $link_owners as $hash => $post_id ) {
+			if ( isset( $latest_responses[ $hash ] ) && 'approve' === $latest_responses[ $hash ]['response_type'] ) {
+				$approved_post_ids[ $post_id ] = $post_id;
+			}
+		}
+		if ( $approved_post_ids ) {
+			// Prime the saved post, metadata, and taxonomy dependencies before comparing approvals.
+			$approved_ids = array_values( $approved_post_ids );
+			_prime_post_caches( $approved_ids, false, false );
+			update_postmeta_cache( $approved_ids );
+			$post_types = array_unique( array_filter( array_map( 'get_post_type', $approved_ids ) ) );
+			update_object_term_cache( $approved_ids, $post_types );
+			$thumbnail_ids = [];
+			foreach ( $approved_post_ids as $post_id ) {
+				$thumbnail_id = (int) get_post_meta( $post_id, '_thumbnail_id', true );
+				if ( $thumbnail_id ) {
+					$thumbnail_ids[ $thumbnail_id ] = $thumbnail_id;
+				}
+			}
+			if ( $thumbnail_ids ) {
+				$image_ids = array_values( $thumbnail_ids );
+				_prime_post_caches( $image_ids, false, false );
+				update_postmeta_cache( $image_ids );
+			}
+		}
+		$fingerprints = [];
 
 		// Enrich each token with the related post title.
 		$items = array_map(
-			function ( $row ) {
-				$post     = get_post( $row['post_id'] );
-				$edit_url = $post ? get_edit_post_link( $post->ID, 'raw' ) : '';
+			function ( $row ) use ( $reviews, $latest_responses, &$fingerprints ) {
+				$post         = get_post( $row['post_id'] );
+				$edit_url     = $post ? get_edit_post_link( $post->ID, 'raw' ) : '';
+				$review_state = null;
+				if ( $post && ! empty( $row['responses_enabled'] ) && $reviews instanceof ReviewResponseService ) {
+					$response     = $latest_responses[ (string) $row['id'] ] ?? null;
+					$current_hash = '';
+					if ( $response && 'approve' === $response['response_type'] ) {
+						$post_id = (int) $post->ID;
+						if ( ! isset( $fingerprints[ $post_id ] ) ) {
+							$fingerprints[ $post_id ] = ReviewVersion::fingerprint( $post );
+						}
+						$current_hash = $fingerprints[ $post_id ];
+					}
+					$review_state = ReviewVersion::state( $response, $current_hash );
+				}
 
 				return [
 					'id'             => isset( $row['id'] ) ? (string) $row['id'] : '',
 					'post_id'        => (int) $row['post_id'],
 					'post_title'     => $post ? get_the_title( $post ) : '(deleted)',
+					'post_type'      => $post ? (string) $post->post_type : '',
 					'edit_url'       => $edit_url ? $edit_url : '',
 					'label'          => isset( $row['label'] ) ? (string) $row['label'] : '',
 					'created_at'     => isset( $row['created_at'] ) ? (int) $row['created_at'] : 0,
@@ -224,6 +304,7 @@ class PreviewController {
 					'revoked'        => (bool) $row['revoked'],
 					'expired'        => ! empty( $row['expired'] ),
 					'status'         => isset( $row['status'] ) ? (string) $row['status'] : 'active',
+					'review_state'   => $review_state,
 					'view_count'     => isset( $row['view_count'] ) ? (int) $row['view_count'] : 0,
 					'last_viewed_at' => isset( $row['last_viewed_at'] ) ? $row['last_viewed_at'] : null,
 				];
@@ -274,6 +355,35 @@ class PreviewController {
 		);
 
 		return new \WP_REST_Response( [ 'revoked' => (bool) $revoked ], 200 );
+	}
+
+	/**
+	 * Extend an expiring link by 24 hours.
+	 *
+	 * @param \WP_REST_Request<array<string,mixed>> $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function extend_by_id( $request ) {
+		$id = sanitize_key( (string) $request->get_param( 'id' ) );
+
+		if ( '' === $id ) {
+			return new \WP_Error( 'invalid_id', 'Invalid preview link.', [ 'status' => 400 ] );
+		}
+
+		$result = $this->storage->extend_token_by_id( $id );
+		if ( $result instanceof \WP_Error ) {
+			return $result;
+		}
+
+		\previewshare_log(
+			'extend_link',
+			[
+				'user_id' => get_current_user_id(),
+				'id'      => $id,
+			]
+		);
+
+		return new \WP_REST_Response( $result, 200 );
 	}
 
 
@@ -365,7 +475,9 @@ class PreviewController {
 		$result  = \previewshare_generate_preview_link(
 			$post_id,
 			null === $ttl ? null : absint( $ttl ),
-			(string) $request->get_param( 'label' )
+			(string) $request->get_param( 'label' ),
+			(bool) $request->get_param( 'responses_enabled' ),
+			(bool) $request->get_param( 'identity_required' )
 		);
 
 		if ( $result instanceof \WP_Error ) {

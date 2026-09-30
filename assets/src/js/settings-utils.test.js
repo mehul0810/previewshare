@@ -1,6 +1,9 @@
 import {
+	buildRestRequestUrl,
 	fallbackSettings,
 	getRestBase,
+	getInventoryBatchState,
+	mergeInventoryItems,
 	normalizeSettings,
 } from './settings-utils';
 
@@ -52,5 +55,50 @@ describe( 'PreviewShare settings utils', () => {
 			} )
 		).toBe( 'https://example.test/wp-json/previewshare/v1' );
 		expect( getRestBase( {} ) ).toBe( '/wp-json/previewshare/v1' );
+	} );
+
+	it( 'keeps endpoint query parameters outside a plain-permalink REST route', () => {
+		const url = new URL(
+			buildRestRequestUrl(
+				'https://example.test/index.php?rest_route=/previewshare/v1',
+				'/tokens?per_page=25&page=1',
+				'https://example.test'
+			)
+		);
+
+		expect( url.searchParams.get( 'rest_route' ) ).toBe(
+			'/previewshare/v1/tokens'
+		);
+		expect( url.searchParams.get( 'per_page' ) ).toBe( '25' );
+		expect( url.searchParams.get( 'page' ) ).toBe( '1' );
+	} );
+
+	it( 'keeps a continuation after the first 1,000 inventory items', () => {
+		expect(
+			getInventoryBatchState( {
+				loadedCount: 1000,
+				pageItemsCount: 100,
+				reportedTotal: 1001,
+				pagesFetched: 10,
+			} )
+		).toEqual( { hasMore: true, shouldFetchNextPage: false } );
+
+		expect(
+			getInventoryBatchState( {
+				existingCount: 1000,
+				loadedCount: 1,
+				pageItemsCount: 1,
+				reportedTotal: 1001,
+				pagesFetched: 1,
+			} )
+		).toEqual( { hasMore: false, shouldFetchNextPage: false } );
+
+		const firstBatch = Array.from( { length: 1000 }, ( _, index ) => ( {
+			id: index + 1,
+		} ) );
+		const merged = mergeInventoryItems( firstBatch, [ { id: 1001 } ] );
+
+		expect( merged ).toHaveLength( 1001 );
+		expect( merged[ 1000 ] ).toEqual( { id: 1001 } );
 	} );
 } );
