@@ -117,7 +117,7 @@ PreviewShare marks an approval stale when saved post text, metadata, taxonomy te
 
 = How long is reviewer feedback kept? =
 
-Responses, comments, and any name or email supplied by the reviewer are stored as private WordPress records and scheduled for automatic deletion after 90 days. The records are available through WordPress personal-data export and erasure tools when an email address was supplied. Site owners should include this use in their privacy notice and ensure WordPress scheduled tasks run reliably.
+Responses, comments, and any name or email supplied by the reviewer are stored as private WordPress records. While PreviewShare is active, WordPress scheduled tasks remove records after 90 days. Deactivating or uninstalling PreviewShare stops that cleanup but preserves existing records in the site's database; reactivating it resumes cleanup. The records are available through WordPress personal-data export and erasure tools when an email address was supplied and PreviewShare is active. Site owners should describe this behavior in their privacy notice and ensure WordPress scheduled tasks run reliably.
 
 = Does PreviewShare expose private content publicly? =
 

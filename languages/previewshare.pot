@@ -363,7 +363,7 @@ msgid "Email"
 msgstr ""
 
 #: src/Includes/ReviewForm.php:109
-msgid "Responses and any identity you provide are removed after 90 days."
+msgid "While PreviewShare is active, responses and any identity you provide are removed after 90 days. If the site owner deactivates or uninstalls the plugin, existing records remain in the site database."
 msgstr ""
 
 #: src/Includes/ReviewForm.php:110
@@ -556,7 +556,7 @@ msgid "Require name and email"
 msgstr ""
 
 #: assets/src/js/admin/main.js:189
-msgid "Responses and reviewer identity are removed after 90 days. Revoking the link stops new responses and keeps existing history until then."
+msgid "While PreviewShare is active, responses and reviewer identity are removed after 90 days. Revoking the link stops new responses and keeps existing history. Deactivating or uninstalling PreviewShare stops cleanup and leaves existing records in the site database."
 msgstr ""
 
 #: assets/src/js/admin/main.js:207
@@ -625,7 +625,7 @@ msgid "Client review, legal approval, etc."
 msgstr ""
 
 #: assets/src/js/admin/main.js:626
-msgid "Reviewers can approve, request changes, or comment on this link. Responses are kept for 90 days."
+msgid "Reviewers can approve, request changes, or comment on this link. While PreviewShare is active, responses are removed after 90 days."
 msgstr ""
 
 #: assets/src/js/admin/main.js:651

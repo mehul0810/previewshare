@@ -194,7 +194,7 @@ final class ReviewForm {
 							<input id="previewshare-review-email" name="email" type="email" maxlength="190" autocomplete="email" <?php echo $required ? 'required' : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Fixed attribute. ?>>
 						</div>
 					</div>
-					<p class="previewshare-review__help"><?php esc_html_e( 'Responses and any identity you provide are removed after 90 days.', 'previewshare' ); ?></p>
+					<p class="previewshare-review__help"><?php esc_html_e( 'While PreviewShare is active, responses and any identity you provide are removed after 90 days. If the site owner deactivates or uninstalls the plugin, existing records remain in the site database.', 'previewshare' ); ?></p>
 					<button type="submit"><?php esc_html_e( 'Send response', 'previewshare' ); ?></button>
 					<p id="previewshare-review-message" role="status" aria-live="polite"></p>
 				</form>
