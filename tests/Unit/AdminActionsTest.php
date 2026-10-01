@@ -19,6 +19,7 @@ class AdminActionsTest extends TestCase {
 	public function test_preview_bar_styles_are_registered_through_enqueue_api(): void {
 		$actions = $this->make_actions();
 		$inline_css = '';
+		$inline_script = '';
 
 		Functions\expect( 'get_query_var' )
 			->once()
@@ -43,11 +44,30 @@ class AdminActionsTest extends TestCase {
 				}
 			)
 			->andReturn( true );
+		Functions\expect( 'wp_register_script' )
+			->once()
+			->with( 'previewshare-preview-bar', false, [], '1.0.0', true )
+			->andReturn( true );
+		Functions\expect( 'wp_enqueue_script' )
+			->once()
+			->with( 'previewshare-preview-bar' );
+		Functions\expect( 'wp_add_inline_script' )
+			->once()
+			->withArgs(
+				static function( string $handle, string $script ) use ( &$inline_script ): bool {
+					$inline_script = $script;
+
+					return 'previewshare-preview-bar' === $handle;
+				}
+			)
+			->andReturn( true );
 
 		$actions->enqueue_preview_bar_styles();
 
 		$this->assertStringContainsString( '.previewshare-preview-bar', $inline_css );
 		$this->assertStringNotContainsString( '<' . 'style', $inline_css );
+		$this->assertStringContainsString( '--previewshare-preview-bar-offset', $inline_css );
+		$this->assertStringContainsString( 'getBoundingClientRect().bottom', $inline_script );
 	}
 
 	public function test_filter_preview_robots_forces_noindex_for_preview_requests(): void {

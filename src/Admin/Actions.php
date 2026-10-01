@@ -813,6 +813,10 @@ class Actions {
 		wp_register_style( 'previewshare-preview-bar', false, [], $version );
 		wp_enqueue_style( 'previewshare-preview-bar' );
 		wp_add_inline_style( 'previewshare-preview-bar', $this->get_preview_bar_styles() );
+
+		wp_register_script( 'previewshare-preview-bar', false, [], $version, true );
+		wp_enqueue_script( 'previewshare-preview-bar' );
+		wp_add_inline_script( 'previewshare-preview-bar', $this->get_preview_bar_script() );
 	}
 
 	/**
@@ -859,11 +863,7 @@ class Actions {
 	private function get_preview_bar_styles(): string {
 		return '
 html {
-	margin-top: 40px !important;
-}
-
-body.previewshare-preview-active.admin-bar {
-	padding-top: 40px;
+	margin-top: var(--previewshare-preview-bar-offset, 40px) !important;
 }
 
 .previewshare-preview-bar {
@@ -915,6 +915,33 @@ body.admin-bar .previewshare-preview-bar {
 		top: 46px;
 	}
 }
+';
+	}
+
+	/**
+	 * Keep the page offset in sync with the rendered preview bar height.
+	 *
+	 * @return string JavaScript for the preview bar.
+	 */
+	private function get_preview_bar_script(): string {
+		return '
+(function () {
+	var bar = document.querySelector(".previewshare-preview-bar");
+	if (!bar) {
+		return;
+	}
+
+	function updateOffset() {
+		var offset = Math.max(40, Math.ceil(bar.getBoundingClientRect().bottom));
+		document.documentElement.style.setProperty("--previewshare-preview-bar-offset", offset + "px");
+	}
+
+	updateOffset();
+	window.addEventListener("resize", updateOffset);
+	if (window.ResizeObserver) {
+		new ResizeObserver(updateOffset).observe(bar);
+	}
+}());
 ';
 	}
 
