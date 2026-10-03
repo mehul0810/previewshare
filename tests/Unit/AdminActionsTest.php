@@ -19,6 +19,7 @@ class AdminActionsTest extends TestCase {
 	public function test_preview_bar_styles_are_registered_through_enqueue_api(): void {
 		$actions = $this->make_actions();
 		$inline_css = '';
+		$inline_script = '';
 
 		Functions\expect( 'get_query_var' )
 			->once()
@@ -43,11 +44,30 @@ class AdminActionsTest extends TestCase {
 				}
 			)
 			->andReturn( true );
+		Functions\expect( 'wp_register_script' )
+			->once()
+			->with( 'previewshare-preview-bar', false, [], '1.0.0', true )
+			->andReturn( true );
+		Functions\expect( 'wp_enqueue_script' )
+			->once()
+			->with( 'previewshare-preview-bar' );
+		Functions\expect( 'wp_add_inline_script' )
+			->once()
+			->withArgs(
+				static function( string $handle, string $script ) use ( &$inline_script ): bool {
+					$inline_script = $script;
+
+					return 'previewshare-preview-bar' === $handle;
+				}
+			)
+			->andReturn( true );
 
 		$actions->enqueue_preview_bar_styles();
 
 		$this->assertStringContainsString( '.previewshare-preview-bar', $inline_css );
 		$this->assertStringNotContainsString( '<' . 'style', $inline_css );
+		$this->assertStringContainsString( '--previewshare-preview-bar-offset', $inline_css );
+		$this->assertStringContainsString( 'getBoundingClientRect().bottom', $inline_script );
 	}
 
 	public function test_filter_preview_robots_forces_noindex_for_preview_requests(): void {
@@ -74,6 +94,56 @@ class AdminActionsTest extends TestCase {
 		$this->assertTrue( $robots['noarchive'] );
 		$this->assertTrue( $robots['nosnippet'] );
 		$this->assertTrue( $robots['noimageindex'] );
+	}
+
+	public function test_registers_preview_cache_headers_on_send_headers(): void {
+		$registered_hooks = [];
+
+		Functions\when( 'add_action' )->alias(
+			static function( string $hook, array $callback, ...$args ) use ( &$registered_hooks ): bool {
+				$registered_hooks[ $hook ][] = $callback[1];
+
+				return true;
+			}
+		);
+		Functions\when( 'add_filter' )->justReturn( true );
+
+		new Actions( Mockery::mock( PostMetaStorage::class ) );
+
+		$this->assertContains( 'send_preview_cache_headers', $registered_hooks['send_headers'] );
+	}
+
+	public function test_preview_cache_headers_keep_tokenized_preview_private_and_non_cacheable(): void {
+		$actions = $this->make_actions();
+
+		Functions\expect( 'get_query_var' )
+			->once()
+			->with( 'previewshare_token' )
+			->andReturn( 'preview-token' );
+		Functions\when( 'PreviewShare\\Admin\\headers_sent' )->justReturn( false );
+		Functions\expect( 'PreviewShare\\Admin\\nocache_headers' )->once();
+		Functions\expect( 'PreviewShare\\Admin\\header' )
+			->once()
+			->with( 'Cache-Control: private, no-store, max-age=0', true );
+
+		$actions->send_preview_cache_headers();
+
+		$this->assertTrue( defined( 'DONOTCACHEPAGE' ) && DONOTCACHEPAGE );
+	}
+
+	public function test_preview_cache_headers_skip_non_preview_requests(): void {
+		$actions = $this->make_actions();
+
+		Functions\expect( 'get_query_var' )
+			->once()
+			->with( 'previewshare_token' )
+			->andReturn( '' );
+		Functions\expect( 'PreviewShare\\Admin\\nocache_headers' )->never();
+		Functions\expect( 'PreviewShare\\Admin\\header' )->never();
+
+		$actions->send_preview_cache_headers();
+
+		$this->assertTrue( true );
 	}
 
 	public function test_maybe_handle_preview_request_sets_main_query_for_valid_draft(): void {
@@ -117,15 +187,7 @@ class AdminActionsTest extends TestCase {
 					'status'      => 'active',
 				]
 			);
-		$storage->shouldReceive( 'get_token_meta' )
-			->once()
-			->with( 42 )
-			->andReturn(
-				[
-					'revoked' => false,
-					'expired' => false,
-				]
-			);
+		$storage->shouldNotReceive( 'get_token_meta' );
 		$storage->shouldReceive( 'record_token_view' )
 			->once()
 			->with( 'preview-token' )
@@ -244,16 +306,6 @@ class AdminActionsTest extends TestCase {
 					'status'      => 'active',
 				]
 			);
-		$storage->shouldReceive( 'get_token_meta' )
-			->once()
-			->with( 44 )
-			->andReturn(
-				[
-					'revoked' => false,
-					'expired' => false,
-				]
-			);
-
 		$this->expectException( \RuntimeException::class );
 		$this->expectExceptionMessage( 'preview failed' );
 
@@ -300,16 +352,6 @@ class AdminActionsTest extends TestCase {
 					'status'      => 'active',
 				]
 			);
-		$storage->shouldReceive( 'get_token_meta' )
-			->once()
-			->with( 45 )
-			->andReturn(
-				[
-					'revoked' => false,
-					'expired' => false,
-				]
-			);
-
 		$this->expectException( \RuntimeException::class );
 		$this->expectExceptionMessage( 'preview failed' );
 

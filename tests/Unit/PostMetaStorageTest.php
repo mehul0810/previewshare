@@ -392,6 +392,266 @@ class PostMetaStorageTest extends TestCase {
 		$this->assertSame( 1, $fake_wpdb->get_var_calls );
 	}
 
+	public function test_status_filtered_page_and_count_preserve_status_precedence(): void {
+		global $wpdb;
+
+		$previous_wpdb = $wpdb ?? null;
+		$now           = time();
+		$rows          = [];
+		foreach ( [ [ 'active', null, 0 ], [ 'expired', $now - 1, 0 ], [ 'revoked', $now - 1, 1 ], [ 'future', $now + 60, 0 ] ] as $index => $state ) {
+			$row                    = $this->make_link_row( $index );
+			$detail                 = maybe_unserialize( $row['meta_value'] );
+			$detail['label']        = 0 === $index ? '日本語 s:7:"revoked";i:1; s:10:"expires_at";i:1;' : $detail['label'];
+			$detail['expires_at']   = $state[1];
+			$detail['revoked']      = $state[2];
+			$row['meta_value']      = serialize( $detail );
+			$rows[]                 = $row;
+		}
+		$fake_wpdb = new FakePreviewShareWpdb( $rows );
+		$wpdb      = $fake_wpdb;
+		$storage   = $this->make_storage();
+
+		try {
+			$expired = $storage->list_tokens_by_status( 'expired', 1, 1 );
+			$revoked = $storage->list_tokens_by_status( 'revoked', 10, 1 );
+		} finally {
+			$wpdb = $previous_wpdb;
+		}
+
+		$this->assertSame( 1, $expired['total'] );
+		$this->assertSame( 'expired', $expired['items'][0]['status'] );
+		$this->assertSame( 1, $revoked['total'] );
+		$this->assertSame( 'revoked', $revoked['items'][0]['status'] );
+		$this->assertSame( 2, $fake_wpdb->get_results_calls );
+		$this->assertSame( 2, $fake_wpdb->get_var_calls );
+		$this->assertStringContainsString( 'INSTR(REVERSE(pm.meta_value)', $fake_wpdb->last_result_query );
+		$this->assertStringContainsString( 'SUBSTR(pm.meta_value', $fake_wpdb->last_result_query );
+		$this->assertStringContainsString( 'SUBSTR(pm.meta_value, 1 - INSTR(REVERSE(pm.meta_value)', $fake_wpdb->last_result_query );
+		$this->assertStringContainsString( 'created_by', $fake_wpdb->last_result_query );
+	}
+
+	public function test_extend_token_by_id_adds_twenty_four_hours_and_preserves_the_link(): void {
+		$storage = $this->make_storage();
+		$hash    = hash_hmac( 'sha256', 'extend-token', self::HASH_KEY );
+		$post_id = 654;
+		$expires     = time() + ( 3 * HOUR_IN_SECONDS );
+		$last_viewed = time() - 15;
+		$link        = [
+			'hash'           => $hash,
+			'label'          => 'Client review',
+			'created_at'     => time() - 60,
+			'created_by'     => 7,
+			'expires_at'     => $expires,
+			'revoked'        => 0,
+			'last_viewed_at' => $last_viewed,
+			'view_count'     => 7,
+		];
+		$stale_inventory_link = array_merge(
+			$link,
+			[
+				'last_viewed_at' => null,
+				'view_count'     => 2,
+			]
+		);
+		$updated_meta = [];
+
+		Functions\expect( 'get_option' )
+			->times( 3 )
+			->with( 'previewshare_enable_caching', true )
+			->andReturn( false );
+		Functions\expect( 'get_posts' )->once()->andReturn( [ $post_id ] );
+		Functions\expect( 'get_post_meta' )
+			->twice()
+			->andReturnUsing(
+				static function ( int $requested_post_id, string $key, bool $single ) use ( $post_id, $hash, $link, $stale_inventory_link ): array {
+					if ( $post_id !== $requested_post_id || true !== $single ) {
+						return [];
+					}
+
+					if ( '_previewshare_token:' . $hash === $key ) {
+						return $link;
+					}
+
+					return '_previewshare_links' === $key ? [ $hash => $stale_inventory_link ] : [];
+				}
+			);
+		Functions\expect( 'update_post_meta' )
+			->twice()
+			->andReturnUsing(
+				static function ( int $requested_post_id, string $key, array $value ) use ( $post_id, $hash, &$updated_meta ): bool {
+					if ( $post_id !== $requested_post_id ) {
+						return false;
+					}
+
+					$updated_meta[ $key ] = $value;
+					return '_previewshare_links' === $key || '_previewshare_token:' . $hash === $key;
+				}
+			);
+
+		$result = $storage->extend_token_by_id( $hash );
+
+		$this->assertSame( [ 'expires_at' => $expires + DAY_IN_SECONDS ], $result );
+		$this->assertSame( $hash, $updated_meta['_previewshare_links'][ $hash ]['hash'] );
+		$this->assertSame( $expires + DAY_IN_SECONDS, $updated_meta['_previewshare_links'][ $hash ]['expires_at'] );
+		$this->assertSame( $expires + DAY_IN_SECONDS, $updated_meta['_previewshare_token:' . $hash ]['expires_at'] );
+		$this->assertSame( 'Client review', $updated_meta['_previewshare_links'][ $hash ]['label'] );
+		$this->assertSame( $last_viewed, $updated_meta['_previewshare_links'][ $hash ]['last_viewed_at'] );
+		$this->assertSame( 7, $updated_meta['_previewshare_links'][ $hash ]['view_count'] );
+		$this->assertSame( $last_viewed, $updated_meta['_previewshare_token:' . $hash ]['last_viewed_at'] );
+		$this->assertSame( 7, $updated_meta['_previewshare_token:' . $hash ]['view_count'] );
+	}
+
+	public function test_extend_token_by_id_rolls_back_the_inventory_when_detail_write_fails(): void {
+		$storage = $this->make_storage();
+		$hash    = hash_hmac( 'sha256', 'failed-extend-token', self::HASH_KEY );
+		$post_id = 657;
+		$link    = [
+			'hash'           => $hash,
+			'label'          => 'Client review',
+			'created_at'     => time() - 60,
+			'created_by'     => 7,
+			'expires_at'     => time() + ( 3 * HOUR_IN_SECONDS ),
+			'revoked'        => 0,
+			'last_viewed_at' => null,
+			'view_count'     => 1,
+			'responses_enabled' => false,
+			'identity_required' => false,
+		];
+		$write_number = 0;
+		$inventory_after_rollback = [];
+
+		Functions\expect( 'get_option' )
+			->twice()
+			->with( 'previewshare_enable_caching', true )
+			->andReturn( false );
+		Functions\expect( 'get_posts' )->once()->andReturn( [ $post_id ] );
+		Functions\expect( 'get_post_meta' )
+			->times( 3 )
+			->andReturnUsing(
+				static function ( int $requested_post_id, string $key, bool $single ) use ( $post_id, $hash, $link ): array {
+					if ( $post_id !== $requested_post_id || true !== $single ) {
+						return [];
+					}
+
+					return '_previewshare_token:' . $hash === $key
+						? $link
+						: [ $hash => $link ];
+				}
+			);
+		Functions\expect( 'update_post_meta' )
+			->times( 3 )
+			->andReturnUsing(
+				static function ( int $requested_post_id, string $key, array $value ) use ( $post_id, $hash, $link, &$write_number, &$inventory_after_rollback ): bool {
+					if ( $post_id !== $requested_post_id ) {
+						return false;
+					}
+
+					++$write_number;
+					if ( 1 === $write_number ) {
+						return '_previewshare_links' === $key;
+					}
+
+					if ( 2 === $write_number ) {
+						return false;
+					}
+
+					$inventory_after_rollback = $value;
+					return '_previewshare_links' === $key && [ $hash => $link ] === $value;
+				}
+			);
+
+		$result = $storage->extend_token_by_id( $hash );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'link_update_failed', $result->get_error_code() );
+		$this->assertSame( [ 'status' => 500 ], $result->get_error_data() );
+		$this->assertSame( [ $hash => $link ], $inventory_after_rollback );
+	}
+
+	public function test_extend_token_by_id_rejects_non_expiring_links_without_writes(): void {
+		$storage = $this->make_storage();
+		$hash    = hash_hmac( 'sha256', 'non-expiring-token', self::HASH_KEY );
+		$post_id = 655;
+		$link    = [
+			'hash'           => $hash,
+			'label'          => 'Permanent review',
+			'created_at'     => time() - 60,
+			'created_by'     => 7,
+			'expires_at'     => null,
+			'revoked'        => 0,
+			'last_viewed_at' => null,
+			'view_count'     => 0,
+		];
+
+		Functions\expect( 'get_option' )
+			->twice()
+			->with( 'previewshare_enable_caching', true )
+			->andReturn( false );
+		Functions\expect( 'get_posts' )->once()->andReturn( [ $post_id ] );
+		Functions\expect( 'get_post_meta' )
+			->once()
+			->andReturnUsing(
+				static function ( int $requested_post_id, string $key, bool $single ) use ( $post_id, $hash, $link ): array {
+					if ( $post_id !== $requested_post_id || true !== $single ) {
+						return [];
+					}
+
+					return '_previewshare_token:' . $hash === $key
+						? $link
+						: [ $hash => $link ];
+				}
+			);
+		Functions\expect( 'update_post_meta' )->never();
+
+		$result = $storage->extend_token_by_id( $hash );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'link_not_extendable', $result->get_error_code() );
+		$this->assertSame( [ 'status' => 409 ], $result->get_error_data() );
+	}
+
+	public function test_extend_token_by_id_rejects_links_outside_the_expiring_soon_window(): void {
+		$storage = $this->make_storage();
+		$hash    = hash_hmac( 'sha256', 'not-expiring-soon', self::HASH_KEY );
+		$post_id = 656;
+		$link    = [
+			'hash'           => $hash,
+			'label'          => 'Future review',
+			'created_at'     => time() - 60,
+			'created_by'     => 7,
+			'expires_at'     => time() + ( 2 * DAY_IN_SECONDS ),
+			'revoked'        => 0,
+			'last_viewed_at' => null,
+			'view_count'     => 0,
+		];
+
+		Functions\expect( 'get_option' )
+			->twice()
+			->with( 'previewshare_enable_caching', true )
+			->andReturn( false );
+		Functions\expect( 'get_posts' )->once()->andReturn( [ $post_id ] );
+		Functions\expect( 'get_post_meta' )
+			->once()
+			->andReturnUsing(
+				static function ( int $requested_post_id, string $key, bool $single ) use ( $post_id, $hash, $link ): array {
+					if ( $post_id !== $requested_post_id || true !== $single ) {
+						return [];
+					}
+
+					return '_previewshare_token:' . $hash === $key
+						? $link
+						: [ $hash => $link ];
+				}
+			);
+		Functions\expect( 'update_post_meta' )->never();
+
+		$result = $storage->extend_token_by_id( $hash );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'link_not_extendable', $result->get_error_code() );
+		$this->assertSame( [ 'status' => 409 ], $result->get_error_data() );
+	}
+
 	private function make_storage(): PostMetaStorage {
 		return new PostMetaStorage( new TokenService( self::HASH_KEY ) );
 	}
@@ -454,6 +714,12 @@ class FakePreviewShareWpdb {
 	/** @var list<mixed> */
 	public $last_var_args = [];
 
+	/** @var string */
+	public $last_result_query = '';
+
+	/** @var string */
+	public $last_var_query = '';
+
 	/** @var list<mixed> */
 	private $last_prepare_args = [];
 
@@ -481,21 +747,24 @@ class FakePreviewShareWpdb {
 	 * @return list<array<string,mixed>>
 	 */
 	public function get_results( string $query, string $output ): array {
-		unset( $query, $output );
+		unset( $output );
 
 		$this->get_results_calls++;
+		$this->last_result_query = $query;
+		$this->last_var_query    = '';
 		$this->last_result_args = $this->last_prepare_args;
 
-		$per_page = isset( $this->last_prepare_args[2] ) ? (int) $this->last_prepare_args[2] : 50;
-		$offset   = isset( $this->last_prepare_args[3] ) ? (int) $this->last_prepare_args[3] : 0;
+		$pagination_index = false !== strpos( $query, '<= %d' ) || false !== strpos( $query, '> %d' ) ? 3 : 2;
+		$per_page         = isset( $this->last_prepare_args[ $pagination_index ] ) ? (int) $this->last_prepare_args[ $pagination_index ] : 50;
+		$offset           = isset( $this->last_prepare_args[ $pagination_index + 1 ] ) ? (int) $this->last_prepare_args[ $pagination_index + 1 ] : 0;
 
 		return array_slice( $this->matching_rows(), $offset, $per_page );
 	}
 
 	public function get_var( string $query ): int {
-		unset( $query );
-
 		$this->get_var_calls++;
+		$this->last_var_query = $query;
+		$this->last_result_query = '';
 		$this->last_var_args = $this->last_prepare_args;
 
 		return count( $this->matching_rows() );
@@ -505,13 +774,32 @@ class FakePreviewShareWpdb {
 	 * @return list<array<string,mixed>>
 	 */
 	private function matching_rows(): array {
-		return array_values(
+		$rows = array_values(
 			array_filter(
 				$this->rows,
 				static function( array $row ): bool {
 					return isset( $row['meta_key'] )
 						&& str_starts_with( (string) $row['meta_key'], '_previewshare_token:' )
 						&& 'revision' !== ( $row['post_type'] ?? '' );
+				}
+			)
+		);
+
+		if ( false === strpos( $this->last_result_query . $this->last_var_query, 'CAST(SUBSTR' ) ) {
+			return $rows;
+		}
+
+		$status = false !== strpos( $this->last_result_query . $this->last_var_query, '<= %d' ) ? 'expired' : ( false !== strpos( $this->last_result_query . $this->last_var_query, '> %d' ) ? 'active' : 'revoked' );
+
+		return array_values(
+			array_filter(
+				$rows,
+				static function( array $row ) use ( $status ): bool {
+					$detail = maybe_unserialize( $row['meta_value'] );
+					$now    = time();
+					$actual = ! empty( $detail['revoked'] ) ? 'revoked' : ( null !== $detail['expires_at'] && (int) $detail['expires_at'] <= $now ? 'expired' : 'active' );
+
+					return $status === $actual;
 				}
 			)
 		);

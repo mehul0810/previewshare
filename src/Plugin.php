@@ -56,10 +56,13 @@ final class Plugin {
 		// Instantiate shared services.
 		$token_service = new Services\TokenService();
 		$storage       = new Services\PostMetaStorage();
+		$reviews       = new Services\ReviewResponseService();
+		$reviews->register();
 
 		// Register services in container for global access if needed.
 		Container::set( 'token_service', $token_service );
 		Container::set( 'storage', $storage );
+		Container::set( 'reviews', $reviews );
 
 		// Load Admin Files.
 		new Admin\Actions( $storage );
@@ -90,9 +93,14 @@ final class Plugin {
 		// Load Frontend Files.
 		new Includes\Actions();
 		new Includes\Filters();
+		new Includes\ReviewForm( $storage );
 
 		// Register REST controllers that use services (modular approach).
 		new REST\PreviewController( $token_service, $storage );
+		new REST\ReviewController( $storage, $reviews );
+
+		// Register optional WordPress 6.9+ Abilities API integration.
+		new Abilities\PreviewAbilities( $token_service, $storage );
 	}
 
 	/**
@@ -124,5 +132,7 @@ final class Plugin {
 	 *
 	 * @return void
 	 */
-	public function deactivate() {}
+	public function deactivate() {
+		Services\ReviewResponseService::unschedule_cleanup();
+	}
 }

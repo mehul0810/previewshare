@@ -74,6 +74,7 @@ class Actions {
 		// Use pre_get_posts to safely alter the main query for preview URLs.
 		add_action( 'pre_get_posts', [ $this, 'maybe_handle_preview_request' ], 1 );
 		add_action( 'send_headers', [ $this, 'send_preview_robots_header' ] );
+		add_action( 'send_headers', [ $this, 'send_preview_cache_headers' ] );
 		add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_preview_bar_styles' ] );
 		add_action( 'wp_body_open', [ $this, 'render_preview_bar' ], 0 );
 		add_action( 'wp_footer', [ $this, 'render_preview_bar' ], 0 );
@@ -94,15 +95,16 @@ class Actions {
 			return;
 		}
 
-		$asset = \previewshare_get_asset_metadata(
+		$asset        = \previewshare_get_asset_metadata(
 			'assets/dist/js/previewshare-admin.min.asset.php',
 			[ 'wp-api-fetch', 'wp-edit-post' ]
 		);
+		$dependencies = array_values( array_unique( array_merge( $asset['dependencies'], [ 'wp-edit-post' ] ) ) );
 
 		wp_enqueue_script(
 			'previewshare-editor',
 			PREVIEWSHARE_PLUGIN_URL . 'assets/dist/js/previewshare-admin.min.js',
-			$asset['dependencies'],
+			$dependencies,
 			$asset['version'],
 			true
 		);
@@ -330,6 +332,7 @@ class Actions {
 			return;
 		}
 
+		$this->send_preview_cache_headers();
 		$this->send_preview_robots_header();
 
 		$diagnostic = $this->storage->get_token_diagnostic( $token );
@@ -349,19 +352,6 @@ class Actions {
 
 		if ( ! get_post_meta( $post_id, '_previewshare_enabled', true ) ) {
 			$this->fail_preview_request( self::FAILURE_LINK_DISABLED, $post_id );
-		}
-
-		$meta = $this->storage->get_token_meta( $post_id );
-		if ( empty( $meta ) ) {
-			$this->fail_preview_request( self::FAILURE_TOKEN_NOT_FOUND, $post_id );
-		}
-
-		if ( ! empty( $meta['revoked'] ) ) {
-			$this->fail_preview_request( self::FAILURE_TOKEN_REVOKED, $post_id );
-		}
-
-		if ( ! empty( $meta['expired'] ) ) {
-			$this->fail_preview_request( self::FAILURE_TOKEN_EXPIRED, $post_id );
 		}
 
 		$post = get_post( $post_id );
@@ -772,6 +762,29 @@ class Actions {
 	}
 
 	/**
+	 * Keep tokenized preview responses out of shared and persistent caches.
+	 *
+	 * @return void
+	 */
+	public function send_preview_cache_headers(): void {
+		if ( ! $this->is_previewshare_request() ) {
+			return;
+		}
+
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- Standard shared cache-bypass flag.
+			define( 'DONOTCACHEPAGE', true );
+		}
+
+		if ( headers_sent() ) {
+			return;
+		}
+
+		nocache_headers();
+		header( 'Cache-Control: private, no-store, max-age=0', true );
+	}
+
+	/**
 	 * Add a body class while preview links are being viewed.
 	 *
 	 * @param string[] $classes Body classes.
@@ -800,6 +813,10 @@ class Actions {
 		wp_register_style( 'previewshare-preview-bar', false, [], $version );
 		wp_enqueue_style( 'previewshare-preview-bar' );
 		wp_add_inline_style( 'previewshare-preview-bar', $this->get_preview_bar_styles() );
+
+		wp_register_script( 'previewshare-preview-bar', false, [], $version, true );
+		wp_enqueue_script( 'previewshare-preview-bar' );
+		wp_add_inline_script( 'previewshare-preview-bar', $this->get_preview_bar_script() );
 	}
 
 	/**
@@ -846,11 +863,7 @@ class Actions {
 	private function get_preview_bar_styles(): string {
 		return '
 html {
-	margin-top: 40px !important;
-}
-
-body.previewshare-preview-active.admin-bar {
-	padding-top: 40px;
+	margin-top: var(--previewshare-preview-bar-offset, 40px) !important;
 }
 
 .previewshare-preview-bar {
@@ -902,6 +915,33 @@ body.admin-bar .previewshare-preview-bar {
 		top: 46px;
 	}
 }
+';
+	}
+
+	/**
+	 * Keep the page offset in sync with the rendered preview bar height.
+	 *
+	 * @return string JavaScript for the preview bar.
+	 */
+	private function get_preview_bar_script(): string {
+		return '
+(function () {
+	var bar = document.querySelector(".previewshare-preview-bar");
+	if (!bar) {
+		return;
+	}
+
+	function updateOffset() {
+		var offset = Math.max(40, Math.ceil(bar.getBoundingClientRect().bottom));
+		document.documentElement.style.setProperty("--previewshare-preview-bar-offset", offset + "px");
+	}
+
+	updateOffset();
+	window.addEventListener("resize", updateOffset);
+	if (window.ResizeObserver) {
+		new ResizeObserver(updateOffset).observe(bar);
+	}
+}());
 ';
 	}
 
