@@ -254,6 +254,9 @@ class ReviewControllerTest extends TestCase {
 		$previous_wpdb = $wpdb ?? null;
 		$wpdb          = new ReviewRateLimitWpdb();
 		$method        = new \ReflectionMethod( ReviewController::class, 'within_rate_limit' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$method->setAccessible( true );
+		}
 		$controller    = new ReviewController( \Mockery::mock( PostMetaStorage::class ), new ReviewResponseService() );
 		$_SERVER['REMOTE_ADDR'] = '192.0.2.10';
 		$wpdb->insert_conflicts = 1;
@@ -275,6 +278,9 @@ class ReviewControllerTest extends TestCase {
 		$previous_wpdb = $wpdb ?? null;
 		$wpdb          = new ReviewRateLimitWpdb();
 		$method        = new \ReflectionMethod( ReviewController::class, 'within_rate_limit' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$method->setAccessible( true );
+		}
 		$controller    = new ReviewController( \Mockery::mock( PostMetaStorage::class ), new ReviewResponseService() );
 		$_SERVER['REMOTE_ADDR'] = '192.0.2.11';
 
@@ -295,6 +301,9 @@ class ReviewControllerTest extends TestCase {
 		$previous_wpdb = $wpdb ?? null;
 		$wpdb          = new ReviewRateLimitWpdb();
 		$method        = new \ReflectionMethod( ReviewController::class, 'within_rate_limit' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$method->setAccessible( true );
+		}
 		$controller    = new ReviewController( \Mockery::mock( PostMetaStorage::class ), new ReviewResponseService() );
 		$remote        = '192.0.2.14';
 		$expected_key  = 'previewshare_review_' . substr( hash_hmac( 'sha256', $this->link_hash . ':' . $remote, 'test-site-secret' ), 0, 32 );
@@ -327,6 +336,9 @@ class ReviewControllerTest extends TestCase {
 		$wpdb          = new ReviewRateLimitWpdb();
 		$wpdb->recent_timestamps = array_fill( 0, 98, gmdate( 'Y-m-d H:i:s', time() - 5 ) );
 		$method     = new \ReflectionMethod( ReviewController::class, 'within_rate_limit' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$method->setAccessible( true );
+		}
 		$controller = new ReviewController( \Mockery::mock( PostMetaStorage::class ), new ReviewResponseService() );
 
 		try {
@@ -351,6 +363,9 @@ class ReviewControllerTest extends TestCase {
 		$wpdb          = new ReviewRateLimitWpdb();
 		$wpdb->fail_seed = true;
 		$method     = new \ReflectionMethod( ReviewController::class, 'within_rate_limit' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$method->setAccessible( true );
+		}
 		$controller = new ReviewController( \Mockery::mock( PostMetaStorage::class ), new ReviewResponseService() );
 		$_SERVER['REMOTE_ADDR'] = '192.0.2.15';
 
@@ -368,6 +383,9 @@ class ReviewControllerTest extends TestCase {
 		$previous_wpdb = $wpdb ?? null;
 		$wpdb          = new ReviewRateLimitWpdb();
 		$method        = new \ReflectionMethod( ReviewController::class, 'within_rate_limit' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$method->setAccessible( true );
+		}
 		$controller    = new ReviewController( \Mockery::mock( PostMetaStorage::class ), new ReviewResponseService() );
 		$remote        = '192.0.2.16';
 		$_SERVER['REMOTE_ADDR'] = $remote;
@@ -400,6 +418,9 @@ class ReviewControllerTest extends TestCase {
 		global $wpdb;
 		$previous_wpdb = $wpdb ?? null;
 		$method        = new \ReflectionMethod( ReviewController::class, 'within_rate_limit' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$method->setAccessible( true );
+		}
 		$controller    = new ReviewController( \Mockery::mock( PostMetaStorage::class ), new ReviewResponseService() );
 		$_SERVER['REMOTE_ADDR'] = '192.0.2.17';
 
@@ -427,6 +448,9 @@ class ReviewControllerTest extends TestCase {
 		global $wpdb;
 		$previous_wpdb = $wpdb ?? null;
 		$method        = new \ReflectionMethod( ReviewController::class, 'within_rate_limit' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$method->setAccessible( true );
+		}
 		$controller    = new ReviewController( \Mockery::mock( PostMetaStorage::class ), new ReviewResponseService() );
 		$remote        = '192.0.2.18';
 		$ip_hash       = hash_hmac( 'sha256', $this->link_hash . ':' . $remote, 'test-site-secret' );
@@ -452,6 +476,9 @@ class ReviewControllerTest extends TestCase {
 
 	public function test_rate_limit_decoder_rejects_two_property_objects(): void {
 		$method = new \ReflectionMethod( ReviewController::class, 'decode_rate_limit_state' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$method->setAccessible( true );
+		}
 		$value  = sprintf( '%010d:', time() + 600 ) . json_encode( [ (object) [ 'time' => time(), 'ip_hash' => str_repeat( 'a', 64 ) ] ] );
 
 		$this->assertFalse( $method->invoke( new ReviewController( \Mockery::mock( PostMetaStorage::class ), new ReviewResponseService() ), $value ) );
@@ -462,6 +489,9 @@ class ReviewControllerTest extends TestCase {
 		$previous_wpdb = $wpdb ?? null;
 		$wpdb          = new ReviewRateLimitWpdb();
 		$method        = new \ReflectionMethod( ReviewController::class, 'within_rate_limit' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$method->setAccessible( true );
+		}
 		$controller    = new ReviewController( \Mockery::mock( PostMetaStorage::class ), new ReviewResponseService() );
 
 		try {
@@ -489,6 +519,9 @@ class ReviewControllerTest extends TestCase {
 		$previous_wpdb = $wpdb ?? null;
 		$wpdb          = new ReviewRateLimitWpdb();
 		$method        = new \ReflectionMethod( ReviewController::class, 'within_rate_limit' );
+		if ( PHP_VERSION_ID < 80100 ) {
+			$method->setAccessible( true );
+		}
 		$controller    = new ReviewController( \Mockery::mock( PostMetaStorage::class ), new ReviewResponseService() );
 		$_SERVER['REMOTE_ADDR'] = '192.0.2.13';
 
