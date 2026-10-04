@@ -19,6 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Handles anonymous submissions and permissioned editorial review controls.
  */
 final class ReviewController {
+	private const RATE_LIMIT_MAX_ATTEMPTS = 5;
 
 	/**
 	 * Preview-link storage.
@@ -181,7 +182,11 @@ final class ReviewController {
 			return new \WP_Error( 'review_blocked', __( 'This response could not be accepted.', 'previewshare' ), [ 'status' => 403 ] );
 		}
 
-		if ( ! $this->within_rate_limit( $hash ) ) {
+		$rate_limit = $this->within_rate_limit( $hash );
+		if ( is_wp_error( $rate_limit ) ) {
+			return $rate_limit;
+		}
+		if ( false === $rate_limit ) {
 			return new \WP_Error( 'review_rate_limited', __( 'Too many responses. Please try again later.', 'previewshare' ), [ 'status' => 429 ] );
 		}
 
@@ -343,16 +348,16 @@ final class ReviewController {
 	 * Apply per-link and per-IP limits without storing a raw IP address.
 	 *
 	 * @param string $link_hash Link identifier.
-	 * @return bool
+	 * @return bool|\WP_Error False only when a quota is observably exhausted.
 	 */
-	private function within_rate_limit( string $link_hash ): bool {
+	private function within_rate_limit( string $link_hash ) {
 		global $wpdb;
 
 		$remote        = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( (string) $_SERVER['REMOTE_ADDR'] ) ) : '';
 		$ip_hash       = hash_hmac( 'sha256', $link_hash . ':' . $remote, wp_salt( 'auth' ) );
 		$option_name   = 'previewshare_review_rate_' . substr( hash( 'sha256', $link_hash ), 0, 32 );
 		$option_table  = $wpdb->options;
-		$attempt_limit = 3;
+		$attempt_limit = self::RATE_LIMIT_MAX_ATTEMPTS;
 		// Read, but never refresh, the previous per-IP transient while its original TTL remains.
 		$legacy_key   = 'previewshare_review_' . substr( $ip_hash, 0, 32 );
 		$legacy_value = get_transient( $legacy_key );
@@ -364,14 +369,14 @@ final class ReviewController {
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Read current DB state for a cache-independent CAS; the table identifier comes from wpdb.
 			$stored = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$option_table} WHERE option_name = %s LIMIT 1", $option_name ) );
 			if ( '' !== (string) $wpdb->last_error ) {
-				return false;
+				return $this->rate_limit_reservation_error();
 			}
 
 			$is_initial = null === $stored;
 			if ( $is_initial ) {
 				$recent = $this->reviews->get_recent_timestamps( $link_hash, $threshold );
 				if ( null === $recent ) {
-					return false;
+					return $this->rate_limit_reservation_error();
 				}
 				$entries = [];
 				foreach ( $recent as $timestamp ) {
@@ -381,7 +386,7 @@ final class ReviewController {
 			} else {
 				$state = $this->decode_rate_limit_state( (string) $stored );
 				if ( false === $state ) {
-					return false;
+					return $this->rate_limit_reservation_error();
 				}
 				$entries = $state['entries'];
 			}
@@ -406,7 +411,7 @@ final class ReviewController {
 			$active[] = [ $now, $ip_hash ];
 			$value    = $this->encode_rate_limit_state( $now + ( 10 * MINUTE_IN_SECONDS ), $active );
 			if ( false === $value ) {
-				return false;
+				return $this->rate_limit_reservation_error();
 			}
 			if ( $is_initial ) {
 				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Unique insert arbitrates concurrent first reservations; the table identifier comes from wpdb.
@@ -431,14 +436,43 @@ final class ReviewController {
 				);
 			}
 			if ( false === $updated ) {
-				return false;
+				return $this->rate_limit_reservation_error();
 			}
 			if ( 1 === (int) $updated ) {
 				return true;
 			}
+			if ( $attempt + 1 < $attempt_limit ) {
+				$this->rate_limit_retry_backoff( $attempt );
+			}
 		}
 
-		return false;
+		return $this->rate_limit_reservation_error();
+	}
+
+	/**
+	 * Return a retriable error without exposing database or reservation details.
+	 *
+	 * @return \WP_Error
+	 */
+	private function rate_limit_reservation_error(): \WP_Error {
+		return new \WP_Error(
+			'review_rate_limit_unavailable',
+			__( 'We could not accept your response right now. Please try again shortly.', 'previewshare' ),
+			[ 'status' => 503 ]
+		);
+	}
+
+	/**
+	 * Briefly back off after a lost compare-and-swap before retrying.
+	 *
+	 * The four retries have cumulative maximum sleep of 15 milliseconds.
+	 *
+	 * @param int $attempt Zero-based failed reservation attempt.
+	 * @return void
+	 */
+	private function rate_limit_retry_backoff( int $attempt ): void {
+		$maximum_wait = 1000 * ( 1 << $attempt );
+		usleep( random_int( 1, $maximum_wait ) );
 	}
 
 	/**

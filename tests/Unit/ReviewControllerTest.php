@@ -44,6 +44,8 @@ class ReviewRateLimitWpdb {
 	public $insert_conflicts = 0;
 	/** @var int */
 	public $insert_zero_conflicts = 0;
+	/** @var int */
+	public $write_attempts = 0;
 	/** @var bool */
 	public $fail_reads = false;
 	/** @var bool */
@@ -81,6 +83,7 @@ class ReviewRateLimitWpdb {
 	public function query( ReviewRateLimitPreparedQuery $query ) {
 		$this->last_error = '';
 		if ( false !== strpos( $query->sql, 'INSERT IGNORE' ) ) {
+			++$this->write_attempts;
 			if ( $this->fail_inserts ) {
 				$this->last_error = 'database insert failed';
 				return false;
@@ -102,6 +105,7 @@ class ReviewRateLimitWpdb {
 			return 1;
 		}
 		if ( false !== strpos( $query->sql, 'UPDATE' ) ) {
+			++$this->write_attempts;
 			if ( $this->fail_updates ) {
 				$this->last_error = 'database update failed';
 				return false;
@@ -273,10 +277,12 @@ class ReviewControllerTest extends TestCase {
 		}
 	}
 
-	public function test_rate_limit_retries_lost_compare_and_swap(): void {
+	public function test_rate_limit_retries_competing_insert_and_updates_before_success(): void {
 		global $wpdb;
 		$previous_wpdb = $wpdb ?? null;
 		$wpdb          = new ReviewRateLimitWpdb();
+		$wpdb->insert_conflicts = 1;
+		$wpdb->update_conflicts = 3;
 		$method        = new \ReflectionMethod( ReviewController::class, 'within_rate_limit' );
 		if ( PHP_VERSION_ID < 80100 ) {
 			$method->setAccessible( true );
@@ -286,10 +292,9 @@ class ReviewControllerTest extends TestCase {
 
 		try {
 			$this->assertTrue( $method->invoke( $controller, $this->link_hash ) );
-			$wpdb->update_conflicts = 1;
-			$this->assertTrue( $method->invoke( $controller, $this->link_hash ) );
+			$this->assertSame( 5, $wpdb->write_attempts );
 			$state = json_decode( substr( reset( $wpdb->rows ), 11 ), true );
-			$this->assertCount( 3, $state );
+			$this->assertCount( 5, $state );
 		} finally {
 			$wpdb = $previous_wpdb;
 			unset( $_SERVER['REMOTE_ADDR'] );
@@ -370,7 +375,7 @@ class ReviewControllerTest extends TestCase {
 		$_SERVER['REMOTE_ADDR'] = '192.0.2.15';
 
 		try {
-			$this->assertFalse( $method->invoke( $controller, $this->link_hash ) );
+			$this->assertInstanceOf( WP_Error::class, $method->invoke( $controller, $this->link_hash ) );
 			$this->assertSame( [], $wpdb->rows );
 		} finally {
 			$wpdb = $previous_wpdb;
@@ -427,17 +432,66 @@ class ReviewControllerTest extends TestCase {
 		try {
 			$wpdb = new ReviewRateLimitWpdb();
 			$wpdb->fail_inserts = true;
-			$this->assertFalse( $method->invoke( $controller, $this->link_hash ) );
+			$this->assertInstanceOf( WP_Error::class, $method->invoke( $controller, $this->link_hash ) );
 
 			$wpdb = new ReviewRateLimitWpdb();
 			$wpdb->rows[ 'previewshare_review_rate_' . substr( hash( 'sha256', $this->link_hash ), 0, 32 ) ] = sprintf( '%010d:', time() + 600 ) . '[]';
 			$wpdb->fail_updates = true;
-			$this->assertFalse( $method->invoke( $controller, $this->link_hash ) );
+			$this->assertInstanceOf( WP_Error::class, $method->invoke( $controller, $this->link_hash ) );
 
 			$wpdb = new ReviewRateLimitWpdb();
-			$wpdb->insert_zero_conflicts = 3;
-			$this->assertFalse( $method->invoke( $controller, $this->link_hash ) );
+			$wpdb->insert_zero_conflicts = 5;
+			$this->assertInstanceOf( WP_Error::class, $method->invoke( $controller, $this->link_hash ) );
 			$this->assertSame( [], $wpdb->rows );
+			$this->assertSame( 5, $wpdb->write_attempts );
+		} finally {
+			$wpdb = $previous_wpdb;
+			unset( $_SERVER['REMOTE_ADDR'] );
+		}
+	}
+
+	public function test_rate_limit_contention_exhaustion_returns_503_without_persisting_a_response(): void {
+		global $wpdb;
+		$previous_wpdb = $wpdb ?? null;
+		$wpdb          = new ReviewRateLimitWpdb();
+		$name          = 'previewshare_review_rate_' . substr( hash( 'sha256', $this->link_hash ), 0, 32 );
+		$wpdb->rows[ $name ] = sprintf( '%010d:', time() + 600 ) . json_encode( [ [ time(), str_repeat( 'f', 64 ) ] ] );
+		$wpdb->update_conflicts = 5;
+		Functions\expect( 'add_option' )->never();
+		Functions\expect( 'wp_insert_post' )->never();
+		$snapshot = ReviewVersion::issue_snapshot( $this->post, $this->link_hash );
+
+		try {
+			$response = $this->controller()->submit( $this->request( $snapshot ) );
+			$this->assertInstanceOf( WP_Error::class, $response );
+			$this->assertSame( 'review_rate_limit_unavailable', $response->get_error_code() );
+			$this->assertSame( [ 'status' => 503 ], $response->get_error_data() );
+			$this->assertSame( 'We could not accept your response right now. Please try again shortly.', $response->get_error_message() );
+			$this->assertSame( 5, $wpdb->write_attempts );
+		} finally {
+			$wpdb = $previous_wpdb;
+		}
+	}
+
+	public function test_observed_rate_limit_quota_still_returns_429_from_submit(): void {
+		global $wpdb;
+		$previous_wpdb = $wpdb ?? null;
+		$wpdb          = new ReviewRateLimitWpdb();
+		$remote        = '192.0.2.19';
+		$_SERVER['REMOTE_ADDR'] = $remote;
+		$ip_hash = hash_hmac( 'sha256', $this->link_hash . ':' . $remote, 'test-site-secret' );
+		$name    = 'previewshare_review_rate_' . substr( hash( 'sha256', $this->link_hash ), 0, 32 );
+		$wpdb->rows[ $name ] = sprintf( '%010d:', time() + 600 ) . json_encode( array_fill( 0, 10, [ time(), $ip_hash ] ) );
+		Functions\expect( 'add_option' )->never();
+		Functions\expect( 'wp_insert_post' )->never();
+		$snapshot = ReviewVersion::issue_snapshot( $this->post, $this->link_hash );
+
+		try {
+			$response = $this->controller()->submit( $this->request( $snapshot ) );
+			$this->assertInstanceOf( WP_Error::class, $response );
+			$this->assertSame( 'review_rate_limited', $response->get_error_code() );
+			$this->assertSame( [ 'status' => 429 ], $response->get_error_data() );
+			$this->assertSame( 0, $wpdb->write_attempts );
 		} finally {
 			$wpdb = $previous_wpdb;
 			unset( $_SERVER['REMOTE_ADDR'] );
@@ -533,7 +587,7 @@ class ReviewControllerTest extends TestCase {
 			$state = json_decode( substr( $wpdb->rows[ $name ], 11 ), true );
 			$this->assertCount( 1, $state );
 			$wpdb->fail_reads = true;
-			$this->assertFalse( $method->invoke( $controller, $this->link_hash ) );
+			$this->assertInstanceOf( WP_Error::class, $method->invoke( $controller, $this->link_hash ) );
 		} finally {
 			$wpdb = $previous_wpdb;
 			unset( $_SERVER['REMOTE_ADDR'] );
