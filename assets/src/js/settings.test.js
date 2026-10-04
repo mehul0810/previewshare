@@ -1044,7 +1044,7 @@ describe( 'PreviewShare settings navigation', () => {
 } );
 
 describe( 'PreviewShare expiring-link management', () => {
-	it( 'names each Extend action by link and content in both inventory layouts', async () => {
+	it( 'gives repeated labels distinct Extend names in both inventory layouts', async () => {
 		let narrow = false;
 		let onViewportChange;
 		window.matchMedia = jest.fn( () => ( {
@@ -1061,14 +1061,28 @@ describe( 'PreviewShare expiring-link management', () => {
 		const expiresAt = Math.floor( Date.now() / 1000 ) + 3600;
 		const { initialSettings } = setupFetch( null, [
 			{
-				id: 'client-link',
+				id: 'abcdef01' + '0'.repeat( 56 ),
 				post_title: 'Review draft',
 				label: 'Client review',
 				status: 'active',
 				expires_at: expiresAt,
 			},
 			{
-				id: 'untitled-link',
+				id: 'abcdef01' + '1'.repeat( 56 ),
+				post_title: 'Review draft',
+				label: 'Client review',
+				status: 'active',
+				expires_at: expiresAt,
+			},
+			{
+				id: 'abcdef010' + '2'.repeat( 55 ),
+				post_title: 'Other draft',
+				label: 'Legal review',
+				status: 'active',
+				expires_at: expiresAt,
+			},
+			{
+				id: '12345678' + '2'.repeat( 56 ),
 				status: 'active',
 				expires_at: expiresAt,
 			},
@@ -1080,19 +1094,20 @@ describe( 'PreviewShare expiring-link management', () => {
 		} );
 
 		const expectedNames = [
-			'Extend Client review link for Review draft',
-			'Extend preview link for Untitled content',
+			'Extend Client review link for Review draft, reference abcdef0100',
+			'Extend Client review link for Review draft, reference abcdef011',
+			'Extend Legal review link for Other draft, reference abcdef0102',
+			'Extend preview link for Untitled content, reference 12345678',
 		];
-		const expectExtendNames = ( selector ) => {
+		const expectExtendNames = ( selector, names = expectedNames ) => {
 			const buttons = Array.from( document.querySelectorAll( selector ) );
-			expect( buttons ).toHaveLength( 2 );
-			expect( buttons.map( ( button ) => button.textContent ) ).toEqual( [
-				'Extend',
-				'Extend',
-			] );
+			expect( buttons ).toHaveLength( names.length );
+			expect( buttons.map( ( button ) => button.textContent ) ).toEqual(
+				names.map( () => 'Extend' )
+			);
 			expect(
 				buttons.map( ( button ) => button.getAttribute( 'aria-label' ) )
-			).toEqual( expectedNames );
+			).toEqual( names );
 		};
 		expectExtendNames(
 			'.previewshare-dataviews button[aria-label^="Extend"]'
@@ -1103,9 +1118,33 @@ describe( 'PreviewShare expiring-link management', () => {
 			onViewportChange();
 			await flushPromises();
 		} );
-		expectExtendNames(
-			'.previewshare-legacy-link-table button[aria-label^="Extend"]'
-		);
+		const compactSelector =
+			'.previewshare-legacy-link-table button[aria-label^="Extend"]';
+		expectExtendNames( compactSelector );
+		await act( async () => {
+			findInput( 'Search preview links' ).value = 'Other draft';
+			Simulate.change( findInput( 'Search preview links' ) );
+			await flushPromises();
+		} );
+		expectExtendNames( compactSelector, [ expectedNames[ 2 ] ] );
+		await act( async () => {
+			findInput( 'Search preview links' ).value = '';
+			Simulate.change( findInput( 'Search preview links' ) );
+			await flushPromises();
+		} );
+		await act( async () => {
+			window.__previewshareDataViewsProps.onChangeView( {
+				...window.__previewshareDataViewsProps.view,
+				perPage: 1,
+			} );
+			await flushPromises();
+		} );
+		expectExtendNames( compactSelector, [ expectedNames[ 0 ] ] );
+		await act( async () => {
+			findButton( 'Next' ).click();
+			await flushPromises();
+		} );
+		expectExtendNames( compactSelector, [ expectedNames[ 1 ] ] );
 	} );
 
 	it( 'moves expiring links into the inventory and extends the same link by 24 hours', async () => {

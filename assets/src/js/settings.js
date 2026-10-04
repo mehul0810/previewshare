@@ -229,23 +229,50 @@ import {
 		);
 	}
 
-	function extendLinkAriaLabel( item ) {
+	function getUniqueLinkReference( item, inventoryItems ) {
+		const id = String( item.id );
+		let length = Math.min( 8, id.length );
+
+		while (
+			length < id.length &&
+			inventoryItems.some(
+				( other ) =>
+					other.id !== item.id &&
+					String( other.id ).startsWith( id.slice( 0, length ) )
+			)
+		) {
+			length++;
+		}
+
+		return id.slice( 0, length );
+	}
+
+	function extendLinkAriaLabel( item, inventoryItems ) {
 		const title =
 			item.post_title || __( 'Untitled content', 'previewshare' );
+		const reference = getUniqueLinkReference( item, inventoryItems );
 
 		if ( item.label ) {
 			return sprintf(
-				/* translators: 1: Preview link label. 2: Content title. */
-				__( 'Extend %1$s link for %2$s', 'previewshare' ),
+				/* translators: 1: Preview link label. 2: Content title. 3: Short unique link reference. */
+				__(
+					'Extend %1$s link for %2$s, reference %3$s',
+					'previewshare'
+				),
 				item.label,
-				title
+				title,
+				reference
 			);
 		}
 
 		return sprintf(
-			/* translators: %s: Content title. */
-			__( 'Extend preview link for %s', 'previewshare' ),
-			title
+			/* translators: 1: Content title. 2: Short unique link reference. */
+			__(
+				'Extend preview link for %1$s, reference %2$s',
+				'previewshare'
+			),
+			title,
+			reference
 		);
 	}
 
@@ -305,7 +332,7 @@ import {
 		};
 	}
 
-	function getTokenFields( onExtend, workingTokenId ) {
+	function getTokenFields( onExtend, workingTokenId, inventoryItems ) {
 		const statusElements = [
 			{
 				value: 'active',
@@ -402,8 +429,10 @@ import {
 										variant: 'tertiary',
 										isBusy: workingTokenId === item.id,
 										disabled: Boolean( workingTokenId ),
-										'aria-label':
-											extendLinkAriaLabel( item ),
+										'aria-label': extendLinkAriaLabel(
+											item,
+											inventoryItems
+										),
 										onClick: () => onExtend( item.id ),
 									},
 									__( 'Extend', 'previewshare' )
@@ -1485,7 +1514,8 @@ import {
 			const sort = view.sort || {};
 			const sortField = getTokenFields(
 				handleExtend,
-				workingTokenId
+				workingTokenId,
+				tokens
 			).find( ( field ) => field.id === sort.field );
 			const getAriaSort = ( field ) => {
 				if ( ! field || sort.field !== field ) {
@@ -1842,7 +1872,8 @@ import {
 																			item.id,
 																		'aria-label':
 																			extendLinkAriaLabel(
-																				item
+																				item,
+																				tokens
 																			),
 																		disabled:
 																			Boolean(
@@ -2005,7 +2036,11 @@ import {
 		}
 
 		function renderPreviews() {
-			const fields = getTokenFields( handleExtend, workingTokenId );
+			const fields = getTokenFields(
+				handleExtend,
+				workingTokenId,
+				tokens
+			);
 			const visibleTokens = expiringOnly
 				? tokens.filter( ( token ) => isExpiringSoon( token ) )
 				: tokens;
