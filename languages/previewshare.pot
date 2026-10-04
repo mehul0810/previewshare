@@ -817,6 +817,18 @@ msgstr ""
 msgid "Extend"
 msgstr ""
 
+#. translators: 1: Preview link label. 2: Content title.
+#: assets/src/js/settings.js:239
+#, javascript-format
+msgid "Extend %1$s link for %2$s"
+msgstr ""
+
+#. translators: %s: Content title.
+#: assets/src/js/settings.js:247
+#, javascript-format
+msgid "Extend preview link for %s"
+msgstr ""
+
 #: assets/src/js/settings.js:395
 #: assets/src/js/settings.js:1525
 #: assets/src/js/settings.js:1672

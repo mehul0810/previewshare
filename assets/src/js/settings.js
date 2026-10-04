@@ -229,6 +229,26 @@ import {
 		);
 	}
 
+	function extendLinkAriaLabel( item ) {
+		const title =
+			item.post_title || __( 'Untitled content', 'previewshare' );
+
+		if ( item.label ) {
+			return sprintf(
+				/* translators: 1: Preview link label. 2: Content title. */
+				__( 'Extend %1$s link for %2$s', 'previewshare' ),
+				item.label,
+				title
+			);
+		}
+
+		return sprintf(
+			/* translators: %s: Content title. */
+			__( 'Extend preview link for %s', 'previewshare' ),
+			title
+		);
+	}
+
 	function StatusBadge( { status } ) {
 		return el(
 			'span',
@@ -382,6 +402,8 @@ import {
 										variant: 'tertiary',
 										isBusy: workingTokenId === item.id,
 										disabled: Boolean( workingTokenId ),
+										'aria-label':
+											extendLinkAriaLabel( item ),
 										onClick: () => onExtend( item.id ),
 									},
 									__( 'Extend', 'previewshare' )
@@ -1818,6 +1840,10 @@ import {
 																		isBusy:
 																			workingTokenId ===
 																			item.id,
+																		'aria-label':
+																			extendLinkAriaLabel(
+																				item
+																			),
 																		disabled:
 																			Boolean(
 																				workingTokenId

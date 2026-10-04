@@ -71,10 +71,21 @@ function flushPromises() {
 function setupWordPressMocks() {
 	const { createElement } = element;
 	let root;
-	const Button = ( { children, onClick, disabled, isBusy } ) =>
+	const Button = ( {
+		children,
+		onClick,
+		disabled,
+		isBusy,
+		'aria-label': ariaLabel,
+	} ) =>
 		createElement(
 			'button',
-			{ type: 'button', onClick, disabled: disabled || isBusy },
+			{
+				type: 'button',
+				onClick,
+				disabled: disabled || isBusy,
+				'aria-label': ariaLabel,
+			},
 			children
 		);
 	const TextControl = ( { label, value, onChange, type = 'text' } ) =>
@@ -1033,6 +1044,70 @@ describe( 'PreviewShare settings navigation', () => {
 } );
 
 describe( 'PreviewShare expiring-link management', () => {
+	it( 'names each Extend action by link and content in both inventory layouts', async () => {
+		let narrow = false;
+		let onViewportChange;
+		window.matchMedia = jest.fn( () => ( {
+			get matches() {
+				return narrow;
+			},
+			addEventListener: ( type, callback ) => {
+				if ( type === 'change' ) {
+					onViewportChange = callback;
+				}
+			},
+			removeEventListener: jest.fn(),
+		} ) );
+		const expiresAt = Math.floor( Date.now() / 1000 ) + 3600;
+		const { initialSettings } = setupFetch( null, [
+			{
+				id: 'client-link',
+				post_title: 'Review draft',
+				label: 'Client review',
+				status: 'active',
+				expires_at: expiresAt,
+			},
+			{
+				id: 'untitled-link',
+				status: 'active',
+				expires_at: expiresAt,
+			},
+		] );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+
+		const expectedNames = [
+			'Extend Client review link for Review draft',
+			'Extend preview link for Untitled content',
+		];
+		const expectExtendNames = ( selector ) => {
+			const buttons = Array.from( document.querySelectorAll( selector ) );
+			expect( buttons ).toHaveLength( 2 );
+			expect( buttons.map( ( button ) => button.textContent ) ).toEqual( [
+				'Extend',
+				'Extend',
+			] );
+			expect(
+				buttons.map( ( button ) => button.getAttribute( 'aria-label' ) )
+			).toEqual( expectedNames );
+		};
+		expectExtendNames(
+			'.previewshare-dataviews button[aria-label^="Extend"]'
+		);
+
+		await act( async () => {
+			narrow = true;
+			onViewportChange();
+			await flushPromises();
+		} );
+		expectExtendNames(
+			'.previewshare-legacy-link-table button[aria-label^="Extend"]'
+		);
+	} );
+
 	it( 'moves expiring links into the inventory and extends the same link by 24 hours', async () => {
 		const expiresAt = Math.floor( Date.now() / 1000 ) + 3 * 60 * 60;
 		const linkItem = {

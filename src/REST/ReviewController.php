@@ -44,6 +44,8 @@ final class ReviewController {
 		$this->storage = $storage;
 		$this->reviews = $reviews;
 		add_action( 'rest_api_init', [ $this, 'register_routes' ] );
+		add_action( 'previewshare_cleanup_reviews', [ $this, 'cleanup_rate_limits' ] );
+		add_action( 'previewshare_cleanup_reviews_continue', [ $this, 'cleanup_rate_limits' ] );
 	}
 
 	/**
@@ -344,14 +346,191 @@ final class ReviewController {
 	 * @return bool
 	 */
 	private function within_rate_limit( string $link_hash ): bool {
-		$remote = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( (string) $_SERVER['REMOTE_ADDR'] ) ) : '';
-		$key    = 'previewshare_review_' . substr( hash_hmac( 'sha256', $link_hash . ':' . $remote, wp_salt( 'auth' ) ), 0, 32 );
-		$count  = (int) get_transient( $key );
-		if ( $count >= 10 || $this->reviews->count_recent( $link_hash, time() - ( 10 * MINUTE_IN_SECONDS ) ) >= 100 ) {
-			return false;
+		global $wpdb;
+
+		$remote        = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( (string) $_SERVER['REMOTE_ADDR'] ) ) : '';
+		$ip_hash       = hash_hmac( 'sha256', $link_hash . ':' . $remote, wp_salt( 'auth' ) );
+		$option_name   = 'previewshare_review_rate_' . substr( hash( 'sha256', $link_hash ), 0, 32 );
+		$option_table  = $wpdb->options;
+		$attempt_limit = 3;
+		// Read, but never refresh, the previous per-IP transient while its original TTL remains.
+		$legacy_key   = 'previewshare_review_' . substr( $ip_hash, 0, 32 );
+		$legacy_value = get_transient( $legacy_key );
+		$legacy_count = is_numeric( $legacy_value ) ? max( 0, (int) $legacy_value ) : 0;
+
+		for ( $attempt = 0; $attempt < $attempt_limit; $attempt++ ) {
+			$now       = time();
+			$threshold = $now - ( 10 * MINUTE_IN_SECONDS );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Read current DB state for a cache-independent CAS; the table identifier comes from wpdb.
+			$stored = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$option_table} WHERE option_name = %s LIMIT 1", $option_name ) );
+			if ( '' !== (string) $wpdb->last_error ) {
+				return false;
+			}
+
+			$is_initial = null === $stored;
+			if ( $is_initial ) {
+				$recent = $this->reviews->get_recent_timestamps( $link_hash, $threshold );
+				if ( null === $recent ) {
+					return false;
+				}
+				$entries = [];
+				foreach ( $recent as $timestamp ) {
+					// Historical responses have no reliable IP, so their sentinel counts only toward the link quota.
+					$entries[] = [ $timestamp, str_repeat( '0', 64 ) ];
+				}
+			} else {
+				$state = $this->decode_rate_limit_state( (string) $stored );
+				if ( false === $state ) {
+					return false;
+				}
+				$entries = $state['entries'];
+			}
+			$active   = array_values(
+				array_filter(
+					$entries,
+					static function ( array $entry ) use ( $threshold ): bool {
+						return $entry[0] > $threshold;
+					}
+				)
+			);
+			$ip_count = 0;
+			foreach ( $active as $entry ) {
+				if ( hash_equals( $entry[1], $ip_hash ) ) {
+					++$ip_count;
+				}
+			}
+			if ( $ip_count + $legacy_count >= 10 || count( $active ) >= 100 ) {
+				return false;
+			}
+
+			$active[] = [ $now, $ip_hash ];
+			$value    = $this->encode_rate_limit_state( $now + ( 10 * MINUTE_IN_SECONDS ), $active );
+			if ( false === $value ) {
+				return false;
+			}
+			if ( $is_initial ) {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Unique insert arbitrates concurrent first reservations; the table identifier comes from wpdb.
+				$updated = $wpdb->query(
+					$wpdb->prepare(
+						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table identifier is the trusted wpdb options table.
+						"INSERT IGNORE INTO {$option_table} (option_name, option_value, autoload) VALUES (%s, %s, 'no')",
+						$option_name,
+						$value
+					)
+				);
+			} else {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Conditional update is the atomic reservation CAS; the table identifier comes from wpdb.
+				$updated = $wpdb->query(
+					$wpdb->prepare(
+						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table identifier is the trusted wpdb options table.
+						"UPDATE {$option_table} SET option_value = %s, autoload = 'no' WHERE option_name = %s AND option_value = %s",
+						$value,
+						$option_name,
+						(string) $stored
+					)
+				);
+			}
+			if ( false === $updated ) {
+				return false;
+			}
+			if ( 1 === (int) $updated ) {
+				return true;
+			}
 		}
 
-		set_transient( $key, $count + 1, 10 * MINUTE_IN_SECONDS );
-		return true;
+		return false;
+	}
+
+	/**
+	 * Remove expired rate-limit rows in bounded batches during review cleanup.
+	 *
+	 * @return void
+	 */
+	public function cleanup_rate_limits(): void {
+		global $wpdb;
+
+		$option_table = $wpdb->options;
+		$prefix       = $wpdb->esc_like( 'previewshare_review_rate_' ) . '%';
+		$cutoff       = sprintf( '%010d:', time() );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Bounded expiry scan bypasses caches so cleanup sees committed state; the table identifier comes from wpdb.
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table identifier is the trusted wpdb options table.
+				"SELECT option_name, option_value FROM {$option_table} WHERE option_name LIKE %s AND option_value < %s ORDER BY option_value ASC LIMIT 100",
+				$prefix,
+				$cutoff
+			),
+			ARRAY_A
+		);
+		if ( ! is_array( $rows ) || '' !== (string) $wpdb->last_error ) {
+			return;
+		}
+
+		foreach ( $rows as $row ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Value-conditional delete cannot remove a concurrently refreshed row; the table identifier comes from wpdb.
+			$deleted = $wpdb->query(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table identifier is the trusted wpdb options table.
+					"DELETE FROM {$option_table} WHERE option_name = %s AND option_value = %s",
+					$row['option_name'],
+					$row['option_value']
+				)
+			);
+			if ( false === $deleted ) {
+				return;
+			}
+		}
+
+		if ( 100 === count( $rows ) && ! wp_next_scheduled( 'previewshare_cleanup_reviews_continue' ) ) {
+			wp_schedule_single_event( time() + ( 5 * MINUTE_IN_SECONDS ), 'previewshare_cleanup_reviews_continue' );
+		}
+	}
+
+	/**
+	 * Encode a bounded rate-limit state with an expiry-sortable prefix.
+	 *
+	 * @param int                              $expires_at State expiry time.
+	 * @param array<int,array{0:int,1:string}> $entries Recent request reservations.
+	 * @return string|false
+	 */
+	private function encode_rate_limit_state( int $expires_at, array $entries ) {
+		$encoded = wp_json_encode( $entries );
+		if ( ! is_string( $encoded ) ) {
+			return false;
+		}
+		return sprintf( '%010d:', $expires_at ) . $encoded;
+	}
+
+	/**
+	 * Decode and validate a stored rate-limit state.
+	 *
+	 * @param string $value Stored value.
+	 * @return array{expires_at:int,entries:array<int,array{0:int,1:string}>}|false
+	 */
+	private function decode_rate_limit_state( string $value ) {
+		if ( ! preg_match( '/^([0-9]{10}):(.+)$/', $value, $matches ) ) {
+			return false;
+		}
+		$entries = json_decode( $matches[2], true );
+		if ( ! is_array( $entries ) || count( $entries ) > 100 ) {
+			return false;
+		}
+		foreach ( $entries as $entry ) {
+			if (
+				! is_array( $entry )
+				|| ! array_key_exists( 0, $entry )
+				|| ! array_key_exists( 1, $entry )
+				|| 2 !== count( $entry )
+				|| ! is_int( $entry[0] )
+				|| ! is_string( $entry[1] )
+				|| 64 !== strlen( $entry[1] )
+			) {
+				return false;
+			}
+		}
+		return [
+			'expires_at' => (int) $matches[1],
+			'entries' => $entries,
+		];
 	}
 }
