@@ -26,4 +26,4 @@ Final settings runtime identity: CSS/JS ver=39c1d43688152f1c5bab. Editor CSS/JS 
 Contrast/targets: arrow/text color parity measured; focus outline observed. No full contrast audit or numeric target-size audit performed, so no general WCAG certification claimed.
 Runtime transition: owner package symlink switch briefly produced404 resource URLs/blank app; owner restarted fixture server and final reload recovered valid URLs. No remaining runtime blocker.
 Synthetic initial font stress exposed clipping/crowding; final packaged rerun passes. CSS root zoom trial kept media-query viewport unchanged and is excluded from verdict.
-All screenshots reside beside this report. No General settings were mutated by validator.
+Selected final screenshots accompany this exported report. The complete capture set remains in the local workspace at `output/playwright/independent`. No General settings were mutated by validator.
