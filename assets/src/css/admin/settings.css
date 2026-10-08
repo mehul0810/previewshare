@@ -64,8 +64,8 @@ body.previewshare-settings-screen #wpbody-content {
 	justify-content: space-between;
 	gap: 24px;
 	box-sizing: border-box;
-	min-height: 96px;
-	padding: 20px 32px;
+	min-height: 76px;
+	padding: 10px 32px;
 	border-bottom: 1px solid var(--previewshare-border);
 	background: var(--previewshare-surface);
 }
@@ -84,11 +84,13 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-product-identity {
+	max-width: 100%;
 	gap: 14px;
 	min-width: 0;
 }
 
 .previewshare-product-icon {
+	flex-shrink: 0;
 	display: block;
 	width: 56px;
 	height: 56px;
@@ -97,6 +99,7 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-product-name {
+	min-width: 0;
 	flex-wrap: wrap;
 	gap: 10px;
 }
@@ -106,7 +109,9 @@ body.previewshare-settings-screen #wpbody-content {
 	color: var(--previewshare-ink);
 	font-size: 24px;
 	font-weight: 600;
+	overflow-wrap: anywhere;
 	line-height: 1.2;
+	padding: 0;
 	letter-spacing: 0;
 }
 
@@ -146,9 +151,9 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-external-link svg {
+	fill: currentcolor;
 	flex: 0 0 auto;
 }
-
 
 .previewshare-tabs {
 	display: flex;
@@ -268,17 +273,17 @@ body.previewshare-settings-screen #wpbody-content {
 
 .previewshare-metrics {
 	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
-	gap: 14px;
-	margin-bottom: 30px;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 16px;
+	margin-bottom: 24px;
 }
 
 .previewshare-metric-card {
 	box-sizing: border-box;
-	min-height: 102px;
-	padding: 18px 20px;
+	min-width: 0;
+	padding: 20px 24px;
 	border: 1px solid var(--previewshare-border);
-	border-radius: 5px;
+	border-radius: 8px;
 	background: var(--previewshare-surface);
 }
 
@@ -299,9 +304,16 @@ body.previewshare-settings-screen #wpbody-content {
 .previewshare-metric-card strong {
 	display: block;
 	color: var(--previewshare-ink);
-	font-size: 24px;
+	font-size: 26px;
 	font-weight: 600;
 	line-height: 1.1;
+}
+
+.previewshare-metric-description {
+	margin: 10px 0 0;
+	color: var(--previewshare-muted);
+	font-size: 12px;
+	line-height: 1.5;
 }
 
 .previewshare-inline-note {
@@ -311,16 +323,120 @@ body.previewshare-settings-screen #wpbody-content {
 	line-height: 1.5;
 }
 
-.previewshare-overview-columns {
+.previewshare-overview-layout {
 	display: grid;
-	grid-template-columns: minmax(0, 1.4fr) minmax(300px, 1fr);
-	gap: 38px;
-	margin-bottom: 38px;
+	grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr);
+	align-items: start;
+	gap: 24px;
 }
 
+.previewshare-overview-sidebar {
+	display: grid;
+	min-width: 0;
+	gap: 24px;
+}
+
+.previewshare-overview-panel {
+	min-width: 0;
+	padding: 24px;
+	border: 1px solid var(--previewshare-border);
+	border-radius: 8px;
+	background: var(--previewshare-surface);
+}
+
+.previewshare-panel-heading {
+	margin-bottom: 20px;
+}
+
+.previewshare-panel-heading h3 {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 0;
+	color: var(--previewshare-ink);
+	font-size: 16px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+.previewshare-panel-heading p {
+	margin: 7px 0 0;
+	color: var(--previewshare-muted);
+	font-size: 13px;
+	line-height: 1.55;
+}
+
+.previewshare-count-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 24px;
+	min-height: 24px;
+	padding-inline: 6px;
+	border-radius: 4px;
+	background: var(--previewshare-blue-soft);
+	color: var(--previewshare-blue);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.previewshare-overview-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 0 0 20px;
+	padding: 0;
+	list-style: none;
+}
+
+.previewshare-overview-list li {
+	max-width: 100%;
+	margin: 0;
+	padding: 5px 9px;
+	border: 1px solid var(--previewshare-border);
+	border-radius: 4px;
+	background: var(--previewshare-canvas);
+	color: #475467;
+	font-size: 12px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+
+
 .previewshare-site-defaults {
-	max-width: 760px;
-	margin-top: 8px;
+	padding: 0;
+}
+
+.previewshare-site-defaults > .previewshare-panel-heading {
+	margin: 0;
+	padding: 24px;
+}
+
+.previewshare-setting-row {
+	padding: 24px;
+	border-top: 1px solid var(--previewshare-border);
+}
+
+
+.previewshare-overview-reset {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	margin-top: 24px;
+	padding-top: 20px;
+	border-top: 1px solid var(--previewshare-border);
+}
+
+.previewshare-overview-reset p {
+	margin: 0;
+	color: var(--previewshare-muted);
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.previewshare-overview-reset .components-button {
+	flex: 0 0 auto;
 }
 
 .previewshare-plugin-grid {
@@ -342,15 +458,12 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-plugin-card-mark {
-	display: grid;
-	width: 40px;
-	height: 40px;
-	place-items: center;
+	display: block;
+	width: 48px;
+	height: 48px;
 	margin-bottom: 17px;
-	border: 1px solid #dbeafe;
-	border-radius: 8px;
-	background: var(--previewshare-blue-soft);
-	color: var(--previewshare-blue);
+	border-radius: 6px;
+	object-fit: contain;
 }
 
 .previewshare-plugin-card h3 {
@@ -371,27 +484,6 @@ body.previewshare-settings-screen #wpbody-content {
 
 .previewshare-plugin-card .previewshare-external-link {
 	margin-top: auto;
-}
-
-.previewshare-overview-section {
-	min-width: 0;
-	padding-top: 24px;
-	border-top: 1px solid var(--previewshare-border);
-}
-
-.previewshare-overview-section h3 {
-	margin: 0 0 7px;
-	color: var(--previewshare-ink);
-	font-size: 16px;
-	font-weight: 600;
-	line-height: 1.35;
-}
-
-.previewshare-overview-section .description {
-	margin: 0 0 16px;
-	color: var(--previewshare-muted);
-	font-size: 13px;
-	line-height: 1.5;
 }
 
 .previewshare-overview-table {
@@ -421,6 +513,7 @@ body.previewshare-settings-screen #wpbody-content {
 .previewshare-dataviews .dataviews-view-table th,
 .previewshare-dataviews .dataviews-view-table td {
 	font-size: 13px;
+	line-height: 1.5;
 	overflow-wrap: anywhere;
 }
 
@@ -480,15 +573,58 @@ body.previewshare-settings-screen #wpbody-content {
 	color: var(--previewshare-green);
 }
 
+:where(.previewshare-overview) .previewshare-fact-list {
+	gap: 14px;
+	margin: 0;
+}
+
+:where(.previewshare-overview) .previewshare-fact-list li {
+	align-items: flex-start;
+	min-height: 0;
+	margin: 0;
+	line-height: 1.55;
+}
+
+:where(.previewshare-overview) .previewshare-fact-list li svg {
+	margin-top: 1px;
+}
+
+
 .previewshare-site-defaults .components-base-control {
-	max-width: 520px;
-	margin-bottom: 20px;
+	margin-bottom: 0;
 }
 
 .previewshare-site-defaults .components-base-control__help {
+	margin-bottom: 0;
 	color: var(--previewshare-muted);
 	font-size: 12px;
-	line-height: 1.45;
+	line-height: 1.6;
+}
+
+.previewshare-site-defaults .components-toggle-control__label,
+.previewshare-site-defaults .components-base-control__label {
+	color: var(--previewshare-ink);
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.5;
+	text-transform: none;
+}
+
+.previewshare-expiry-setting .components-base-control__field {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 120px;
+	align-items: center;
+	gap: 16px;
+	margin-bottom: 0;
+}
+
+.previewshare-expiry-setting .components-base-control__label {
+	margin: 0;
+}
+
+.previewshare-expiry-setting .components-text-control__input {
+	min-height: 40px;
+	margin: 0;
 }
 
 .previewshare-settings-actions {
@@ -521,6 +657,17 @@ body.previewshare-settings-screen #wpbody-content {
 .previewshare-save-state.is-saved svg {
 	color: var(--previewshare-green);
 }
+
+
+.previewshare-overview .previewshare-settings-actions {
+	display: flex;
+	align-items: center;
+	width: auto;
+	margin: 0;
+	padding: 20px 24px;
+	border-top: 1px solid var(--previewshare-border);
+}
+
 
 .previewshare-dataviews {
 	min-width: 0;
@@ -668,13 +815,19 @@ body.previewshare-settings-screen #wpbody-content {
 	min-height: 32px;
 }
 
+.previewshare-content-types {
+	max-width: 960px;
+}
+
 .previewshare-content-type-search {
 	max-width: 440px;
-	margin-bottom: 22px;
+	margin-bottom: 16px;
 }
 
 .previewshare-content-type-list {
-	border-top: 1px solid var(--previewshare-border);
+	border: 1px solid var(--previewshare-border);
+	border-radius: 6px;
+	overflow: hidden;
 	background: var(--previewshare-surface);
 }
 
@@ -682,8 +835,8 @@ body.previewshare-settings-screen #wpbody-content {
 	display: flex;
 	align-items: center;
 	gap: 14px;
-	min-height: 76px;
-	padding: 12px 16px;
+	min-height: 56px;
+	padding: 8px 16px;
 	border-bottom: 1px solid #edf0f4;
 }
 
@@ -704,9 +857,11 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-content-type-info {
-	display: grid;
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
 	flex: 1;
-	gap: 3px;
+	gap: 6px 10px;
 	min-width: 0;
 }
 
@@ -733,8 +888,18 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-content-type-toggle {
+	min-height: 44px;
+	display: flex;
+	align-items: center;
 	flex: 0 0 auto;
 	margin: 0;
+}
+
+.previewshare-content-type-toggle .components-form-toggle__input {
+	min-width: 44px;
+	min-height: 44px;
+	top: 50%;
+	transform: translateY(-50%);
 }
 
 .previewshare-content-type-toggle .components-toggle-control__label {
@@ -771,27 +936,49 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-content-type-footer .previewshare-settings-actions {
-	flex-basis: 100%;
-	margin-top: 4px;
+	flex: 1;
+	margin: 0;
 }
 
 .previewshare-changelog {
-	max-width: 860px;
+	display: grid;
+	gap: 16px;
+	max-width: 960px;
 }
 
 .previewshare-changelog-entry {
-	padding: 22px 0;
-	border-top: 1px solid var(--previewshare-border);
+	display: grid;
+	grid-template-columns: 180px minmax(0, 1fr);
+	gap: 24px;
+	padding: 24px;
+	border: 1px solid var(--previewshare-border);
+	border-radius: 6px;
+	background: var(--previewshare-surface);
+}
+
+.previewshare-changelog-heading {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 10px;
+}
+
+.previewshare-changelog-summary {
+	margin: 0;
+	color: var(--previewshare-muted);
+	font-size: 13px;
+	line-height: 1.5;
 }
 
 .previewshare-changelog-entry h3 {
-	margin: 0 0 10px;
+	margin: 0;
 	color: var(--previewshare-ink);
-	font-size: 16px;
+	font-size: 18px;
 	font-weight: 600;
 }
 
 .previewshare-changelog-entry ul {
+	list-style: disc;
 	margin: 0;
 	padding-inline-start: 20px;
 	color: #475467;
@@ -834,8 +1021,13 @@ body.previewshare-settings-screen #wpbody-content {
 		padding-inline: 28px;
 	}
 
-	.previewshare-metrics {
+	.previewshare-overview-layout {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.previewshare-overview-sidebar {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
+		align-items: start;
 	}
 }
 
@@ -853,7 +1045,7 @@ body.previewshare-settings-screen #wpbody-content {
 		align-items: flex-start;
 		flex-direction: column;
 		gap: 18px;
-		padding: 20px;
+		padding: 10px 20px;
 	}
 
 	.previewshare-product-links {
@@ -874,10 +1066,17 @@ body.previewshare-settings-screen #wpbody-content {
 		padding: 14px 20px 0;
 	}
 
-	.previewshare-overview-columns {
+	.previewshare-overview-sidebar {
 		grid-template-columns: 1fr;
-		gap: 28px;
-		margin-bottom: 28px;
+	}
+
+	.previewshare-overview .components-button {
+		min-height: 40px;
+	}
+
+	.previewshare-overview-reset {
+		align-items: flex-start;
+		flex-direction: column;
 	}
 
 	.previewshare-plugin-grid {
@@ -911,6 +1110,84 @@ body.previewshare-settings-screen #wpbody-content {
 		justify-content: center;
 		width: 100%;
 	}
+
+	.previewshare-overview .previewshare-settings-actions .previewshare-save-state {
+		margin-inline-end: auto;
+	}
+
+	.previewshare-content-types .previewshare-settings-actions .components-button,
+	.previewshare-overview .previewshare-settings-actions .components-button {
+		width: auto;
+	}
+}
+
+@media screen and (max-width: 600px) {
+
+	.previewshare-changelog-entry {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 16px;
+		padding: 20px;
+	}
+
+	.previewshare-changelog-heading {
+		flex-direction: row;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+
+
+	.previewshare-metrics {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 12px;
+	}
+
+	.previewshare-metric-card {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 8px 16px;
+		padding: 16px;
+	}
+
+	.previewshare-metric-label {
+		margin: 0;
+	}
+
+	.previewshare-metric-card strong {
+		font-size: 20px;
+	}
+
+	.previewshare-metric-description {
+		grid-column: 1 / -1;
+		margin: 0;
+	}
+
+	.previewshare-overview-panel,
+	.previewshare-site-defaults > .previewshare-panel-heading,
+	.previewshare-setting-row,
+	.previewshare-overview .previewshare-settings-actions {
+		padding: 20px;
+	}
+
+	.previewshare-site-defaults {
+		padding: 0;
+	}
+
+	.previewshare-expiry-setting .components-base-control__field {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 10px;
+	}
+
+	.previewshare-expiry-setting .components-text-control__input {
+		max-width: 160px;
+	}
+
+	.previewshare-overview
+	.previewshare-settings-actions
+	.previewshare-save-state {
+		flex-basis: 100%;
+	}
+
 }
 
 @media screen and (max-width: 480px) {
@@ -948,7 +1225,6 @@ body.previewshare-settings-screen #wpbody-content {
 		white-space: nowrap;
 	}
 }
-
 
 /* Responsive inventory table for WordPress versions before the
    DataViews React runtime. */
@@ -993,6 +1269,7 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-legacy-link-table {
+	line-height: 1.5;
 	width: 100%;
 	border-collapse: collapse;
 	color: var(--previewshare-ink);
@@ -1000,10 +1277,10 @@ body.previewshare-settings-screen #wpbody-content {
 
 .previewshare-settings .previewshare-legacy-inventory .previewshare-legacy-link-table th,
 .previewshare-settings .previewshare-legacy-inventory .previewshare-legacy-link-table td {
-	padding: 14px 16px;
+	padding: 10px 14px;
 	border-bottom: 1px solid var(--previewshare-border);
 	text-align: start;
-	vertical-align: top;
+	vertical-align: middle;
 }
 
 .previewshare-settings .previewshare-legacy-inventory .previewshare-legacy-link-table th {
@@ -1025,6 +1302,13 @@ body.previewshare-settings-screen #wpbody-content {
 	font-size: 12px;
 }
 
+.previewshare-legacy-row-actions .components-button {
+	height: auto;
+	min-height: 36px;
+	line-height: 1.4;
+	white-space: normal;
+}
+
 .previewshare-legacy-row-actions {
 	display: flex;
 	flex-wrap: wrap;
@@ -1044,7 +1328,7 @@ body.previewshare-settings-screen #wpbody-content {
 	font-size: 13px;
 }
 
-@media screen and (max-width: 1440px) {
+@media screen and (max-width: 1100px) {
 
 	.previewshare-legacy-toolbar {
 		grid-template-columns: 1fr;
@@ -1089,7 +1373,7 @@ body.previewshare-settings-screen #wpbody-content {
 		min-width: 0;
 		justify-content: space-between;
 		gap: 12px;
-		padding: 10px 4px;
+		padding: 8px 4px;
 		border-bottom: 1px solid #edf1f6;
 		overflow-wrap: anywhere;
 	}

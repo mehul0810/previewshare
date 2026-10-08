@@ -136,6 +136,10 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 
 == Changelog ==
 
+= Unreleased =
+* Polish the admin header, plugin links, Changelog, content-type controls, and preview inventory while preserving the Overview redesign.
+* Respect WordPress date/time formats, site timezone, and locale in admin and editor histories and automatic link labels.
+
 = 1.1.0 =
 * Redesigned the PreviewShare settings workspace across Overview, Preview Links, Content Types, Changelog, and More plugins.
 * Added an Expiring soon view and a fixed 24-hour extension action for eligible preview links.
