@@ -1234,8 +1234,6 @@ msgid "PreviewShare icon"
 msgstr ""
 
 #: assets/src/js/settings.js:2348
-msgid "View documentation"
-msgstr ""
 
 #: assets/src/js/settings.js:2358
 msgid "Support"
@@ -1259,4 +1257,57 @@ msgstr ""
 
 #: src/Services/ReviewResponseService.php:567
 msgid "PreviewShare could not save erasure progress. Please restart the erasure request."
+msgstr ""
+
+#: assets/src/js/settings.js:1262
+msgid "Manage your preview links and site defaults in one place."
+msgstr ""
+
+#: assets/src/js/settings.js:1274
+msgid "View preview links"
+msgstr ""
+
+#: assets/src/js/settings.js:1286
+msgid "Create preview links from the content editor."
+msgstr ""
+
+#: assets/src/js/settings.js:1295
+msgid "Used when you create a new preview link."
+msgstr ""
+
+#: assets/src/js/settings.js:1306
+msgid "Controls caching for preview token lookups."
+msgstr ""
+
+#: assets/src/js/settings.js:1554
+msgid "Restore the original defaults for all PreviewShare settings."
+msgstr ""
+
+#: assets/src/js/settings.js assets/src/js/date-utils.js
+msgid "Documentation"
+msgstr ""
+
+#: assets/src/js/settings.js assets/src/js/date-utils.js
+msgid "Installed version"
+msgstr ""
+
+#: assets/src/js/settings.js assets/src/js/date-utils.js
+msgid "A clearer preview workspace"
+msgstr ""
+
+#: assets/src/js/settings.js assets/src/js/date-utils.js
+msgid "WordPress editor compatibility"
+msgstr ""
+
+#: assets/src/js/settings.js assets/src/js/date-utils.js
+msgid "Maintenance and diagnostics"
+msgstr ""
+
+#: assets/src/js/settings.js assets/src/js/date-utils.js
+msgid "Secure previews for unpublished content"
+msgstr ""
+
+#. translators: %s: Link creation date and time.
+#: assets/src/js/date-utils.js
+msgid "Preview link %s"
 msgstr ""

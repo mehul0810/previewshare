@@ -125,6 +125,7 @@ class Actions {
 				'generate_url' => rest_url( 'previewshare/v1/generate-url' ),
 				'home_url' => home_url(),
 				'post_types' => \previewshare_get_supported_post_types(),
+				'date_settings' => \previewshare_get_date_display_settings(),
 				'nonce'   => wp_create_nonce( 'wp_rest' ),
 			]
 		);

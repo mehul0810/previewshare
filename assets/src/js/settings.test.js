@@ -225,6 +225,8 @@ async function mountSettingsApp( initialSettings ) {
 	document.body.innerHTML = '<div id="previewshare-settings-app"></div>';
 	window.previewshare_settings = {
 		version: '1.1.0',
+		plugin_icons_url:
+			'/wp-content/plugins/previewshare/assets/images/plugins/',
 		rest_url: '/wp-json/previewshare/v1',
 		nonce: 'test-nonce',
 		settings: initialSettings,
@@ -251,6 +253,8 @@ beforeAll( () => {
 	globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 	window.previewshare_settings = {
 		version: '1.1.0',
+		plugin_icons_url:
+			'/wp-content/plugins/previewshare/assets/images/plugins/',
 		rest_url: '/wp-json/previewshare/v1',
 		nonce: 'test-nonce',
 	};
@@ -331,6 +335,9 @@ describe( 'PreviewShare responsive inventory', () => {
 			'Actions',
 		] );
 		expect( row.textContent ).toContain( 'Review draft' );
+		expect(
+			row.querySelector( '.previewshare-content-cell small' ).textContent
+		).toBe( '#42' );
 		expect( row.textContent ).toContain( 'Client review' );
 		expect( document.body.textContent ).toContain(
 			'1 link in this site inventory.'
@@ -1007,7 +1014,7 @@ describe( 'PreviewShare settings navigation', () => {
 
 		expect(
 			document.querySelectorAll( '.previewshare-plugin-card' )
-		).toHaveLength( 9 );
+		).toHaveLength( 7 );
 		expect( document.body.textContent ).toContain( 'ThemeRouter' );
 		expect( document.body.textContent ).toContain( 'Aculect Icon Library' );
 		expect( document.body.textContent ).toContain( 'OneCaptcha' );
@@ -1019,7 +1026,7 @@ describe( 'PreviewShare settings navigation', () => {
 				'.previewshare-plugin-card .previewshare-external-link'
 			)
 		);
-		expect( productLinks ).toHaveLength( 9 );
+		expect( productLinks ).toHaveLength( 7 );
 		expect(
 			productLinks.find( ( link ) =>
 				link.getAttribute( 'aria-label' ).includes( 'ThemeRouter' )

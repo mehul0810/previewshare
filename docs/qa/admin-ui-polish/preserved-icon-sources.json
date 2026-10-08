@@ -1,0 +1,44 @@
+[
+  {
+    "file": "assets/images/plugins/themerouter.svg",
+    "source": "themerouter/assets/src/images/icon.svg",
+    "bytes": 38865,
+    "sha256": "4e70132b08dec05aad225537e7ffc2fd6c9ba1cd9aec84af643364b4fbe50dab"
+  },
+  {
+    "file": "assets/images/plugins/perform.jpg",
+    "source": "perform/.wordpress-org/icon-128x128.jpg",
+    "bytes": 12125,
+    "sha256": "6c2ae203641b601cd0ed3fb1240e2c689048f94292b8cc3b43712c725631954c"
+  },
+  {
+    "file": "assets/images/plugins/cleanlinks.png",
+    "source": "cleanlinks/.wordpress-org/icon-128x128.png",
+    "bytes": 11501,
+    "sha256": "7e6a63d6f5cdc779f6669dccebc66224305a165420bc6f17ae45d522b536b370"
+  },
+  {
+    "file": "assets/images/plugins/aculect-ai-companion.png",
+    "source": "aculect-ai-companion/.wordpress-org/icon-128x128.png",
+    "bytes": 4117,
+    "sha256": "74e9d46cbce8c8613f78fe2731c21067b521ac8c28af2c716b212371ca9d47bc"
+  },
+  {
+    "file": "assets/images/plugins/aculect-icon-library.png",
+    "source": "aculect-icon-library/.wordpress-org/icon-128x128.png",
+    "bytes": 3068,
+    "sha256": "4678db986f7ad54f363dbb0b897b8c145271f287471815614ad03f9cc5ecfaa7"
+  },
+  {
+    "file": "assets/images/plugins/wp-distraction-free-view.png",
+    "source": "wp-distraction-free-view/.wordpress-org/icon-128x128.png",
+    "bytes": 9051,
+    "sha256": "ef6001eeea8f8f1e425b1ea07143afd704d4ea8ec1c7a23fb9b649ecbdc2b360"
+  },
+  {
+    "file": "assets/images/plugins/onecaptcha.svg",
+    "source": "onecaptcha/assets/img/icon.svg",
+    "bytes": 183220,
+    "sha256": "5befa2244fbb12de9df9acf7668911f160a233f5a6dc3412b7bf219c976cf306"
+  }
+]

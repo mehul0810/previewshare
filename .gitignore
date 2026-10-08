@@ -51,3 +51,7 @@ assets/dist/
 
 # Composer
 vendor
+
+# Local browser verification
+.playwright-cli/
+output/

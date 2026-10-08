@@ -1,9 +1,11 @@
+import { formatSiteDate, formatPreviewLabel } from './date-utils';
 import { DataViews, filterSortAndPaginate } from '@wordpress/dataviews/wp';
 import removeAccents from 'remove-accents';
 import {
 	check,
 	copy,
-	external,
+	arrowRight,
+	help,
 	grid,
 	link,
 	page,
@@ -71,6 +73,7 @@ import {
 	const pluginCatalog = [
 		{
 			name: 'ThemeRouter',
+			icon: 'themerouter.svg',
 			description: __(
 				'Preview installed themes privately and route ready WordPress content to them in controlled stages.',
 				'previewshare'
@@ -79,6 +82,7 @@ import {
 		},
 		{
 			name: 'Perform',
+			icon: 'perform.jpg',
 			description: __(
 				'Optimize WordPress performance with asset controls, page caching, CDN rewriting, and cleanup tools.',
 				'previewshare'
@@ -87,6 +91,7 @@ import {
 		},
 		{
 			name: 'CleanLinks',
+			icon: 'cleanlinks.png',
 			description: __(
 				'Create branded short links, manage redirects, cloak affiliate URLs, and export links via CSV.',
 				'previewshare'
@@ -95,6 +100,7 @@ import {
 		},
 		{
 			name: 'Aculect AI Companion',
+			icon: 'aculect-ai-companion.png',
 			description: __(
 				'Use MCP-compatible AI apps to manage WordPress content, internal links, media, comments, and site workflows.',
 				'previewshare'
@@ -102,23 +108,8 @@ import {
 			url: 'https://wordpress.org/plugins/aculect-ai-companion/',
 		},
 		{
-			name: 'Aculect Mail',
-			description: __(
-				'Route transactional WordPress email through configured providers, with failover, retries, logs, and resending.',
-				'previewshare'
-			),
-			url: 'https://github.com/mehul0810/aculect-mail',
-		},
-		{
-			name: 'Aculect Blocks',
-			description: __(
-				'Enhance WordPress core blocks with portable styles, practical patterns, and optional structured data from visible content.',
-				'previewshare'
-			),
-			url: 'https://github.com/mehul0810/aculect-blocks',
-		},
-		{
 			name: 'Aculect Icon Library',
+			icon: 'aculect-icon-library.png',
 			description: __(
 				'Add Heroicons, Bootstrap Icons, Font Awesome Free, and custom SVG icons to the native WordPress Icon block.',
 				'previewshare'
@@ -127,6 +118,7 @@ import {
 		},
 		{
 			name: 'WP Distraction Free View',
+			icon: 'wp-distraction-free-view.png',
 			description: __(
 				'Give visitors a focused Reader Mode for posts, pages, and selected public post types.',
 				'previewshare'
@@ -135,6 +127,7 @@ import {
 		},
 		{
 			name: 'OneCaptcha',
+			icon: 'onecaptcha.svg',
 			description: __(
 				'Protect WordPress forms and sign-in flows with reCAPTCHA, Cloudflare Turnstile, and hCaptcha.',
 				'previewshare'
@@ -174,17 +167,7 @@ import {
 	}
 
 	function formatDate( timestamp ) {
-		if ( ! timestamp ) {
-			return __( 'Never', 'previewshare' );
-		}
-
-		const date = new Date( timestamp * 1000 );
-
-		if ( Number.isNaN( date.getTime() ) ) {
-			return __( 'Never', 'previewshare' );
-		}
-
-		return date.toLocaleString();
+		return formatSiteDate( timestamp, localized );
 	}
 
 	function formatHours( hours ) {
@@ -259,7 +242,7 @@ import {
 					'Extend %1$s link for %2$s, reference %3$s',
 					'previewshare'
 				),
-				item.label,
+				formatPreviewLabel( item, localized ),
 				title,
 				reference
 			);
@@ -365,12 +348,7 @@ import {
 					const title =
 						item.post_title ||
 						__( 'Untitled content', 'previewshare' );
-					const meta = sprintf(
-						/* translators: 1: Content type. 2: Post ID. */
-						__( '%1$s - ID %2$d', 'previewshare' ),
-						item.post_type || __( 'Content', 'previewshare' ),
-						item.post_id
-					);
+					const meta = '#' + ( Number( item.post_id ) || 0 );
 
 					return el(
 						'div',
@@ -387,10 +365,8 @@ import {
 				type: 'text',
 				label: __( 'Label', 'previewshare' ),
 				enableGlobalSearch: true,
-				getValue: ( { item } ) =>
-					item.label || __( 'Preview link', 'previewshare' ),
-				render: ( { item } ) =>
-					item.label || __( 'Preview link', 'previewshare' ),
+				getValue: ( { item } ) => formatPreviewLabel( item, localized ),
+				render: ( { item } ) => formatPreviewLabel( item, localized ),
 			},
 			{
 				id: 'status',
@@ -484,7 +460,13 @@ import {
 		return removeAccents( String( input ).trim().toLowerCase() );
 	}
 
-	function ExternalLink( { href, icon, children, ariaLabel } ) {
+	function ExternalLink( {
+		href,
+		icon,
+		children,
+		ariaLabel,
+		iconBefore = false,
+	} ) {
 		return el(
 			'a',
 			{
@@ -494,12 +476,13 @@ import {
 				target: '_blank',
 				rel: 'noopener noreferrer',
 			},
+			iconBefore ? el( Icon, { icon, size: 16 } ) : null,
 			children,
-			el( Icon, { icon, size: 16 } )
+			! iconBefore ? el( Icon, { icon, size: 16 } ) : null
 		);
 	}
 
-	function MetricCard( { label, value, icon } ) {
+	function MetricCard( { label, value, icon, description } ) {
 		return el(
 			'div',
 			{ className: 'previewshare-metric-card' },
@@ -509,7 +492,14 @@ import {
 				icon ? el( Icon, { icon, size: 18 } ) : null,
 				el( 'span', null, label )
 			),
-			el( 'strong', null, value )
+			el( 'strong', null, value ),
+			description
+				? el(
+						'p',
+						{ className: 'previewshare-metric-description' },
+						description
+				  )
+				: null
 		);
 	}
 
@@ -1231,6 +1221,16 @@ import {
 			);
 		}
 
+		function navigateToTab( tabName ) {
+			setActiveTab( tabName );
+			const tab = document.getElementById(
+				'previewshare-tab-' + tabName
+			);
+			if ( tab ) {
+				tab.focus();
+			}
+		}
+
 		function renderOverview() {
 			const activeTokens = tokens.filter(
 				( token ) => token.status === 'active'
@@ -1240,14 +1240,31 @@ import {
 
 			return el(
 				'div',
-				{ className: 'previewshare-tab-content' },
-				renderTabIntro(
-					__( 'Overview', 'previewshare' ),
-					__(
-						'Share unpublished work. Keep control of access.',
-						'previewshare'
+				{ className: 'previewshare-tab-content previewshare-overview' },
+				el(
+					'div',
+					{ className: 'previewshare-tab-intro' },
+					el(
+						'div',
+						{ className: 'previewshare-tab-intro-copy' },
+						el( 'h2', null, __( 'Overview', 'previewshare' ) ),
+						el(
+							'p',
+							null,
+							__(
+								'Manage your preview links and site defaults in one place.',
+								'previewshare'
+							)
+						)
 					),
-					true
+					el(
+						Button,
+						{
+							variant: 'primary',
+							onClick: () => navigateToTab( 'previews' ),
+						},
+						__( 'View preview links', 'previewshare' )
+					)
 				),
 				el(
 					'div',
@@ -1258,11 +1275,19 @@ import {
 							: __( 'Active links', 'previewshare' ),
 						value: activeTokens.length,
 						icon: link,
+						description: __(
+							'Create preview links from the content editor.',
+							'previewshare'
+						),
 					} ),
 					el( MetricCard, {
 						label: __( 'Default expiry', 'previewshare' ),
 						value: formatHours( settings.default_ttl_hours ),
 						icon: timeToRead,
+						description: __(
+							'Used when you create a new preview link.',
+							'previewshare'
+						),
 					} ),
 					el( MetricCard, {
 						label: __( 'Token cache', 'previewshare' ),
@@ -1270,6 +1295,10 @@ import {
 							? __( 'Enabled', 'previewshare' )
 							: __( 'Disabled', 'previewshare' ),
 						icon: grid,
+						description: __(
+							'Controls caching for preview token lookups.',
+							'previewshare'
+						),
 					} )
 				),
 				hasMoreTokens
@@ -1289,167 +1318,241 @@ import {
 					: null,
 				el(
 					'div',
-					{ className: 'previewshare-overview-columns' },
+					{ className: 'previewshare-overview-layout' },
 					el(
 						'section',
 						{
-							className: 'previewshare-overview-section',
-							'aria-labelledby':
-								'previewshare-content-types-title',
+							className:
+								'previewshare-overview-panel previewshare-site-defaults',
+							'aria-labelledby': 'previewshare-defaults-title',
 						},
 						el(
-							'h3',
-							{ id: 'previewshare-content-types-title' },
-							__( 'Enabled content types', 'previewshare' )
-						),
-						el(
-							'p',
-							{ className: 'description' },
-							__(
-								'Choose which public content can receive a preview link.',
-								'previewshare'
+							'div',
+							{ className: 'previewshare-panel-heading' },
+							el(
+								'h3',
+								{ id: 'previewshare-defaults-title' },
+								__( 'Site defaults', 'previewshare' )
+							),
+							el(
+								'p',
+								null,
+								__(
+									'Changes save automatically after each field update.',
+									'previewshare'
+								)
 							)
 						),
-						enabledPostTypes.length
-							? el(
-									'ul',
-									{ className: 'previewshare-overview-list' },
-									...enabledPostTypes.map( ( postType ) =>
-										el(
-											'li',
-											{ key: postType },
-											getPostTypeLabel(
-												postType,
-												availablePostTypes
-											)
-										)
-									)
-							  )
-							: el(
-									'p',
-									{ className: 'previewshare-empty-state' },
-									__(
-										'No content types are enabled.',
-										'previewshare'
-									)
-							  ),
 						el(
-							Button,
+							'div',
 							{
-								variant: 'secondary',
-								onClick: () => setActiveTab( 'content-types' ),
+								className:
+									'previewshare-setting-row previewshare-expiry-setting',
 							},
-							__( 'Manage content types', 'previewshare' )
-						)
+							el( TextControl, {
+								label: __(
+									'Default expiry in hours',
+									'previewshare'
+								),
+								type: 'number',
+								min: 0,
+								value: settings.default_ttl_hours,
+								help: __(
+									'Use 0 for links that do not expire automatically.',
+									'previewshare'
+								),
+								onChange: ( value ) =>
+									updateSetting(
+										'default_ttl_hours',
+										Math.max(
+											0,
+											parseInt( value, 10 ) || 0
+										)
+									),
+							} )
+						),
+						el(
+							'div',
+							{ className: 'previewshare-setting-row' },
+							el( ToggleControl, {
+								label: __(
+									'Enable token lookup caching',
+									'previewshare'
+								),
+								checked: settings.enable_caching,
+								help: __(
+									'Recommended when the site has a persistent object cache.',
+									'previewshare'
+								),
+								onChange: ( checked ) =>
+									updateSetting( 'enable_caching', checked ),
+							} )
+						),
+						el(
+							'div',
+							{ className: 'previewshare-setting-row' },
+							el( ToggleControl, {
+								label: __(
+									'Enable diagnostic logging',
+									'previewshare'
+								),
+								checked: settings.enable_logging,
+								help: __(
+									'Enable this while troubleshooting. Diagnostic events are made available to site integrations; PreviewShare does not store or display a log here.',
+									'previewshare'
+								),
+								onChange: ( checked ) =>
+									updateSetting( 'enable_logging', checked ),
+							} )
+						),
+						renderSaveActions()
 					),
 					el(
-						'section',
-						{
-							className: 'previewshare-overview-section',
-							'aria-labelledby': 'previewshare-protection-title',
-						},
+						'div',
+						{ className: 'previewshare-overview-sidebar' },
 						el(
-							'h3',
-							{ id: 'previewshare-protection-title' },
-							__( 'Protection summary', 'previewshare' )
-						),
-						el(
-							'p',
-							{ className: 'description' },
-							__(
-								'Preview links grant read-only access to unpublished items without requiring an account.',
-								'previewshare'
+							'section',
+							{
+								className: 'previewshare-overview-panel',
+								'aria-labelledby':
+									'previewshare-content-types-title',
+							},
+							el(
+								'div',
+								{ className: 'previewshare-panel-heading' },
+								el(
+									'h3',
+									{ id: 'previewshare-content-types-title' },
+									__(
+										'Enabled content types',
+										'previewshare'
+									),
+									el(
+										'span',
+										{
+											className:
+												'previewshare-count-badge',
+											'aria-hidden': true,
+										},
+										enabledPostTypes.length
+									)
+								),
+								el(
+									'p',
+									null,
+									__(
+										'Choose which public content can receive a preview link.',
+										'previewshare'
+									)
+								)
+							),
+							enabledPostTypes.length
+								? el(
+										'ul',
+										{
+											className:
+												'previewshare-overview-list',
+										},
+										...enabledPostTypes.map( ( postType ) =>
+											el(
+												'li',
+												{ key: postType },
+												getPostTypeLabel(
+													postType,
+													availablePostTypes
+												)
+											)
+										)
+								  )
+								: el(
+										'p',
+										{
+											className:
+												'previewshare-empty-state',
+										},
+										__(
+											'No content types are enabled.',
+											'previewshare'
+										)
+								  ),
+							el(
+								Button,
+								{
+									variant: 'secondary',
+									onClick: () =>
+										navigateToTab( 'content-types' ),
+								},
+								__( 'Manage content types', 'previewshare' )
 							)
 						),
 						el(
-							'ul',
-							{ className: 'previewshare-fact-list' },
-							...[
-								__(
-									'Tokens are stored as hashes',
-									'previewshare'
-								),
-								__(
-									'Search engines are asked not to index shared previews',
-									'previewshare'
-								),
-								__(
-									'Revoke access at any time',
-									'previewshare'
-								),
-							].map( ( item ) =>
+							'section',
+							{
+								className: 'previewshare-overview-panel',
+								'aria-labelledby':
+									'previewshare-protection-title',
+							},
+							el(
+								'div',
+								{ className: 'previewshare-panel-heading' },
 								el(
-									'li',
-									{ key: item },
-									el( Icon, { icon: check, size: 18 } ),
-									el( 'span', null, item )
+									'h3',
+									{ id: 'previewshare-protection-title' },
+									__( 'Protection summary', 'previewshare' )
+								),
+								el(
+									'p',
+									null,
+									__(
+										'Preview links grant read-only access to unpublished items without requiring an account.',
+										'previewshare'
+									)
+								)
+							),
+							el(
+								'ul',
+								{ className: 'previewshare-fact-list' },
+								...[
+									__(
+										'Tokens are stored as hashes',
+										'previewshare'
+									),
+									__(
+										'Search engines are asked not to index shared previews',
+										'previewshare'
+									),
+									__(
+										'Revoke access at any time',
+										'previewshare'
+									),
+								].map( ( item ) =>
+									el(
+										'li',
+										{ key: item },
+										el( Icon, { icon: check, size: 18 } ),
+										el( 'span', null, item )
+									)
 								)
 							)
 						)
 					)
 				),
 				el(
-					'section',
-					{
-						className:
-							'previewshare-overview-section previewshare-site-defaults',
-						'aria-labelledby': 'previewshare-defaults-title',
-					},
-					el(
-						'h3',
-						{ id: 'previewshare-defaults-title' },
-						__( 'Site defaults', 'previewshare' )
-					),
+					'div',
+					{ className: 'previewshare-overview-reset' },
 					el(
 						'p',
-						{ className: 'description' },
+						null,
 						__(
-							'Changes save automatically after each field update.',
+							'Restore the original defaults for all PreviewShare settings.',
 							'previewshare'
 						)
 					),
-					el( TextControl, {
-						label: __( 'Default expiry in hours', 'previewshare' ),
-						type: 'number',
-						min: 0,
-						value: settings.default_ttl_hours,
-						help: __(
-							'Use 0 for links that do not expire automatically.',
-							'previewshare'
-						),
-						onChange: ( value ) =>
-							updateSetting(
-								'default_ttl_hours',
-								Math.max( 0, parseInt( value, 10 ) || 0 )
-							),
-					} ),
-					el( ToggleControl, {
-						label: __(
-							'Enable token lookup caching',
-							'previewshare'
-						),
-						checked: settings.enable_caching,
-						help: __(
-							'Recommended when the site has a persistent object cache.',
-							'previewshare'
-						),
-						onChange: ( checked ) =>
-							updateSetting( 'enable_caching', checked ),
-					} ),
-					el( ToggleControl, {
-						label: __(
-							'Enable diagnostic logging',
-							'previewshare'
-						),
-						checked: settings.enable_logging,
-						help: __(
-							'Enable this while troubleshooting. Diagnostic events are made available to site integrations; PreviewShare does not store or display a log here.',
-							'previewshare'
-						),
-						onChange: ( checked ) =>
-							updateSetting( 'enable_logging', checked ),
-					} ),
-					renderSaveActions()
+					el(
+						Button,
+						{ variant: 'tertiary', onClick: restoreDefaults },
+						__( 'Restore defaults', 'previewshare' )
+					)
 				)
 			);
 		}
@@ -1475,18 +1578,22 @@ import {
 								className: 'previewshare-plugin-card',
 								key: plugin.name,
 							},
-							el(
-								'div',
-								{ className: 'previewshare-plugin-card-mark' },
-								el( Icon, { icon: grid, size: 20 } )
-							),
+							el( 'img', {
+								className: 'previewshare-plugin-card-mark',
+								src: localized.plugin_icons_url + plugin.icon,
+								alt: '',
+								width: 48,
+								height: 48,
+								loading: 'lazy',
+								decoding: 'async',
+							} ),
 							el( 'h3', null, plugin.name ),
 							el( 'p', null, plugin.description ),
 							el(
 								ExternalLink,
 								{
 									href: plugin.url,
-									icon: external,
+									icon: arrowRight,
 									ariaLabel: sprintf(
 										/* translators: %s: Plugin name. */
 										__(
@@ -1771,19 +1878,9 @@ import {
 													'Untitled content',
 													'previewshare'
 												);
-											const meta = sprintf(
-												/* translators: 1: Content type. 2: Post ID. */
-												__(
-													'%1$s - ID %2$d',
-													'previewshare'
-												),
-												item.post_type ||
-													__(
-														'Content',
-														'previewshare'
-													),
-												Number( item.post_id ) || 0
-											);
+											const meta =
+												'#' +
+												( Number( item.post_id ) || 0 );
 											const expiringSoon =
 												isExpiringSoon( item );
 											const status = expiringSoon
@@ -1829,11 +1926,10 @@ import {
 														'Label',
 														'previewshare'
 													),
-													item.label ||
-														__(
-															'Preview link',
-															'previewshare'
-														)
+													formatPreviewLabel(
+														item,
+														localized
+													)
 												),
 												renderCell(
 													__(
@@ -2243,7 +2339,10 @@ import {
 
 			return el(
 				'div',
-				{ className: 'previewshare-tab-content' },
+				{
+					className:
+						'previewshare-tab-content previewshare-content-types',
+				},
 				renderTabIntro(
 					__( 'Content types', 'previewshare' ),
 					__(
@@ -2384,6 +2483,7 @@ import {
 			const entries = [
 				{
 					version: '1.1.0',
+					title: __( 'A clearer preview workspace', 'previewshare' ),
 					items: [
 						__(
 							'Redesigned the settings workspace across all five tabs.',
@@ -2405,6 +2505,10 @@ import {
 				},
 				{
 					version: '1.0.2',
+					title: __(
+						'WordPress editor compatibility',
+						'previewshare'
+					),
 					items: [
 						__(
 							'Validated preview-link editor and admin workflows with WordPress 7.1.',
@@ -2418,6 +2522,7 @@ import {
 				},
 				{
 					version: '1.0.1',
+					title: __( 'Maintenance and diagnostics', 'previewshare' ),
 					items: [
 						__(
 							'Improved diagnostics, dependency audit coverage, and release automation.',
@@ -2431,6 +2536,10 @@ import {
 				},
 				{
 					version: '1.0.0',
+					title: __(
+						'Secure previews for unpublished content',
+						'previewshare'
+					),
 					items: [
 						__(
 							'Added secure preview links for draft, pending, and scheduled content.',
@@ -2468,7 +2577,32 @@ import {
 								className: 'previewshare-changelog-entry',
 								key: entry.version,
 							},
-							el( 'h3', null, 'v' + entry.version ),
+							el(
+								'div',
+								{ className: 'previewshare-changelog-heading' },
+								el( 'h3', null, 'v' + entry.version ),
+								el(
+									'p',
+									{
+										className:
+											'previewshare-changelog-summary',
+									},
+									entry.title
+								),
+								entry.version === localized.version
+									? el(
+											'span',
+											{
+												className:
+													'previewshare-version-badge',
+											},
+											__(
+												'Installed version',
+												'previewshare'
+											)
+									  )
+									: null
+							),
 							el(
 								'ul',
 								null,
@@ -2579,9 +2713,10 @@ import {
 							href:
 								localized.documentation_url ||
 								'https://github.com/mehul0810/previewshare#readme',
-							icon: external,
+							icon: page,
+							iconBefore: true,
 						},
-						__( 'View documentation', 'previewshare' )
+						__( 'Documentation', 'previewshare' )
 					),
 					el(
 						ExternalLink,
@@ -2589,7 +2724,8 @@ import {
 							href:
 								localized.support_url ||
 								'https://wordpress.org/support/plugin/previewshare/',
-							icon: external,
+							icon: help,
+							iconBefore: true,
 						},
 						__( 'Support', 'previewshare' )
 					)
