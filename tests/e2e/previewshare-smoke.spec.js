@@ -658,8 +658,9 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	const expiringStatus = inventoryTable.locator(
 		'.previewshare-status.is-expiring_soon'
 	);
+	const extendButtonName = `Extend E2E smoke link for ${ postTitle }, reference ${ String( generatedLink.id ).slice( 0, 8 ) }`;
 	const extendButton = inventoryTable.getByRole( 'button', {
-		name: 'Extend',
+		name: extendButtonName,
 		exact: true,
 	} );
 	await expect( inventoryTable ).toBeVisible();
@@ -690,7 +691,7 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	);
 	expect( desktopPageWidth ).toBeLessThanOrEqual( 1280 );
 	await expect(
-		page.getByRole( 'button', { name: 'Extend', exact: true } )
+		page.getByRole( 'button', { name: extendButtonName, exact: true } )
 	).toBeVisible();
 	const linkSearch = page.getByRole( 'textbox', {
 		name: 'Search preview links',
@@ -760,7 +761,7 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect( mobileCard ).toContainText( generatedLink.post_title );
 	await expect( mobileCard ).toContainText( generatedLink.label );
 	const mobileExtendButton = mobileCard.getByRole( 'button', {
-		name: 'Extend',
+		name: extendButtonName,
 		exact: true,
 	} );
 	await mobileExtendButton.focus();
@@ -826,7 +827,7 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 			.getByText( 'Access extended by 24 hours.', { exact: false } )
 	).toBeVisible();
 	await expect(
-		page.getByRole( 'button', { name: 'Extend', exact: true } )
+		page.getByRole( 'button', { name: extendButtonName, exact: true } )
 	).toHaveCount( 0 );
 	const samePreviewResponse = await anonymous.goto( previewUrl );
 	expect( samePreviewResponse.status() ).toBe( 200 );
