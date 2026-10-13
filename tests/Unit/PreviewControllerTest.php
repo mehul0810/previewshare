@@ -78,6 +78,38 @@ class PreviewControllerTest extends TestCase {
 		$this->assertSame( [ 'status' => 400 ], $response->get_error_data() );
 	}
 
+	public function test_delete_by_id_requires_a_strict_hash_and_returns_deleted_revoked_state(): void {
+		$storage    = Mockery::mock( PostMetaStorage::class );
+		$controller = $this->makeController( $storage );
+		$id         = str_repeat( 'a', 64 );
+		$storage->shouldReceive( 'delete_token_by_id' )->once()->with( $id )->andReturn( true );
+
+		$response = $controller->delete_by_id( new WP_REST_Request( [ 'id' => $id ] ) );
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( [ 'deleted' => true, 'revoked' => true ], $response->get_data() );
+
+		$invalid = $controller->delete_by_id( new WP_REST_Request( [ 'id' => str_repeat( 'g', 64 ) ] ) );
+		$this->assertInstanceOf( WP_Error::class, $invalid );
+		$this->assertSame( 'invalid_id', $invalid->get_error_code() );
+		$this->assertSame( [ 'status' => 400 ], $invalid->get_error_data() );
+	}
+
+	public function test_delete_route_requires_manage_options(): void {
+		$controller = $this->makeController();
+		$routes     = [];
+		Functions\expect( 'register_rest_route' )->times( 7 )->andReturnUsing(
+			static function ( string $namespace, string $route, array $args ) use ( &$routes ): bool {
+				$routes[ $route ] = $args;
+				return true;
+			}
+		);
+		$controller->register_routes();
+
+		$this->assertSame( 'POST', $routes['/tokens/delete']['methods'] );
+		Functions\expect( 'current_user_can' )->once()->with( 'manage_options' )->andReturn( false );
+		$this->assertFalse( $routes['/tokens/delete']['permission_callback']() );
+	}
+
 	public function test_extend_by_id_returns_the_new_expiry(): void {
 		$storage    = Mockery::mock( PostMetaStorage::class );
 		$controller = $this->makeController( $storage );
@@ -116,7 +148,7 @@ class PreviewControllerTest extends TestCase {
 		$routes     = [];
 
 		Functions\expect( 'register_rest_route' )
-			->times( 6 )
+			->times( 7 )
 			->andReturnUsing(
 				static function ( string $namespace, string $route, array $args ) use ( &$routes ): bool {
 					$routes[ $route ] = $args;
@@ -298,6 +330,19 @@ class PreviewControllerTest extends TestCase {
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertTrue( $response->get_data()['revoked'] );
+	}
+
+	public function test_revoke_post_id_propagates_incomplete_storage_revocation(): void {
+		Functions\when( '__' )->returnArg( 1 );
+		$storage    = Mockery::mock( PostMetaStorage::class );
+		$controller = $this->makeController( $storage );
+		$storage->shouldReceive( 'revoke_token_for_post' )->once()->with( 42 )->andReturn( false );
+
+		$response = $controller->revoke( new WP_REST_Request( [ 'post_id' => 42 ] ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertFalse( $response->get_data()['revoked'] );
 	}
 
 	public function test_revoke_requires_token_when_post_id_is_missing(): void {

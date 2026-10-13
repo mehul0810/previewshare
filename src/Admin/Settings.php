@@ -101,6 +101,7 @@ class Settings {
 				'settings'          => \previewshare_get_settings(),
 				'version'           => defined( 'PREVIEWSHARE_VERSION' ) ? (string) constant( 'PREVIEWSHARE_VERSION' ) : '1.0.0',
 				'icon_url'          => $plugin_url . 'assets/images/previewshare-icon.png',
+				'plugin_icons_url'  => $plugin_url . 'assets/images/plugins/',
 				'documentation_url' => defined( 'PREVIEWSHARE_PLUGIN_DOCS_URL' ) ? (string) constant( 'PREVIEWSHARE_PLUGIN_DOCS_URL' ) : 'https://github.com/mehul0810/previewshare#readme',
 				'support_url'       => 'https://wordpress.org/support/plugin/previewshare/',
 			]

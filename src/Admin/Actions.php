@@ -679,11 +679,19 @@ class Actions {
 		$this->verify_admin_action( 'previewshare_revoke_links', $post_id );
 
 		$revoked = $this->storage->revoke_token_for_post( $post_id );
+		$links   = $revoked ? [] : $this->storage->get_links_for_post( $post_id );
+		$active  = false;
+		foreach ( $links as $link ) {
+			if ( empty( $link['revoked'] ) && ( null === $link['expires_at'] || (int) $link['expires_at'] > time() ) ) {
+				$active = true;
+				break;
+			}
+		}
 		set_transient(
 			'previewshare_admin_notice_' . get_current_user_id(),
 			[
-				'type'    => $revoked ? 'success' : 'info',
-				'message' => $revoked ? __( 'Preview links revoked.', 'previewshare' ) : __( 'No active preview links were found.', 'previewshare' ),
+				'type'    => $revoked ? 'success' : ( $active ? 'error' : 'info' ),
+				'message' => $revoked ? __( 'Preview links revoked.', 'previewshare' ) : ( $active ? __( 'Preview links could not be revoked.', 'previewshare' ) : __( 'No active preview links were found.', 'previewshare' ) ),
 			],
 			10 * MINUTE_IN_SECONDS
 		);

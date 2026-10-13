@@ -136,6 +136,12 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 
 == Changelog ==
 
+= Unreleased =
+* Improve preview-link inventory filters, descriptions, dates, and content IDs.
+* Add row actions to revoke access or revoke and delete a preview-link entry, with confirmation before deletion.
+* Retry concurrent revocation updates and report an error when all preview links could not be revoked.
+* Simplify content type selection with autosaving checkboxes and keep the selected settings tab after refresh.
+
 = 1.1.0 =
 * Redesigned the PreviewShare settings workspace across Overview, Preview Links, Content Types, Changelog, and More plugins.
 * Added an Expiring soon view and a fixed 24-hour extension action for eligible preview links.
