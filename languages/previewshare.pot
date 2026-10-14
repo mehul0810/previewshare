@@ -1214,6 +1214,10 @@ msgstr ""
 msgid "Improved preview-link security by keeping concurrently generated links visible and revocable and avoiding temporary storage of generated Classic Editor and post-list URLs."
 msgstr ""
 
+#: assets/src/js/settings.js
+msgid "Kept preview sharing controls available when Classic Editor is selected for an individual post."
+msgstr ""
+
 #: assets/src/js/settings.js:2156
 msgid "Added expiring-link status and a fixed 24-hour extension action."
 msgstr ""

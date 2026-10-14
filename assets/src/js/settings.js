@@ -2815,6 +2815,10 @@ import {
 							'Improved preview-link security by keeping concurrently generated links visible and revocable and avoiding temporary storage of generated Classic Editor and post-list URLs.',
 							'previewshare'
 						),
+						__(
+							'Kept preview sharing controls available when Classic Editor is selected for an individual post.',
+							'previewshare'
+						),
 					],
 				},
 				{

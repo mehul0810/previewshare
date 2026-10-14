@@ -152,6 +152,7 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 * Added optional reviewer approvals, change requests, and comments per preview link, with retries that preserve edits, multilingual feedback limits, editor history, stale-approval status, and 90-day feedback retention.
 * Continued bounded 90-day cleanup across large reviewer-response backlogs and reported privacy-erasure failures without retry loops.
 * Improved preview-link security by keeping concurrently generated links visible and revocable and avoiding temporary storage of generated Classic Editor and post-list URLs.
+* Kept preview sharing controls available when Classic Editor is selected for an individual post.
 
 = 1.0.2 =
 * Validated preview-link editor and admin workflows with WordPress 7.1.
