@@ -216,7 +216,11 @@ class ReviewControllerTest extends TestCase {
 		Functions\when( 'wp_json_encode' )->alias( 'json_encode' );
 		Functions\when( 'get_posts' )->justReturn( [] );
 		Functions\when( 'sanitize_email' )->returnArg( 1 );
-		Functions\when( 'sanitize_textarea_field' )->alias( 'trim' );
+		Functions\when( 'sanitize_textarea_field' )->alias(
+			static function ( string $value ): string {
+				return trim( strip_tags( $value ) );
+			}
+		);
 	}
 
 	protected function tearDown(): void {
@@ -251,6 +255,92 @@ class ReviewControllerTest extends TestCase {
 		self::assertInstanceOf( WP_REST_Response::class, $response );
 		self::assertSame( 201, $response->get_status() );
 		self::assertSame( [ 'received' => true, 'response_type' => 'approve' ], $response->get_data() );
+	}
+
+	/**
+	 * @dataProvider valid_unicode_fields
+	 *
+	 * @param string $field Form field.
+	 * @param string $value Text at the browser's maxlength boundary.
+	 */
+	public function test_unicode_at_browser_limit_is_accepted( string $field, string $value ): void {
+		$snapshot = ReviewVersion::issue_snapshot( $this->post, $this->link_hash );
+		$request  = $this->request( $snapshot );
+		$request[ $field ] = $value;
+		Functions\expect( 'add_option' )->once()->andReturn( true );
+		Functions\expect( 'current_time' )->once()->andReturn( '2026-09-25 18:00:00' );
+		Functions\expect( 'get_date_from_gmt' )->once()->andReturn( '2026-09-25 23:30:00' );
+		Functions\expect( 'wp_insert_post' )->once()->andReturn( 73 );
+		Functions\expect( 'add_post_meta' )->times( 6 )->andReturn( true );
+		Functions\expect( 'update_option' )->once()->andReturn( true );
+		Functions\expect( 'do_action' )->once();
+
+		$response = $this->controller()->submit( $request );
+		self::assertInstanceOf( WP_REST_Response::class, $response );
+		self::assertSame( 201, $response->get_status() );
+	}
+
+	/**
+	 * @return array<string,array{string,string}>
+	 */
+	public static function valid_unicode_fields(): array {
+		return [
+			'CJK name' => [ 'name', str_repeat( '漢', 120 ) ],
+			'accented name' => [ 'name', str_repeat( 'é', 120 ) ],
+			'Arabic name' => [ 'name', str_repeat( 'ش', 120 ) ],
+			'Farsi name' => [ 'name', str_repeat( 'گ', 120 ) ],
+			'emoji name' => [ 'name', str_repeat( '😀', 60 ) ],
+			'combining name' => [ 'name', str_repeat( 'é', 60 ) ],
+			'sanitized name' => [ 'name', '<b>' . str_repeat( 'é', 120 ) . '</b>' ],
+			'CJK comment' => [ 'comment', str_repeat( '漢', 5000 ) ],
+			'accented comment' => [ 'comment', str_repeat( 'é', 5000 ) ],
+			'Arabic comment' => [ 'comment', str_repeat( 'ش', 5000 ) ],
+			'Farsi comment' => [ 'comment', str_repeat( 'گ', 5000 ) ],
+			'emoji comment' => [ 'comment', str_repeat( '😀', 2500 ) ],
+			'combining comment' => [ 'comment', str_repeat( 'é', 2500 ) ],
+			'sanitized comment' => [ 'comment', '<b>' . str_repeat( '漢', 5000 ) . '</b>' ],
+		];
+	}
+
+	/**
+	 * @dataProvider invalid_unicode_fields
+	 *
+	 * @param string $field Form field.
+	 * @param string $value Invalid or over-limit input.
+	 * @param string $code Expected recoverable error.
+	 */
+	public function test_invalid_or_over_limit_unicode_is_field_specific( string $field, string $value, string $code ): void {
+		$snapshot = ReviewVersion::issue_snapshot( $this->post, $this->link_hash );
+		$request  = $this->request( $snapshot );
+		$request[ $field ] = $value;
+		Functions\expect( 'add_option' )->never();
+		$response = $this->controller()->submit( $request );
+		self::assertInstanceOf( WP_Error::class, $response );
+		self::assertSame( $code, $response->get_error_code() );
+		self::assertSame( [ 'status' => 400 ], $response->get_error_data() );
+	}
+
+	/**
+	 * @return array<string,array{string,string,string}>
+	 */
+	public static function invalid_unicode_fields(): array {
+		return [
+			'CJK name over' => [ 'name', str_repeat( '漢', 121 ), 'review_name_too_long' ],
+			'accented name over' => [ 'name', str_repeat( 'é', 121 ), 'review_name_too_long' ],
+			'Arabic name over' => [ 'name', str_repeat( 'ش', 121 ), 'review_name_too_long' ],
+			'Farsi name over' => [ 'name', str_repeat( 'گ', 121 ), 'review_name_too_long' ],
+			'emoji name over' => [ 'name', str_repeat( '😀', 61 ), 'review_name_too_long' ],
+			'combining name over' => [ 'name', str_repeat( 'é', 61 ), 'review_name_too_long' ],
+			'CJK comment over' => [ 'comment', str_repeat( '漢', 5001 ), 'review_comment_too_long' ],
+			'accented comment over' => [ 'comment', str_repeat( 'é', 5001 ), 'review_comment_too_long' ],
+			'Arabic comment over' => [ 'comment', str_repeat( 'ش', 5001 ), 'review_comment_too_long' ],
+			'Farsi comment over' => [ 'comment', str_repeat( 'گ', 5001 ), 'review_comment_too_long' ],
+			'emoji comment over' => [ 'comment', str_repeat( '😀', 2501 ), 'review_comment_too_long' ],
+			'combining comment over' => [ 'comment', str_repeat( 'é', 2501 ), 'review_comment_too_long' ],
+			'malformed name' => [ 'name', "\xc3\x28", 'review_invalid_name' ],
+			'malformed comment' => [ 'comment', "\xc3\x28", 'review_invalid_comment' ],
+			'oversized raw comment' => [ 'comment', str_repeat( 'a', 20001 ), 'review_comment_too_long' ],
+		];
 	}
 
 	public function test_rate_limit_reserves_atomically_after_competing_initial_insert(): void {

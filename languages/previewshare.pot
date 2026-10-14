@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-25T17:20:35+00:00\n"
+"POT-Creation-Date: 2026-10-14T15:26:50+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: previewshare\n"
@@ -305,6 +305,18 @@ msgstr ""
 msgid "Your response could not be sent. Please try again."
 msgstr ""
 
+#: src/Includes/ReviewForm.php:143
+msgid "Checking your earlier response. Your current edits have not been sent."
+msgstr ""
+
+#: src/Includes/ReviewForm.php:144
+msgid "Try again to check the earlier response before sending your edits."
+msgstr ""
+
+#: src/Includes/ReviewForm.php:145
+msgid "Your earlier response was received. Your current edits have not been sent; send again to submit them."
+msgstr ""
+
 #: src/Includes/ReviewForm.php:68
 msgid "Your response was already received."
 msgstr ""
@@ -412,8 +424,26 @@ msgstr ""
 msgid "Please refresh the page and try again."
 msgstr ""
 
-#: src/REST/ReviewController.php:196
-msgid "Your response is too long. Shorten it and try again."
+#: src/REST/ReviewController.php:216
+msgid "Enter a valid name."
+msgstr ""
+
+#: src/REST/ReviewController.php:219
+msgid "Enter a valid comment."
+msgstr ""
+
+#: src/REST/ReviewController.php:222
+#: src/REST/ReviewController.php:230
+msgid "Shorten your name and try again."
+msgstr ""
+
+#: src/REST/ReviewController.php:225
+#: src/REST/ReviewController.php:233
+msgid "Shorten your comment and try again."
+msgstr ""
+
+#: src/REST/ReviewController.php:236
+msgid "Shorten your email address and try again."
 msgstr ""
 
 #: src/REST/ReviewController.php:199
