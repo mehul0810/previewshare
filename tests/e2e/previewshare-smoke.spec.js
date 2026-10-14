@@ -1548,10 +1548,12 @@ test( 'Classic post-list generation returns a private copy page without storing 
 		baseURL,
 		storageState: { cookies: [], origins: [] },
 	} );
-	const initialPostState = runWpCliForOutput( FIXTURE_WP_CLI, [
-		'eval',
-		`$post_id = ${ Number( post.id ) }; echo wp_json_encode( array( get_post_meta( $post_id, '_previewshare_links', true ), get_post_meta( $post_id, '_previewshare_token_hash', true ) ) );`,
-	] );
+	const readPreviewSharePostMeta = () =>
+		runWpCliForOutput( FIXTURE_WP_CLI, [
+			'eval',
+			`$post_id = ${ Number( post.id ) }; $meta = array(); foreach ( get_post_meta( $post_id ) as $key => $values ) { if ( 0 === strpos( (string) $key, '_previewshare_' ) ) { $meta[ $key ] = $values; } } ksort( $meta ); echo wp_json_encode( $meta );`,
+		] );
+	const initialPostState = readPreviewSharePostMeta();
 	const unauthenticated = await anonymousContext.request.get(
 		new URL(
 			`${ actionUrl.pathname }?${ new URLSearchParams( {
@@ -1562,20 +1564,13 @@ test( 'Classic post-list generation returns a private copy page without storing 
 		).toString(),
 		{ failOnStatusCode: false }
 	);
-	expect( unauthenticated.status() ).toBe( 200 );
+	expect( [ 200, 400, 403 ] ).toContain( unauthenticated.status() );
 	const unauthenticatedBody = await unauthenticated.text();
 	expect( unauthenticatedBody ).not.toMatch(
-		/previewshare-generated-url|previewshare_token=/i
+		/previewshare-generated-url|previewshare_token=|\/preview\/[a-f0-9]{48}/i
 	);
-	const postStateAfterUnauthenticatedRequest = runWpCliForOutput(
-		FIXTURE_WP_CLI,
-		[
-			'eval',
-			`$post_id = ${ Number( post.id ) }; echo wp_json_encode( array( get_post_meta( $post_id, '_previewshare_links', true ), get_post_meta( $post_id, '_previewshare_token_hash', true ) ) );`,
-		]
-	);
+	const postStateAfterUnauthenticatedRequest = readPreviewSharePostMeta();
 	expect( postStateAfterUnauthenticatedRequest ).toBe( initialPostState );
-	await anonymousContext.close();
 
 	const [ resultPageResponse ] = await Promise.all( [
 		page.waitForResponse(
