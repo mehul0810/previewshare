@@ -993,10 +993,13 @@ if ( ! empty( $links ) ) { fwrite( STDERR, 'Concurrent generation fixture did no
 				} )
 			);
 			return Promise.all(
-				requests.map( async ( response ) => ( {
-					status: response.status,
-					body: await response.json(),
-				} ) )
+				requests.map( async ( request ) => {
+					const response = await request;
+					return {
+						status: response.status,
+						body: await response.json(),
+					};
+				} )
 			);
 		},
 		{ postId: post.id, restNonce: nonce }
@@ -1607,28 +1610,21 @@ if ( ! $token ) { fwrite( STDERR, 'Classic action did not persist a generated pr
 		] )
 	).toBe( 'draft' );
 
+	await visitEditor( admin, post.id );
+	const editorNonce = await page.evaluate(
+		() => window.previewshare_rest?.nonce || ''
+	);
+	expect( editorNonce ).toBeTruthy();
 	const revoke = await page.request.post(
 		new URL( `/wp-json/previewshare/v1/v2/revoke`, baseURL ).toString(),
 		{
 			data: { post_id: post.id },
 			headers: {
-				'X-WP-Nonce': await page.evaluate(
-					() => window.wpApiSettings?.nonce || ''
-				),
+				'X-WP-Nonce': editorNonce,
 			},
 		}
 	);
-	if ( revoke.status() !== 200 ) {
-		// Use the editor's established UI to revoke if the REST request needs its editor nonce.
-		await visitEditor( admin, post.id );
-		await ensurePreviewSharePanelOpen( page );
-		const enabled = page.getByRole( 'checkbox', {
-			name: 'Enable Public Preview',
-		} );
-		if ( await enabled.isChecked() ) {
-			await enabled.uncheck();
-		}
-	}
+	expect( revoke.status() ).toBe( 200 );
 	const unavailable = await anonymous.goto( previewUrl );
 	expect( unavailable.status() ).toBe( 410 );
 	await anonymousContext.close();
@@ -1709,7 +1705,7 @@ test( 'uncertain reviewer submission retries its original payload before sending
 		}
 	);
 	await form.getByRole( 'button', { name: 'Send response' } ).click();
-	await expect( form.getByRole( 'status' ) ).toHaveText(
+	await expect( form.getByRole( 'status' ) ).toContainText(
 		'Try again to check the earlier response before sending your edits.'
 	);
 	await form
@@ -1722,6 +1718,9 @@ test( 'uncertain reviewer submission retries its original payload before sending
 	await form
 		.getByRole( 'textbox', { name: 'Comment' } )
 		.fill( 'Later typed comment.' );
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Try again to check the earlier response before sending your edits.'
+	);
 	retryAttempt = true;
 	const retryAction = form
 		.getByRole( 'button', { name: 'Send response' } )
@@ -1737,7 +1736,9 @@ test( 'uncertain reviewer submission retries its original payload before sending
 		),
 		retryAction,
 	] );
-	expect( [ 200, 201 ] ).toContain( retryResponse.status() );
+	expect( retryResponse.status() ).toBe( 409 );
+	const duplicateResult = await retryResponse.json();
+	expect( duplicateResult.code ).toBe( 'review_duplicate' );
 	const retried = retryResponse.request().postDataJSON();
 	expect( retried ).toEqual( firstRequestBody );
 	await expect( form.getByRole( 'status' ) ).toHaveText(
@@ -1831,42 +1832,59 @@ test( 'review form limits use UTF-16 units and preserve stored Unicode content',
 		resolvePreviewUrlForTestServer( generated.url, baseURL )
 	);
 	const form = anonymous.locator( '#previewshare-review-form' );
-	const name = `${ '李'.repeat( 115 ) }éع😀`;
-	const comment = `中文 café مرحبا 😀 ${ '文'.repeat( 4970 ) }`;
+	const name = `${ '李'.repeat( 116 ) }éع😀`;
+	const commentPrefix = '中文 café مرحبا 😀 ';
+	const comment = `${ commentPrefix }${ '文'.repeat(
+		5000 - commentPrefix.length
+	) }`;
 	const nameField = form.getByRole( 'textbox', { name: 'Name' } );
 	const commentField = form.getByRole( 'textbox', { name: 'Comment' } );
 	await expect( nameField ).toHaveAttribute( 'maxlength', '120' );
 	await expect( commentField ).toHaveAttribute( 'maxlength', '5000' );
-	expect( name.length ).toBeLessThanOrEqual( 120 );
-	expect( comment.length ).toBeLessThanOrEqual( 5000 );
+	expect( name.length ).toBe( 120 );
+	expect( comment.length ).toBe( 5000 );
 	await nameField.fill( name );
 	await form
 		.getByRole( 'textbox', { name: 'Email' } )
 		.fill( 'unicode@example.test' );
 	await form.getByRole( 'radio', { name: 'Comment' } ).check();
 	await commentField.fill( comment );
-	const overlongName = `${ name }😀`;
-	await nameField.fill( overlongName );
-	const nameConstraint = await nameField.evaluate(
-		( input ) => input.validity.tooLong
-	);
-	if ( nameConstraint ) {
-		const rejected = await anonymous.evaluate( () => {
-			const formElement = document.querySelector(
-				'#previewshare-review-form'
-			);
-			return ! formElement.checkValidity();
+	const submitButton = form.getByRole( 'button', { name: 'Send response' } );
+	const boundaryRoute = '**/wp-json/previewshare/v1/reviews/submit*';
+	const invalidRequestIds = [];
+	const submitInvalidBoundary = async ( field, value, expectedCode ) => {
+		await anonymous.route( boundaryRoute, async ( route ) => {
+			const payload = route.request().postDataJSON();
+			invalidRequestIds.push( payload.request_id );
+			payload[ field ] = value;
+			await route.continue( { postData: JSON.stringify( payload ) } );
 		} );
-		expect( rejected ).toBe( true );
-	}
-	await expect( nameField ).toHaveValue( overlongName );
-	await nameField.fill( name );
-	const overlongComment = `${ comment }${ '文'.repeat( 20 ) }`;
-	await commentField.fill( overlongComment );
-	await expect( commentField ).toHaveValue( overlongComment );
-	await expect( commentField ).toHaveAttribute( 'maxlength', '5000' );
-	await nameField.fill( name );
-	await commentField.fill( comment );
+		const [ invalidResponse ] = await Promise.all( [
+			anonymous.waitForResponse( ( response ) =>
+				responseMatchesRoute(
+					response,
+					'/previewshare/v1/reviews/submit'
+				)
+			),
+			submitButton.click(),
+		] );
+		await anonymous.unroute( boundaryRoute );
+		expect( invalidResponse.status() ).toBe( 400 );
+		expect( ( await invalidResponse.json() ).code ).toBe( expectedCode );
+		await expect( nameField ).toHaveValue( name );
+		await expect( commentField ).toHaveValue( comment );
+	};
+	await submitInvalidBoundary(
+		'name',
+		`${ name }x`,
+		'review_name_too_long'
+	);
+	await submitInvalidBoundary(
+		'comment',
+		`${ comment }x`,
+		'review_comment_too_long'
+	);
+	expect( invalidRequestIds[ 0 ] ).not.toBe( invalidRequestIds[ 1 ] );
 	const [ accepted ] = await Promise.all( [
 		anonymous.waitForResponse( ( response ) =>
 			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
@@ -1886,27 +1904,8 @@ if ( count( $review ) !== 1 || '${ name.replace(
 	) }' !== $review[0]->post_content ) { fwrite( STDERR, 'Stored Unicode response does not match the submitted fields.' ); exit( 1 ); }
 `;
 	runWpCli( FIXTURE_WP_CLI, [ 'eval', persistedUnicode ] );
-	for ( const [ field, value, requestId ] of [
-		[ 'name', `${ '界'.repeat( 121 ) }`, 'e2e-name-limit-123456' ],
-		[ 'comment', `${ '字'.repeat( 5001 ) }`, 'e2e-comment-limit-123456' ],
-	] ) {
-		const body = {
-			...accepted.request().postDataJSON(),
-			request_id: requestId,
-			[ field ]: value,
-		};
-		const invalid = await anonymousContext.request.post(
-			new URL(
-				'/wp-json/previewshare/v1/reviews/submit',
-				baseURL
-			).toString(),
-			{ data: body }
-		);
-		expect( invalid.status() ).toBe( 400 );
-		const error = await invalid.json();
-		expect( error.code ).toMatch(
-			field === 'name' ? /review_.*name/ : /review_.*comment/
-		);
-	}
+	expect( accepted.request().postDataJSON().request_id ).not.toBe(
+		invalidRequestIds[ 1 ]
+	);
 	await anonymousContext.close();
 } );
