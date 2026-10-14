@@ -84,11 +84,13 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-product-identity {
+	max-width: 100%;
 	gap: 14px;
 	min-width: 0;
 }
 
 .previewshare-product-icon {
+	flex-shrink: 0;
 	display: block;
 	width: 56px;
 	height: 56px;
@@ -97,6 +99,7 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-product-name {
+	min-width: 0;
 	flex-wrap: wrap;
 	gap: 10px;
 }
@@ -106,7 +109,9 @@ body.previewshare-settings-screen #wpbody-content {
 	color: var(--previewshare-ink);
 	font-size: 24px;
 	font-weight: 600;
+	overflow-wrap: anywhere;
 	line-height: 1.2;
+	padding: 0;
 	letter-spacing: 0;
 }
 
@@ -146,6 +151,7 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-external-link svg {
+	fill: currentcolor;
 	flex: 0 0 auto;
 }
 
@@ -507,6 +513,7 @@ body.previewshare-settings-screen #wpbody-content {
 .previewshare-dataviews .dataviews-view-table th,
 .previewshare-dataviews .dataviews-view-table td {
 	font-size: 13px;
+	line-height: 1.5;
 	overflow-wrap: anywhere;
 }
 
@@ -910,7 +917,7 @@ body.previewshare-settings-screen #wpbody-content {
 	gap: 16px;
 	margin: 0;
 	color: var(--previewshare-ink);
-	font-size: 16px;
+	font-size: 18px;
 	font-weight: 600;
 	line-height: 1.5;
 }
@@ -960,13 +967,13 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-changelog-entry ul {
+	list-style: disc;
 	margin: 0;
 	padding: 0 24px 20px;
 	padding-inline-start: 44px;
 	color: #475467;
 	font-size: 13px;
 	line-height: 1.65;
-	list-style: disc;
 }
 
 .previewshare-changelog-entry li {
@@ -1255,6 +1262,7 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-legacy-link-table {
+	line-height: 1.5;
 	width: 100%;
 	border-collapse: collapse;
 	color: var(--previewshare-ink);
@@ -1262,10 +1270,10 @@ body.previewshare-settings-screen #wpbody-content {
 
 .previewshare-settings .previewshare-legacy-inventory .previewshare-legacy-link-table th,
 .previewshare-settings .previewshare-legacy-inventory .previewshare-legacy-link-table td {
-	padding: 14px 16px;
+	padding: 10px 14px;
 	border-bottom: 1px solid var(--previewshare-border);
 	text-align: start;
-	vertical-align: top;
+	vertical-align: middle;
 }
 
 .previewshare-settings .previewshare-legacy-inventory .previewshare-legacy-link-table th {
@@ -1285,6 +1293,13 @@ body.previewshare-settings-screen #wpbody-content {
 	margin-top: 4px;
 	color: var(--previewshare-muted);
 	font-size: 12px;
+}
+
+.previewshare-legacy-row-actions .components-button {
+	height: auto;
+	min-height: 36px;
+	line-height: 1.4;
+	white-space: normal;
 }
 
 .previewshare-legacy-row-actions {
@@ -1314,7 +1329,7 @@ body.previewshare-settings-screen #wpbody-content {
 	font-size: 13px;
 }
 
-@media screen and (max-width: 1440px) {
+@media screen and (max-width: 1100px) {
 
 	.previewshare-legacy-toolbar {
 		grid-template-columns: 1fr;
@@ -1359,7 +1374,7 @@ body.previewshare-settings-screen #wpbody-content {
 		min-width: 0;
 		justify-content: space-between;
 		gap: 12px;
-		padding: 10px 4px;
+		padding: 8px 4px;
 		border-bottom: 1px solid #edf1f6;
 		overflow-wrap: anywhere;
 	}

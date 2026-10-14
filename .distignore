@@ -82,3 +82,7 @@ vendor/**/docs
 vendor/**/test
 vendor/**/tests
 vendor/**/phpunit.xml*
+
+/.playwright-cli
+
+/docs/qa

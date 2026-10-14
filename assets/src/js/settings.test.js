@@ -1,5 +1,4 @@
 import * as element from '@wordpress/element';
-// eslint-disable-next-line import/no-extraneous-dependencies
 import * as date from '@wordpress/date';
 
 // eslint-disable-next-line import/no-extraneous-dependencies
@@ -288,16 +287,17 @@ function setupFetch( settingsOverride = null, initialItems = [] ) {
 	return { posts, initialSettings };
 }
 
-async function mountSettingsApp( initialSettings ) {
+async function mountSettingsApp( initialSettings, dateSettings = {} ) {
 	document.body.innerHTML = '<div id="previewshare-settings-app"></div>';
-	window.previewshare_settings = {
+	Object.assign( window.previewshare_settings, {
 		version: '1.1.0',
 		plugin_icons_url:
 			'/wp-content/plugins/previewshare/assets/images/plugins/',
 		rest_url: '/wp-json/previewshare/v1',
 		nonce: 'test-nonce',
 		settings: initialSettings,
-	};
+		date_settings: dateSettings,
+	} );
 
 	await act( async () => {
 		document.dispatchEvent( new Event( 'DOMContentLoaded' ) );
@@ -605,7 +605,10 @@ describe( 'PreviewShare responsive inventory', () => {
 					created_at: 1700000000,
 				},
 			] );
-			await mountSettingsApp( initialSettings );
+			await mountSettingsApp( initialSettings, {
+				date_format: dateFormat,
+				time_format: timeFormat,
+			} );
 			await act( async () => {
 				findButton( 'Preview links' ).click();
 				await flushPromises();
@@ -705,6 +708,9 @@ describe( 'PreviewShare responsive inventory', () => {
 			'Actions',
 		] );
 		expect( row.textContent ).toContain( 'Review draft' );
+		expect(
+			row.querySelector( '.previewshare-content-cell small' ).textContent
+		).toBe( '#42' );
 		expect( row.textContent ).toContain( 'Client review' );
 		expect( document.body.textContent ).toContain(
 			'Manage preview links, monitor views and expiry, and revoke access when a review is complete.'

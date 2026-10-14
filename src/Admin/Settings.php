@@ -97,6 +97,7 @@ class Settings {
 			[
 				// Base REST namespace for the plugin.
 				'rest_url'          => rest_url( 'previewshare/v1' ),
+				'date_settings' => \previewshare_get_date_display_settings(),
 				'nonce'             => wp_create_nonce( 'wp_rest' ),
 				'settings'          => \previewshare_get_settings(),
 				'version'           => defined( 'PREVIEWSHARE_VERSION' ) ? (string) constant( 'PREVIEWSHARE_VERSION' ) : '1.0.0',

@@ -138,6 +138,8 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 
 = 1.1.0 =
 * Redesigned the PreviewShare settings workspace across Overview, Preview Links, Content Types, Changelog, and More plugins.
+* Polished the admin header, plugin links, Changelog, content-type controls, and preview inventory while preserving the Overview redesign.
+* Respected WordPress date/time formats, site timezone, and locale in admin and editor histories and automatic link labels.
 * Improved preview-link inventory filters, descriptions, dates, and content IDs.
 * Added row actions to revoke access or revoke and delete a preview-link entry, with confirmation before deletion.
 * Added retries for concurrent revocation updates and clearer errors when preview links could not all be revoked.

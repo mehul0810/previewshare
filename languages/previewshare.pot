@@ -1233,8 +1233,6 @@ msgid "PreviewShare icon"
 msgstr ""
 
 #: assets/src/js/settings.js:2348
-msgid "View documentation"
-msgstr ""
 
 #: assets/src/js/settings.js:2358
 msgid "Support"
@@ -1361,4 +1359,21 @@ msgstr ""
 
 #: assets/src/js/settings.js:2898
 msgid "Latest"
+msgstr ""
+
+#: assets/src/js/settings.js
+msgid "Documentation"
+msgstr ""
+
+#. translators: %s: Link creation date and time.
+#: assets/src/js/date-utils.js
+msgid "Preview link %s"
+msgstr ""
+
+#: assets/src/js/settings.js
+msgid "Polished the admin header, plugin links, Changelog, content-type controls, and preview inventory."
+msgstr ""
+
+#: assets/src/js/settings.js
+msgid "Respected WordPress date and time formats, site timezone, and locale in link history."
 msgstr ""

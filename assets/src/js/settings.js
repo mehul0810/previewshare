@@ -1,12 +1,15 @@
+import { formatSiteDate, formatPreviewLabel } from './date-utils';
 import { DataViews, filterSortAndPaginate } from '@wordpress/dataviews/wp';
 import removeAccents from 'remove-accents';
 import {
 	check,
 	chevronDown,
 	copy,
-	external,
+	arrowRight,
+	help,
 	grid,
 	link,
+	page,
 	timeToRead,
 	trash,
 } from '@wordpress/icons';
@@ -175,19 +178,7 @@ import {
 	}
 
 	function formatDate( timestamp ) {
-		if ( ! timestamp ) {
-			return __( 'Never', 'previewshare' );
-		}
-
-		const date = new Date( timestamp * 1000 );
-
-		if ( Number.isNaN( date.getTime() ) ) {
-			return __( 'Never', 'previewshare' );
-		}
-
-		const { formats } = wp.date.getSettings();
-
-		return wp.date.dateI18n( formats.date + ' ' + formats.time, date );
+		return formatSiteDate( timestamp, localized );
 	}
 
 	function formatHours( hours ) {
@@ -262,7 +253,7 @@ import {
 					'Extend %1$s link for %2$s, reference %3$s',
 					'previewshare'
 				),
-				item.label,
+				formatPreviewLabel( item, localized ),
 				title,
 				reference
 			);
@@ -382,10 +373,8 @@ import {
 				type: 'text',
 				label: __( 'Label', 'previewshare' ),
 				enableGlobalSearch: true,
-				getValue: ( { item } ) =>
-					item.label || __( 'Preview link', 'previewshare' ),
-				render: ( { item } ) =>
-					item.label || __( 'Preview link', 'previewshare' ),
+				getValue: ( { item } ) => formatPreviewLabel( item, localized ),
+				render: ( { item } ) => formatPreviewLabel( item, localized ),
 			},
 			{
 				id: 'post_type',
@@ -498,7 +487,13 @@ import {
 		return removeAccents( String( input ).trim().toLowerCase() );
 	}
 
-	function ExternalLink( { href, icon, children, ariaLabel } ) {
+	function ExternalLink( {
+		href,
+		icon,
+		children,
+		ariaLabel,
+		iconBefore = false,
+	} ) {
 		return el(
 			'a',
 			{
@@ -508,8 +503,9 @@ import {
 				target: '_blank',
 				rel: 'noopener noreferrer',
 			},
+			iconBefore ? el( Icon, { icon, size: 16 } ) : null,
 			children,
-			el( Icon, { icon, size: 16 } )
+			! iconBefore ? el( Icon, { icon, size: 16 } ) : null
 		);
 	}
 
@@ -1841,7 +1837,7 @@ import {
 								ExternalLink,
 								{
 									href: plugin.url,
-									icon: external,
+									icon: arrowRight,
 									ariaLabel: sprintf(
 										/* translators: %s: Plugin name. */
 										__(
@@ -2255,11 +2251,10 @@ import {
 														'Label',
 														'previewshare'
 													),
-													item.label ||
-														__(
-															'Preview link',
-															'previewshare'
-														)
+													formatPreviewLabel(
+														item,
+														localized
+													)
 												),
 												renderCell(
 													__(
@@ -2777,6 +2772,14 @@ import {
 							'previewshare'
 						),
 						__(
+							'Polished the admin header, plugin links, Changelog, content-type controls, and preview inventory.',
+							'previewshare'
+						),
+						__(
+							'Respected WordPress date and time formats, site timezone, and locale in link history.',
+							'previewshare'
+						),
+						__(
 							'Improved preview-link inventory filters, descriptions, dates, and content IDs.',
 							'previewshare'
 						),
@@ -3066,9 +3069,10 @@ import {
 							href:
 								localized.documentation_url ||
 								'https://github.com/mehul0810/previewshare#readme',
-							icon: external,
+							icon: page,
+							iconBefore: true,
 						},
-						__( 'View documentation', 'previewshare' )
+						__( 'Documentation', 'previewshare' )
 					),
 					el(
 						ExternalLink,
@@ -3076,7 +3080,8 @@ import {
 							href:
 								localized.support_url ||
 								'https://wordpress.org/support/plugin/previewshare/',
-							icon: external,
+							icon: help,
+							iconBefore: true,
 						},
 						__( 'Support', 'previewshare' )
 					)
