@@ -102,6 +102,31 @@ class AdminActionsTest extends TestCase {
 		$actions->register_classic_meta_boxes( 'post', $post );
 	}
 
+	public function test_classic_editor_meta_box_hook_accepts_core_post_arguments(): void {
+		$registered_hooks = [];
+		Functions\when( 'add_action' )->alias(
+			static function( ...$arguments ) use ( &$registered_hooks ) {
+				$registered_hooks[] = $arguments;
+				return true;
+			}
+		);
+
+		$actions = new Actions( Mockery::mock( PostMetaStorage::class ) );
+		$hook    = array_values(
+			array_filter(
+				$registered_hooks,
+				static function( array $arguments ): bool {
+					return 'add_meta_boxes' === $arguments[0];
+				}
+			)
+		);
+
+		$this->assertCount( 1, $hook );
+		$this->assertSame( [ $actions, 'register_classic_meta_boxes' ], $hook[0][1] );
+		$this->assertSame( 10, $hook[0][2] );
+		$this->assertSame( 2, $hook[0][3] );
+	}
+
 	public function test_classic_editor_meta_box_is_omitted_for_a_block_editor_post(): void {
 		$actions = $this->make_actions();
 		$post    = new WP_Post( [ 'ID' => 42, 'post_type' => 'post', 'post_status' => 'draft' ] );

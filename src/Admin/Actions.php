@@ -66,7 +66,7 @@ class Actions {
 		add_action( 'init', [ $this, 'add_rewrite_rules' ] );
 		add_action( 'init', [ $this, 'register_meta_fields' ] );
 		add_action( 'init', [ $this, 'maybe_flush_rewrite_rules' ] );
-		add_action( 'add_meta_boxes', [ $this, 'register_classic_meta_boxes' ] );
+		add_action( 'add_meta_boxes', [ $this, 'register_classic_meta_boxes' ], 10, 2 );
 		add_action( 'admin_post_previewshare_generate_link', [ $this, 'handle_admin_generate_link' ] );
 		add_action( 'admin_post_previewshare_revoke_links', [ $this, 'handle_admin_revoke_links' ] );
 		add_action( 'admin_notices', [ $this, 'render_admin_notice' ] );
