@@ -2808,11 +2808,11 @@ import {
 							'previewshare'
 						),
 						__(
-							'Added optional reviewer responses with approval tracking and 90-day retention.',
+							'Added optional reviewer responses with approval tracking, retries that preserve edits, multilingual feedback limits, and 90-day retention.',
 							'previewshare'
 						),
 						__(
-							'Improved preview-link security by avoiding temporary storage of generated Classic Editor and post-list URLs.',
+							'Improved preview-link security by keeping concurrently generated links visible and revocable and avoiding temporary storage of generated Classic Editor and post-list URLs.',
 							'previewshare'
 						),
 					],

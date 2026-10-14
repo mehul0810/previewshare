@@ -1211,7 +1211,7 @@ msgid "Made release notes easier to scan with version summaries, latest and inst
 msgstr ""
 
 #: assets/src/js/settings.js:2812
-msgid "Improved preview-link security by avoiding temporary storage of generated Classic Editor and post-list URLs."
+msgid "Improved preview-link security by keeping concurrently generated links visible and revocable and avoiding temporary storage of generated Classic Editor and post-list URLs."
 msgstr ""
 
 #: assets/src/js/settings.js:2156
@@ -1223,7 +1223,7 @@ msgid "Added verified plugin cards in More plugins."
 msgstr ""
 
 #: assets/src/js/settings.js:2164
-msgid "Added optional reviewer responses with approval tracking and 90-day retention."
+msgid "Added optional reviewer responses with approval tracking, retries that preserve edits, multilingual feedback limits, and 90-day retention."
 msgstr ""
 
 #: assets/src/js/settings.js:2173
