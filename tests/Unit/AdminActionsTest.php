@@ -10,11 +10,187 @@ namespace PreviewShare\Tests\Unit;
 use Brain\Monkey\Functions;
 use Mockery;
 use PreviewShare\Admin\Actions;
+use PreviewShare\Container;
 use PreviewShare\Services\PostMetaStorage;
+use PreviewShare\Services\TokenService;
+use WP_Error;
 use WP_Post;
 use WP_Query;
 
 class AdminActionsTest extends TestCase {
+
+	/**
+	 * @dataProvider classic_generate_url_suffixes
+	 *
+	 * @param string $url_suffix Suffix returned by the site URL filter.
+	 */
+	public function test_classic_generate_link_returns_copyable_url_without_storing_it( string $url_suffix ): void {
+		$storage       = Mockery::mock( PostMetaStorage::class );
+		$token_service = Mockery::mock( TokenService::class );
+		$actions       = $this->make_actions( $storage );
+		$token         = str_repeat( 'a', 48 );
+		$url           = 'https://example.test/preview/' . $token . $url_suffix;
+		$escaped_url   = htmlspecialchars( $url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
+		$message       = '';
+		$previous_get  = $_GET;
+
+		Container::set( 'storage', $storage );
+		Container::set( 'token_service', $token_service );
+		$_GET['post_id'] = '42';
+		$this->mock_classic_generate_access();
+
+		$token_service->shouldReceive( 'generate' )->once()->andReturn( $token );
+		$storage->shouldReceive( 'get_post_id_by_token' )->once()->with( $token )->andReturn( false );
+		$storage->shouldReceive( 'store_token' )->once()->with( 42, $token, 6, 'Admin generated link', false, false )->andReturn( true );
+		Functions\expect( 'update_post_meta' )->twice()->andReturn( true );
+		Functions\expect( 'home_url' )->once()->with( '/preview/' . $token )->andReturn( $url );
+		Functions\expect( 'wp_get_referer' )->once()->andReturn( 'https://example.test/wp-admin/post.php?post=42&action=edit' );
+		Functions\expect( 'esc_attr' )->once()->with( $url )->andReturn( $escaped_url );
+		Functions\expect( 'esc_url' )->once()->andReturn( 'https://example.test/wp-admin/post.php?post=42&amp;action=edit' );
+		Functions\expect( 'PreviewShare\\Admin\\nocache_headers' )->once();
+		Functions\expect( 'PreviewShare\\Admin\\header' )->once()->with( 'Cache-Control: private, no-store, max-age=0', true );
+		Functions\expect( 'set_transient' )->never();
+		Functions\expect( 'wp_safe_redirect' )->never();
+		Functions\expect( 'wp_die' )
+			->once()
+			->withArgs(
+				static function( string $body, string $title, array $args ) use ( &$message ): bool {
+					$message = $body;
+					return 'Preview link generated' === $title && [ 'response' => 200 ] === $args;
+				}
+			)
+			->andThrow( new \RuntimeException( 'result rendered' ) );
+
+		try {
+			$actions->handle_admin_generate_link();
+			$this->fail( 'The result page should end the request.' );
+		} catch ( \RuntimeException $exception ) {
+			$this->assertSame( 'result rendered', $exception->getMessage() );
+		} finally {
+			$_GET = $previous_get;
+		}
+
+		$this->assertStringContainsString( 'value="' . $escaped_url . '"', $message );
+		if ( '' !== $url_suffix ) {
+			$this->assertStringNotContainsString( 'value="' . $url . '"', $message );
+		}
+		$this->assertStringContainsString( 'Back to previous page', $message );
+	}
+
+	/**
+	 * @return array<string,array{string}>
+	 */
+	public static function classic_generate_url_suffixes(): array {
+		return [
+			'normal URL'          => [ '' ],
+			'filtered URL markup' => [ '?x="><script>alert(1)</script>' ],
+		];
+	}
+
+	public function test_classic_generate_link_failure_keeps_message_only_notice(): void {
+		$storage      = Mockery::mock( PostMetaStorage::class );
+		$actions      = $this->make_actions( $storage );
+		$previous_get = $_GET;
+
+		Container::set( 'storage', $storage );
+		Container::set( 'token_service', null );
+		$_GET['post_id'] = '42';
+		$this->mock_classic_generate_access( 2 );
+
+		Functions\expect( 'get_current_user_id' )->once()->andReturn( 7 );
+		Functions\expect( 'set_transient' )
+			->once()
+			->with(
+				'previewshare_admin_notice_7',
+				[
+					'type'    => 'error',
+					'message' => 'Preview link could not be generated.',
+				],
+				10 * MINUTE_IN_SECONDS
+			);
+		Functions\expect( 'wp_get_referer' )->once()->andReturn( 'https://example.test/wp-admin/post.php?post=42&action=edit' );
+		Functions\expect( 'wp_safe_redirect' )
+			->once()
+			->with( 'https://example.test/wp-admin/post.php?post=42&action=edit' )
+			->andThrow( new \RuntimeException( 'redirected' ) );
+		Functions\expect( 'wp_die' )->never();
+
+		try {
+			$this->expectException( \RuntimeException::class );
+			$this->expectExceptionMessage( 'redirected' );
+			$actions->handle_admin_generate_link();
+		} finally {
+			$_GET = $previous_get;
+		}
+	}
+
+	public function test_admin_notice_discards_a_legacy_url_without_rendering_it(): void {
+		$actions = $this->make_actions();
+		$url     = 'https://example.test/preview/' . str_repeat( 'a', 48 );
+
+		Functions\expect( 'get_current_user_id' )->once()->andReturn( 7 );
+		Functions\expect( 'get_transient' )->once()->with( 'previewshare_admin_notice_7' )->andReturn( [ 'type' => 'success', 'url' => $url ] );
+		Functions\expect( 'delete_transient' )->once()->with( 'previewshare_admin_notice_7' );
+
+		ob_start();
+		try {
+			$actions->render_admin_notice();
+			$output = ob_get_contents();
+		} finally {
+			ob_end_clean();
+		}
+
+		$this->assertSame( '', $output );
+	}
+
+	public function test_admin_notice_still_renders_an_error_message(): void {
+		$actions = $this->make_actions();
+
+		Functions\expect( 'get_current_user_id' )->once()->andReturn( 7 );
+		Functions\expect( 'get_transient' )->once()->with( 'previewshare_admin_notice_7' )->andReturn( [ 'type' => 'error', 'message' => 'Preview link could not be generated.' ] );
+		Functions\expect( 'delete_transient' )->once()->with( 'previewshare_admin_notice_7' );
+		Functions\when( 'sanitize_key' )->returnArg( 1 );
+		Functions\when( 'esc_attr' )->returnArg( 1 );
+		Functions\when( 'esc_html' )->returnArg( 1 );
+
+		ob_start();
+		try {
+			$actions->render_admin_notice();
+			$output = ob_get_contents();
+		} finally {
+			ob_end_clean();
+		}
+
+		$this->assertStringContainsString( 'notice-error', $output );
+		$this->assertStringContainsString( 'Preview link could not be generated.', $output );
+	}
+
+	private function mock_classic_generate_access( int $post_calls = 3 ): void {
+		$post = new WP_Post( [ 'ID' => 42, 'post_type' => 'post', 'post_status' => 'draft' ] );
+		Functions\expect( 'get_post' )->times( $post_calls )->with( 42 )->andReturn( $post );
+		Functions\expect( 'get_post_types' )->andReturn(
+			[
+				'post' => (object) [
+					'label'  => 'Posts',
+					'labels' => (object) [ 'singular_name' => 'Post' ],
+				],
+			]
+		);
+		Functions\expect( 'is_post_type_viewable' )->andReturn( true );
+		Functions\when( 'get_option' )->alias(
+			static function( string $option, $default = false ) {
+				$values = [
+					'previewshare_post_types'        => [ 'post' ],
+					'previewshare_default_ttl_hours' => 6,
+				];
+				return $values[ $option ] ?? $default;
+			}
+		);
+		Functions\when( '__' )->returnArg( 1 );
+		Functions\when( 'esc_html__' )->returnArg( 1 );
+		Functions\expect( 'current_user_can' )->once()->with( 'edit_post', 42 )->andReturn( true );
+		Functions\expect( 'check_admin_referer' )->once()->with( 'previewshare_generate_link_42' );
+	}
 
 	public function test_preview_bar_styles_are_registered_through_enqueue_api(): void {
 		$actions = $this->make_actions();

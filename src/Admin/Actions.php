@@ -645,24 +645,26 @@ class Actions {
 		);
 
 		if ( ! ( $result instanceof \WP_Error ) ) {
-			set_transient(
-				'previewshare_admin_notice_' . get_current_user_id(),
-				[
-					'type' => 'success',
-					'url'  => $result['url'],
-				],
-				10 * MINUTE_IN_SECONDS
-			);
-		} else {
-			set_transient(
-				'previewshare_admin_notice_' . get_current_user_id(),
-				[
-					'type'    => 'error',
-					'message' => __( 'Preview link could not be generated.', 'previewshare' ),
-				],
-				10 * MINUTE_IN_SECONDS
-			);
+			nocache_headers();
+			header( 'Cache-Control: private, no-store, max-age=0', true );
+
+			$message  = '<p>' . esc_html__( 'Copy this preview link before leaving this page.', 'previewshare' ) . '</p>';
+			$message .= '<p><label for="previewshare-generated-url">' . esc_html__( 'Preview link', 'previewshare' ) . '</label><br />';
+			$message .= '<input id="previewshare-generated-url" type="url" readonly class="large-text code" value="' . esc_attr( $result['url'] ) . '" onclick="this.select();" /></p>';
+			$message .= '<p><a href="' . esc_url( $this->get_admin_redirect_url( $post_id ) ) . '">' . esc_html__( 'Back to previous page', 'previewshare' ) . '</a></p>';
+
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Every dynamic value in $message is escaped for its HTML context above.
+			wp_die( $message, esc_html__( 'Preview link generated', 'previewshare' ), [ 'response' => 200 ] );
 		}
+
+		set_transient(
+			'previewshare_admin_notice_' . get_current_user_id(),
+			[
+				'type'    => 'error',
+				'message' => __( 'Preview link could not be generated.', 'previewshare' ),
+			],
+			10 * MINUTE_IN_SECONDS
+		);
 
 		wp_safe_redirect( $this->get_admin_redirect_url( $post_id ) );
 		exit;
@@ -715,18 +717,15 @@ class Actions {
 
 		delete_transient( $key );
 
+		if ( empty( $notice['message'] ) ) {
+			return;
+		}
+
 		$type  = isset( $notice['type'] ) ? sanitize_key( $notice['type'] ) : 'info';
 		$class = in_array( $type, [ 'success', 'error', 'warning', 'info' ], true ) ? $type : 'info';
 
 		echo '<div class="notice notice-' . esc_attr( $class ) . ' is-dismissible">';
-
-		if ( ! empty( $notice['url'] ) ) {
-			echo '<p><strong>' . esc_html__( 'Preview link generated.', 'previewshare' ) . '</strong></p>';
-			echo '<p><input type="url" readonly class="large-text code" value="' . esc_attr( $notice['url'] ) . '" onclick="this.select();" /></p>';
-		} elseif ( ! empty( $notice['message'] ) ) {
-			echo '<p>' . esc_html( $notice['message'] ) . '</p>';
-		}
-
+		echo '<p>' . esc_html( $notice['message'] ) . '</p>';
 		echo '</div>';
 	}
 
