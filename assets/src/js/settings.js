@@ -2777,6 +2777,26 @@ import {
 							'previewshare'
 						),
 						__(
+							'Improved preview-link inventory filters, descriptions, dates, and content IDs.',
+							'previewshare'
+						),
+						__(
+							'Added row actions to revoke access or revoke and delete a preview-link entry, with confirmation before deletion.',
+							'previewshare'
+						),
+						__(
+							'Added retries for concurrent revocation updates and clearer errors when preview links could not all be revoked.',
+							'previewshare'
+						),
+						__(
+							'Simplified content type selection with autosaving checkboxes and kept the selected settings tab after refresh.',
+							'previewshare'
+						),
+						__(
+							'Made release notes easier to scan with version summaries, latest and installed-version labels, and expandable older entries.',
+							'previewshare'
+						),
+						__(
 							'Added expiring-link status and a fixed 24-hour extension action.',
 							'previewshare'
 						),
@@ -2786,6 +2806,10 @@ import {
 						),
 						__(
 							'Added optional reviewer responses with approval tracking and 90-day retention.',
+							'previewshare'
+						),
+						__(
+							'Improved preview-link security by avoiding temporary storage of generated Classic Editor and post-list URLs.',
 							'previewshare'
 						),
 					],

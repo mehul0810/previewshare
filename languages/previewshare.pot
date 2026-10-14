@@ -1160,6 +1160,30 @@ msgstr ""
 msgid "Redesigned the settings workspace across all five tabs."
 msgstr ""
 
+#: assets/src/js/settings.js:2780
+msgid "Improved preview-link inventory filters, descriptions, dates, and content IDs."
+msgstr ""
+
+#: assets/src/js/settings.js:2784
+msgid "Added row actions to revoke access or revoke and delete a preview-link entry, with confirmation before deletion."
+msgstr ""
+
+#: assets/src/js/settings.js:2788
+msgid "Added retries for concurrent revocation updates and clearer errors when preview links could not all be revoked."
+msgstr ""
+
+#: assets/src/js/settings.js:2792
+msgid "Simplified content type selection with autosaving checkboxes and kept the selected settings tab after refresh."
+msgstr ""
+
+#: assets/src/js/settings.js:2796
+msgid "Made release notes easier to scan with version summaries, latest and installed-version labels, and expandable older entries."
+msgstr ""
+
+#: assets/src/js/settings.js:2812
+msgid "Improved preview-link security by avoiding temporary storage of generated Classic Editor and post-list URLs."
+msgstr ""
+
 #: assets/src/js/settings.js:2156
 msgid "Added expiring-link status and a fixed 24-hour extension action."
 msgstr ""

@@ -136,21 +136,20 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 
 == Changelog ==
 
-= Unreleased =
-* Make release notes easier to scan with version summaries, latest and installed-version labels, and expandable older entries.
-* Improve preview-link inventory filters, descriptions, dates, and content IDs.
-* Add row actions to revoke access or revoke and delete a preview-link entry, with confirmation before deletion.
-* Retry concurrent revocation updates and report an error when all preview links could not be revoked.
-* Simplify content type selection with autosaving checkboxes and keep the selected settings tab after refresh.
-
 = 1.1.0 =
 * Redesigned the PreviewShare settings workspace across Overview, Preview Links, Content Types, Changelog, and More plugins.
+* Improved preview-link inventory filters, descriptions, dates, and content IDs.
+* Added row actions to revoke access or revoke and delete a preview-link entry, with confirmation before deletion.
+* Added retries for concurrent revocation updates and clearer errors when preview links could not all be revoked.
+* Simplified content type selection with autosaving checkboxes and kept the selected settings tab after refresh.
+* Made release notes easier to scan with version summaries, latest and installed-version labels, and expandable older entries.
 * Added an Expiring soon view and a fixed 24-hour extension action for eligible preview links.
 * Added a verified plugin catalog with product-specific descriptions and destinations.
 * Added browser lifecycle coverage for secure preview access, expiration, revocation, and published-content behavior.
 * Added permission-checked WordPress Abilities for generating, listing, and revoking preview links on WordPress 6.9 and newer.
 * Added optional reviewer approvals, change requests, and comments per preview link, with editor history, stale-approval status, and 90-day feedback retention.
 * Continued bounded 90-day cleanup across large reviewer-response backlogs and reported privacy-erasure failures without retry loops.
+* Improved preview-link security by avoiding temporary storage of generated Classic Editor and post-list URLs.
 
 = 1.0.2 =
 * Validated preview-link editor and admin workflows with WordPress 7.1.
