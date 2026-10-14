@@ -2,6 +2,7 @@ import { DataViews, filterSortAndPaginate } from '@wordpress/dataviews/wp';
 import removeAccents from 'remove-accents';
 import {
 	check,
+	chevronDown,
 	copy,
 	external,
 	grid,
@@ -591,6 +592,42 @@ import {
 		const tokensRef = useRef( [] );
 		const nextInventoryPageRef = useRef( 1 );
 		const mountedRef = useRef( false );
+		const tabListRef = useRef( null );
+
+		useEffect( () => {
+			const revealActiveTab = () => {
+				const tabList = tabListRef.current;
+				const selectedTab = tabList?.querySelector(
+					'[aria-selected="true"]'
+				);
+
+				if ( ! selectedTab ) {
+					return;
+				}
+
+				const listBounds = tabList.getBoundingClientRect();
+				const tabBounds = selectedTab.getBoundingClientRect();
+
+				// Keep the current location visible without moving the page vertically.
+				if ( tabBounds.left < listBounds.left ) {
+					tabList.scrollLeft += tabBounds.left - listBounds.left;
+				} else if ( tabBounds.right > listBounds.right ) {
+					tabList.scrollLeft += tabBounds.right - listBounds.right;
+				}
+			};
+
+			revealActiveTab();
+			const observer =
+				typeof window.ResizeObserver === 'function'
+					? new window.ResizeObserver( revealActiveTab )
+					: null;
+			observer?.observe( tabListRef.current );
+			window.addEventListener( 'resize', revealActiveTab );
+			return () => {
+				observer?.disconnect();
+				window.removeEventListener( 'resize', revealActiveTab );
+			};
+		}, [ activeTab ] );
 
 		useEffect( () => {
 			const url = new URL( window.location.href );
@@ -2730,6 +2767,10 @@ import {
 			const entries = [
 				{
 					version: '1.1.0',
+					summary: __(
+						'Settings and reviewer feedback',
+						'previewshare'
+					),
 					items: [
 						__(
 							'Redesigned the settings workspace across all five tabs.',
@@ -2751,6 +2792,7 @@ import {
 				},
 				{
 					version: '1.0.2',
+					summary: __( 'WordPress compatibility', 'previewshare' ),
 					items: [
 						__(
 							'Validated preview-link editor and admin workflows with WordPress 7.1.',
@@ -2764,6 +2806,10 @@ import {
 				},
 				{
 					version: '1.0.1',
+					summary: __(
+						'Diagnostics and maintenance',
+						'previewshare'
+					),
 					items: [
 						__(
 							'Improved diagnostics, dependency audit coverage, and release automation.',
@@ -2777,6 +2823,7 @@ import {
 				},
 				{
 					version: '1.0.0',
+					summary: __( 'First release', 'previewshare' ),
 					items: [
 						__(
 							'Added secure preview links for draft, pending, and scheduled content.',
@@ -2793,6 +2840,10 @@ import {
 					],
 				},
 			];
+			const installedVersion = localized.version;
+			const hasInstalledEntry = entries.some(
+				( entry ) => entry.version === installedVersion
+			);
 
 			return el(
 				'div',
@@ -2800,21 +2851,87 @@ import {
 				renderTabIntro(
 					__( 'Changelog', 'previewshare' ),
 					__(
-						'Release notes for the PreviewShare settings experience.',
+						'Updates, improvements, and fixes in each version.',
 						'previewshare'
 					)
 				),
 				el(
 					'div',
 					{ className: 'previewshare-changelog' },
-					entries.map( ( entry ) =>
+					entries.map( ( entry, index ) =>
 						el(
-							'section',
+							'details',
 							{
 								className: 'previewshare-changelog-entry',
 								key: entry.version,
+								open:
+									entry.version === installedVersion ||
+									( ! hasInstalledEntry && index === 0 ),
 							},
-							el( 'h3', null, 'v' + entry.version ),
+							el(
+								'summary',
+								null,
+								el(
+									'h3',
+									null,
+									el(
+										'span',
+										{
+											className:
+												'previewshare-release-heading',
+										},
+										el(
+											'span',
+											{
+												className:
+													'previewshare-release-version',
+											},
+											'v' + entry.version,
+											index === 0
+												? el(
+														'span',
+														{
+															className:
+																'previewshare-release-latest',
+														},
+														__(
+															'Latest',
+															'previewshare'
+														)
+												  )
+												: null,
+											entry.version === installedVersion
+												? el(
+														'span',
+														{
+															className:
+																'previewshare-release-installed',
+														},
+														__(
+															'Installed',
+															'previewshare'
+														)
+												  )
+												: null
+										),
+										el(
+											'span',
+											{
+												className:
+													'previewshare-release-summary',
+											},
+											entry.summary
+										)
+									),
+									el( Icon, {
+										icon: chevronDown,
+										size: 20,
+										className:
+											'previewshare-release-chevron',
+										'aria-hidden': true,
+									} )
+								)
+							),
 							el(
 								'ul',
 								null,
@@ -2945,6 +3062,7 @@ import {
 				'nav',
 				{
 					className: 'previewshare-tabs',
+					ref: tabListRef,
 					role: 'tablist',
 					'aria-label': __( 'PreviewShare settings', 'previewshare' ),
 				},

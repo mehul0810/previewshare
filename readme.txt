@@ -137,6 +137,7 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 == Changelog ==
 
 = Unreleased =
+* Make release notes easier to scan with version summaries, latest and installed-version labels, and expandable older entries.
 * Improve preview-link inventory filters, descriptions, dates, and content IDs.
 * Add row actions to revoke access or revoke and delete a preview-link entry, with confirmation before deletion.
 * Retry concurrent revocation updates and report an error when all preview links could not be revoked.

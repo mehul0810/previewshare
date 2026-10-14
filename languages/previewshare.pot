@@ -1310,3 +1310,31 @@ msgstr ""
 #: assets/src/js/settings.js:2632
 msgid "Retry save"
 msgstr ""
+
+#: assets/src/js/settings.js:2771
+msgid "Settings and reviewer feedback"
+msgstr ""
+
+#: assets/src/js/settings.js:2795
+msgid "WordPress compatibility"
+msgstr ""
+
+#: assets/src/js/settings.js:2810
+msgid "Diagnostics and maintenance"
+msgstr ""
+
+#: assets/src/js/settings.js:2826
+msgid "First release"
+msgstr ""
+
+#: assets/src/js/settings.js:2854
+msgid "Updates, improvements, and fixes in each version."
+msgstr ""
+
+#: assets/src/js/settings.js:2911
+msgid "Installed"
+msgstr ""
+
+#: assets/src/js/settings.js:2898
+msgid "Latest"
+msgstr ""

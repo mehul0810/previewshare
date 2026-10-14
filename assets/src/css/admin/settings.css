@@ -871,27 +871,123 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-changelog {
+	display: grid;
 	max-width: 860px;
+	gap: 12px;
 }
 
 .previewshare-changelog-entry {
-	padding: 22px 0;
-	border-top: 1px solid var(--previewshare-border);
+	min-width: 0;
+	border: 1px solid var(--previewshare-border);
+	border-radius: 6px;
+	background: var(--previewshare-surface);
+}
+
+.previewshare-changelog-entry > summary {
+	padding: 20px 24px;
+	border-radius: 6px;
+	cursor: pointer;
+	list-style: none;
+}
+
+.previewshare-changelog-entry > summary::-webkit-details-marker {
+	display: none;
+}
+
+.previewshare-changelog-entry > summary:hover {
+	background: var(--previewshare-canvas);
+}
+
+.previewshare-changelog-entry > summary:focus-visible {
+	outline: 2px solid var(--previewshare-blue);
+	outline-offset: 2px;
 }
 
 .previewshare-changelog-entry h3 {
-	margin: 0 0 10px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	margin: 0;
 	color: var(--previewshare-ink);
 	font-size: 16px;
 	font-weight: 600;
+	line-height: 1.5;
+}
+
+.previewshare-release-heading {
+	display: grid;
+	min-width: 0;
+	gap: 4px;
+	overflow-wrap: anywhere;
+}
+
+.previewshare-release-version {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px 12px;
+}
+
+.previewshare-release-installed,
+.previewshare-release-latest {
+	padding: 2px 8px;
+	border-radius: 4px;
+	background: var(--previewshare-blue-soft);
+	color: #1e40af;
+	font-size: 11px;
+	font-weight: 500;
+}
+
+.previewshare-release-latest {
+	background: #edfaef;
+	color: #005c12;
+}
+
+.previewshare-release-summary {
+	color: var(--previewshare-muted);
+	font-size: 13px;
+	font-weight: 400;
+}
+
+.previewshare-release-chevron {
+	flex-shrink: 0;
+	color: var(--previewshare-muted);
+}
+
+.previewshare-changelog-entry[open] .previewshare-release-chevron {
+	transform: rotate(180deg);
 }
 
 .previewshare-changelog-entry ul {
 	margin: 0;
-	padding-inline-start: 20px;
+	padding: 0 24px 20px;
+	padding-inline-start: 44px;
 	color: #475467;
 	font-size: 13px;
 	line-height: 1.65;
+	list-style: disc;
+}
+
+.previewshare-changelog-entry li {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.previewshare-changelog-entry li + li {
+	margin-top: 10px;
+}
+
+@media (max-width: 600px) {
+
+	.previewshare-changelog-entry > summary {
+		padding: 16px;
+	}
+
+	.previewshare-changelog-entry ul {
+		padding: 0 16px 16px;
+		padding-inline-start: 36px;
+	}
 }
 
 .previewshare-loading {
