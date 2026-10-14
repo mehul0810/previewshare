@@ -32,12 +32,32 @@ class AdminActionsTest extends TestCase {
 		$url           = 'https://example.test/preview/' . $token . $url_suffix;
 		$escaped_url   = htmlspecialchars( $url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
 		$message       = '';
+		$cache_control_after_wp_die = '';
+		$nocache_headers_filter = null;
+		$nocache_filter_registration = [];
+		$nocache_filter_removal = [];
 		$previous_get  = $_GET;
 
 		Container::set( 'storage', $storage );
 		Container::set( 'token_service', $token_service );
 		$_GET['post_id'] = '42';
 		$this->mock_classic_generate_access();
+		Functions\when( 'add_filter' )->alias(
+			static function( string $hook, callable $callback, int $priority, int $accepted_args ) use ( &$nocache_headers_filter, &$nocache_filter_registration ): bool {
+				if ( 'nocache_headers' === $hook ) {
+					$nocache_headers_filter      = $callback;
+					$nocache_filter_registration = [ $hook, $callback, $priority, $accepted_args ];
+				}
+
+				return true;
+			}
+		);
+		Functions\when( 'remove_filter' )->alias(
+			static function( string $hook, callable $callback, int $priority ) use ( &$nocache_filter_removal ): bool {
+				$nocache_filter_removal = [ $hook, $callback, $priority ];
+				return true;
+			}
+		);
 
 		$token_service->shouldReceive( 'generate' )->once()->andReturn( $token );
 		$storage->shouldReceive( 'get_post_id_by_token' )->once()->with( $token )->andReturn( false );
@@ -47,7 +67,24 @@ class AdminActionsTest extends TestCase {
 		Functions\expect( 'wp_get_referer' )->once()->andReturn( 'https://example.test/wp-admin/post.php?post=42&action=edit' );
 		Functions\expect( 'esc_attr' )->once()->with( $url )->andReturn( $escaped_url );
 		Functions\expect( 'esc_url' )->once()->andReturn( 'https://example.test/wp-admin/post.php?post=42&amp;action=edit' );
-		Functions\expect( 'PreviewShare\\Admin\\nocache_headers' )->once();
+		Functions\expect( 'PreviewShare\\Admin\\nocache_headers' )
+			->twice()
+			->andReturnUsing(
+				static function() use ( &$nocache_headers_filter, &$cache_control_after_wp_die ): void {
+					if ( null === $nocache_headers_filter ) {
+						return;
+					}
+
+					// Model the legacy WP 5.8 header set used by wp_get_nocache_headers().
+					$headers = $nocache_headers_filter(
+						[
+							'Expires'       => 'Wed, 11 Jan 1984 05:00:00 GMT',
+							'Cache-Control' => 'no-cache, must-revalidate, max-age=0',
+						]
+					);
+					$cache_control_after_wp_die = $headers['Cache-Control'];
+				}
+			);
 		Functions\expect( 'PreviewShare\\Admin\\header' )->once()->with( 'Cache-Control: private, no-store, max-age=0', true );
 		Functions\expect( 'set_transient' )->never();
 		Functions\expect( 'wp_safe_redirect' )->never();
@@ -56,10 +93,17 @@ class AdminActionsTest extends TestCase {
 			->withArgs(
 				static function( string $body, string $title, array $args ) use ( &$message ): bool {
 					$message = $body;
+					// Core's HTML wp_die handler reapplies nocache_headers before output.
+					\PreviewShare\Admin\nocache_headers();
+
 					return 'Preview link generated' === $title && [ 'response' => 200 ] === $args;
 				}
 			)
-			->andThrow( new \RuntimeException( 'result rendered' ) );
+			->andReturnUsing(
+				static function(): void {
+					throw new \RuntimeException( 'result rendered' );
+				}
+			);
 
 		try {
 			$actions->handle_admin_generate_link();
@@ -75,6 +119,9 @@ class AdminActionsTest extends TestCase {
 			$this->assertStringNotContainsString( 'value="' . $url . '"', $message );
 		}
 		$this->assertStringContainsString( 'Back to previous page', $message );
+		$this->assertSame( 'no-cache, must-revalidate, max-age=0, no-store, private', $cache_control_after_wp_die );
+		$this->assertSame( [ 'nocache_headers', $nocache_headers_filter, 10, 1 ], $nocache_filter_registration );
+		$this->assertSame( [ 'nocache_headers', $nocache_headers_filter, 10 ], $nocache_filter_removal );
 	}
 
 	/**
