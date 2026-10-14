@@ -285,6 +285,43 @@ final class ReviewResponseService {
 	}
 
 	/**
+	 * Return a bounded set of recent response timestamps for rate-limit seeding.
+	 *
+	 * @param string $link_hash Link identifier.
+	 * @param int    $since Unix timestamp lower bound.
+	 * @return array<int,int>|null Timestamps, or null when the database read fails.
+	 */
+	public function get_recent_timestamps( string $link_hash, int $since ): ?array {
+		global $wpdb;
+
+		$after = gmdate( 'Y-m-d H:i:s', $since );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Bounded seed read uses committed data and trusted WordPress table identifiers.
+		$dates = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT p.post_date_gmt FROM {$wpdb->posts} AS p INNER JOIN {$wpdb->postmeta} AS pm ON pm.post_id = p.ID WHERE p.post_type = %s AND p.post_status = %s AND pm.meta_key = %s AND pm.meta_value = %s AND p.post_date_gmt > %s ORDER BY p.post_date_gmt DESC, p.ID DESC LIMIT 100",
+				self::POST_TYPE,
+				'private',
+				'_previewshare_link_hash',
+				$link_hash,
+				$after
+			)
+		);
+		if ( ! is_array( $dates ) || '' !== (string) $wpdb->last_error ) {
+			return null;
+		}
+
+		$timestamps = [];
+		foreach ( $dates as $date ) {
+			$timestamp = is_string( $date ) ? strtotime( $date . ' UTC' ) : false;
+			if ( false === $timestamp ) {
+				return null;
+			}
+			$timestamps[] = $timestamp;
+		}
+		return $timestamps;
+	}
+
+	/**
 	 * Resolve a change request without removing its history.
 	 *
 	 * @param int    $post_id Owning post ID.

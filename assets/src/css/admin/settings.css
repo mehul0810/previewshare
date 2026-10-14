@@ -64,8 +64,8 @@ body.previewshare-settings-screen #wpbody-content {
 	justify-content: space-between;
 	gap: 24px;
 	box-sizing: border-box;
-	min-height: 96px;
-	padding: 20px 32px;
+	min-height: 76px;
+	padding: 10px 32px;
 	border-bottom: 1px solid var(--previewshare-border);
 	background: var(--previewshare-surface);
 }
@@ -148,7 +148,6 @@ body.previewshare-settings-screen #wpbody-content {
 .previewshare-external-link svg {
 	flex: 0 0 auto;
 }
-
 
 .previewshare-tabs {
 	display: flex;
@@ -268,17 +267,17 @@ body.previewshare-settings-screen #wpbody-content {
 
 .previewshare-metrics {
 	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
-	gap: 14px;
-	margin-bottom: 30px;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 16px;
+	margin-bottom: 24px;
 }
 
 .previewshare-metric-card {
 	box-sizing: border-box;
-	min-height: 102px;
-	padding: 18px 20px;
+	min-width: 0;
+	padding: 20px 24px;
 	border: 1px solid var(--previewshare-border);
-	border-radius: 5px;
+	border-radius: 8px;
 	background: var(--previewshare-surface);
 }
 
@@ -299,9 +298,16 @@ body.previewshare-settings-screen #wpbody-content {
 .previewshare-metric-card strong {
 	display: block;
 	color: var(--previewshare-ink);
-	font-size: 24px;
+	font-size: 26px;
 	font-weight: 600;
 	line-height: 1.1;
+}
+
+.previewshare-metric-description {
+	margin: 10px 0 0;
+	color: var(--previewshare-muted);
+	font-size: 12px;
+	line-height: 1.5;
 }
 
 .previewshare-inline-note {
@@ -311,16 +317,120 @@ body.previewshare-settings-screen #wpbody-content {
 	line-height: 1.5;
 }
 
-.previewshare-overview-columns {
+.previewshare-overview-layout {
 	display: grid;
-	grid-template-columns: minmax(0, 1.4fr) minmax(300px, 1fr);
-	gap: 38px;
-	margin-bottom: 38px;
+	grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr);
+	align-items: start;
+	gap: 24px;
 }
 
+.previewshare-overview-sidebar {
+	display: grid;
+	min-width: 0;
+	gap: 24px;
+}
+
+.previewshare-overview-panel {
+	min-width: 0;
+	padding: 24px;
+	border: 1px solid var(--previewshare-border);
+	border-radius: 8px;
+	background: var(--previewshare-surface);
+}
+
+.previewshare-panel-heading {
+	margin-bottom: 20px;
+}
+
+.previewshare-panel-heading h3 {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 0;
+	color: var(--previewshare-ink);
+	font-size: 16px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+.previewshare-panel-heading p {
+	margin: 7px 0 0;
+	color: var(--previewshare-muted);
+	font-size: 13px;
+	line-height: 1.55;
+}
+
+.previewshare-count-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 24px;
+	min-height: 24px;
+	padding-inline: 6px;
+	border-radius: 4px;
+	background: var(--previewshare-blue-soft);
+	color: var(--previewshare-blue);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.previewshare-overview-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 0 0 20px;
+	padding: 0;
+	list-style: none;
+}
+
+.previewshare-overview-list li {
+	max-width: 100%;
+	margin: 0;
+	padding: 5px 9px;
+	border: 1px solid var(--previewshare-border);
+	border-radius: 4px;
+	background: var(--previewshare-canvas);
+	color: #475467;
+	font-size: 12px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+
+
 .previewshare-site-defaults {
-	max-width: 760px;
-	margin-top: 8px;
+	padding: 0;
+}
+
+.previewshare-site-defaults > .previewshare-panel-heading {
+	margin: 0;
+	padding: 24px;
+}
+
+.previewshare-setting-row {
+	padding: 24px;
+	border-top: 1px solid var(--previewshare-border);
+}
+
+
+.previewshare-overview-reset {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	margin-top: 24px;
+	padding-top: 20px;
+	border-top: 1px solid var(--previewshare-border);
+}
+
+.previewshare-overview-reset p {
+	margin: 0;
+	color: var(--previewshare-muted);
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.previewshare-overview-reset .components-button {
+	flex: 0 0 auto;
 }
 
 .previewshare-plugin-grid {
@@ -342,15 +452,12 @@ body.previewshare-settings-screen #wpbody-content {
 }
 
 .previewshare-plugin-card-mark {
-	display: grid;
-	width: 40px;
-	height: 40px;
-	place-items: center;
+	display: block;
+	width: 48px;
+	height: 48px;
 	margin-bottom: 17px;
-	border: 1px solid #dbeafe;
-	border-radius: 8px;
-	background: var(--previewshare-blue-soft);
-	color: var(--previewshare-blue);
+	border-radius: 6px;
+	object-fit: contain;
 }
 
 .previewshare-plugin-card h3 {
@@ -371,27 +478,6 @@ body.previewshare-settings-screen #wpbody-content {
 
 .previewshare-plugin-card .previewshare-external-link {
 	margin-top: auto;
-}
-
-.previewshare-overview-section {
-	min-width: 0;
-	padding-top: 24px;
-	border-top: 1px solid var(--previewshare-border);
-}
-
-.previewshare-overview-section h3 {
-	margin: 0 0 7px;
-	color: var(--previewshare-ink);
-	font-size: 16px;
-	font-weight: 600;
-	line-height: 1.35;
-}
-
-.previewshare-overview-section .description {
-	margin: 0 0 16px;
-	color: var(--previewshare-muted);
-	font-size: 13px;
-	line-height: 1.5;
 }
 
 .previewshare-overview-table {
@@ -480,15 +566,58 @@ body.previewshare-settings-screen #wpbody-content {
 	color: var(--previewshare-green);
 }
 
+:where(.previewshare-overview) .previewshare-fact-list {
+	gap: 14px;
+	margin: 0;
+}
+
+:where(.previewshare-overview) .previewshare-fact-list li {
+	align-items: flex-start;
+	min-height: 0;
+	margin: 0;
+	line-height: 1.55;
+}
+
+:where(.previewshare-overview) .previewshare-fact-list li svg {
+	margin-top: 1px;
+}
+
+
 .previewshare-site-defaults .components-base-control {
-	max-width: 520px;
-	margin-bottom: 20px;
+	margin-bottom: 0;
 }
 
 .previewshare-site-defaults .components-base-control__help {
+	margin-bottom: 0;
 	color: var(--previewshare-muted);
 	font-size: 12px;
-	line-height: 1.45;
+	line-height: 1.6;
+}
+
+.previewshare-site-defaults .components-toggle-control__label,
+.previewshare-site-defaults .components-base-control__label {
+	color: var(--previewshare-ink);
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.5;
+	text-transform: none;
+}
+
+.previewshare-expiry-setting .components-base-control__field {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 120px;
+	align-items: center;
+	gap: 16px;
+	margin-bottom: 0;
+}
+
+.previewshare-expiry-setting .components-base-control__label {
+	margin: 0;
+}
+
+.previewshare-expiry-setting .components-text-control__input {
+	min-height: 40px;
+	margin: 0;
 }
 
 .previewshare-settings-actions {
@@ -521,6 +650,17 @@ body.previewshare-settings-screen #wpbody-content {
 .previewshare-save-state.is-saved svg {
 	color: var(--previewshare-green);
 }
+
+
+.previewshare-overview .previewshare-settings-actions {
+	display: flex;
+	align-items: center;
+	width: auto;
+	margin: 0;
+	padding: 20px 24px;
+	border-top: 1px solid var(--previewshare-border);
+}
+
 
 .previewshare-dataviews {
 	min-width: 0;
@@ -567,11 +707,19 @@ body.previewshare-settings-screen #wpbody-content {
 	width: 8% !important;
 }
 
-.previewshare-dataviews .dataviews-view-table__cell-content-wrapper {
+.previewshare-dataviews .dataviews-view-table .dataviews-view-table__cell-content-wrapper {
 	min-height: 44px;
 	min-width: 0;
 	max-width: none;
 	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+/* DataViews menu motion can miss data-enter on its inner surface. Keep an
+ * explicitly open menu visible, including menus portaled outside the app. */
+.previewshare-settings-screen div:has(> [role="menu"][data-open="true"][data-dialog-portal]) {
+	opacity: 1;
+	transform: none;
 }
 
 .previewshare-dataviews .dataviews-view-table th.dataviews-view-table__actions-column,
@@ -668,93 +816,45 @@ body.previewshare-settings-screen #wpbody-content {
 	min-height: 32px;
 }
 
-.previewshare-content-type-search {
-	max-width: 440px;
-	margin-bottom: 22px;
-}
-
-.previewshare-content-type-list {
-	border-top: 1px solid var(--previewshare-border);
+.previewshare-content-type-panel {
+	max-width: 640px;
+	border: 1px solid var(--previewshare-border);
 	background: var(--previewshare-surface);
 }
 
+.previewshare-content-type-search {
+	margin: 16px;
+}
+
+.previewshare-content-type-list {
+	padding: 8px 16px;
+}
+
 .previewshare-content-type-row {
-	display: flex;
-	align-items: center;
-	gap: 14px;
-	min-height: 76px;
-	padding: 12px 16px;
-	border-bottom: 1px solid #edf0f4;
-}
-
-.previewshare-content-type-row:last-child {
-	border-bottom: 0;
-}
-
-.previewshare-content-type-icon {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 40px;
-	height: 40px;
-	border: 1px solid #dbe3f0;
-	border-radius: 4px;
-	background: #f8fafc;
-	color: var(--previewshare-blue);
-}
-
-.previewshare-content-type-info {
-	display: grid;
-	flex: 1;
-	gap: 3px;
-	min-width: 0;
-}
-
-.previewshare-content-type-info strong {
-	color: var(--previewshare-ink);
-	font-size: 14px;
-	font-weight: 600;
-	line-height: 1.3;
-}
-
-.previewshare-content-type-info code {
-	width: fit-content;
-	padding: 1px 5px;
-	background: #f2f4f7;
-	color: #475467;
-	font-size: 11px;
-	line-height: 1.3;
-}
-
-.previewshare-content-type-info small {
-	color: var(--previewshare-muted);
-	font-size: 11px;
-	line-height: 1.3;
-}
-
-.previewshare-content-type-toggle {
-	flex: 0 0 auto;
 	margin: 0;
+	padding: 10px 0;
 }
 
-.previewshare-content-type-toggle .components-toggle-control__label {
-	position: absolute;
-	width: 1px;
-	height: 1px;
-	overflow: hidden;
-	clip: rect(0 0 0 0);
-	clip-path: inset(50%);
-	white-space: nowrap;
+.previewshare-content-type-row .components-base-control__field {
+	margin-bottom: 0;
+}
+
+.previewshare-content-type-row .components-checkbox-control__label {
+	min-width: 0;
+	overflow-wrap: anywhere;
 }
 
 .previewshare-content-type-footer {
 	flex-wrap: wrap;
-	gap: 16px;
-	margin-top: 24px;
-	padding-top: 20px;
+	gap: 12px;
+	padding: 16px;
 	border-top: 1px solid var(--previewshare-border);
 	color: var(--previewshare-muted);
 	font-size: 12px;
+}
+
+.previewshare-content-type-footer .previewshare-save-state {
+	margin-inline-end: 0;
 }
 
 .previewshare-warning {
@@ -770,33 +870,124 @@ body.previewshare-settings-screen #wpbody-content {
 	flex-basis: 100%;
 }
 
-.previewshare-content-type-footer .previewshare-settings-actions {
-	flex-basis: 100%;
-	margin-top: 4px;
-}
-
 .previewshare-changelog {
+	display: grid;
 	max-width: 860px;
+	gap: 12px;
 }
 
 .previewshare-changelog-entry {
-	padding: 22px 0;
-	border-top: 1px solid var(--previewshare-border);
+	min-width: 0;
+	border: 1px solid var(--previewshare-border);
+	border-radius: 6px;
+	background: var(--previewshare-surface);
+}
+
+.previewshare-changelog-entry > summary {
+	padding: 20px 24px;
+	border-radius: 6px;
+	cursor: pointer;
+	list-style: none;
+}
+
+.previewshare-changelog-entry > summary::-webkit-details-marker {
+	display: none;
+}
+
+.previewshare-changelog-entry > summary:hover {
+	background: var(--previewshare-canvas);
+}
+
+.previewshare-changelog-entry > summary:focus-visible {
+	outline: 2px solid var(--previewshare-blue);
+	outline-offset: 2px;
 }
 
 .previewshare-changelog-entry h3 {
-	margin: 0 0 10px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	margin: 0;
 	color: var(--previewshare-ink);
 	font-size: 16px;
 	font-weight: 600;
+	line-height: 1.5;
+}
+
+.previewshare-release-heading {
+	display: grid;
+	min-width: 0;
+	gap: 4px;
+	overflow-wrap: anywhere;
+}
+
+.previewshare-release-version {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px 12px;
+}
+
+.previewshare-release-installed,
+.previewshare-release-latest {
+	padding: 2px 8px;
+	border-radius: 4px;
+	background: var(--previewshare-blue-soft);
+	color: #1e40af;
+	font-size: 11px;
+	font-weight: 500;
+}
+
+.previewshare-release-latest {
+	background: #edfaef;
+	color: #005c12;
+}
+
+.previewshare-release-summary {
+	color: var(--previewshare-muted);
+	font-size: 13px;
+	font-weight: 400;
+}
+
+.previewshare-release-chevron {
+	flex-shrink: 0;
+	color: var(--previewshare-muted);
+}
+
+.previewshare-changelog-entry[open] .previewshare-release-chevron {
+	transform: rotate(180deg);
 }
 
 .previewshare-changelog-entry ul {
 	margin: 0;
-	padding-inline-start: 20px;
+	padding: 0 24px 20px;
+	padding-inline-start: 44px;
 	color: #475467;
 	font-size: 13px;
 	line-height: 1.65;
+	list-style: disc;
+}
+
+.previewshare-changelog-entry li {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.previewshare-changelog-entry li + li {
+	margin-top: 10px;
+}
+
+@media (max-width: 600px) {
+
+	.previewshare-changelog-entry > summary {
+		padding: 16px;
+	}
+
+	.previewshare-changelog-entry ul {
+		padding: 0 16px 16px;
+		padding-inline-start: 36px;
+	}
 }
 
 .previewshare-loading {
@@ -834,8 +1025,13 @@ body.previewshare-settings-screen #wpbody-content {
 		padding-inline: 28px;
 	}
 
-	.previewshare-metrics {
+	.previewshare-overview-layout {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.previewshare-overview-sidebar {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
+		align-items: start;
 	}
 }
 
@@ -853,7 +1049,7 @@ body.previewshare-settings-screen #wpbody-content {
 		align-items: flex-start;
 		flex-direction: column;
 		gap: 18px;
-		padding: 20px;
+		padding: 10px 20px;
 	}
 
 	.previewshare-product-links {
@@ -874,18 +1070,21 @@ body.previewshare-settings-screen #wpbody-content {
 		padding: 14px 20px 0;
 	}
 
-	.previewshare-overview-columns {
+	.previewshare-overview-sidebar {
 		grid-template-columns: 1fr;
-		gap: 28px;
-		margin-bottom: 28px;
+	}
+
+	.previewshare-overview .components-button {
+		min-height: 40px;
+	}
+
+	.previewshare-overview-reset {
+		align-items: flex-start;
+		flex-direction: column;
 	}
 
 	.previewshare-plugin-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-
-	.previewshare-content-type-row {
-		padding-inline: 12px;
 	}
 
 	.previewshare-content-type-footer {
@@ -911,6 +1110,70 @@ body.previewshare-settings-screen #wpbody-content {
 		justify-content: center;
 		width: 100%;
 	}
+
+	.previewshare-overview .previewshare-settings-actions .previewshare-save-state {
+		margin-inline-end: auto;
+	}
+
+	.previewshare-overview .previewshare-settings-actions .components-button {
+		width: auto;
+	}
+}
+
+@media screen and (max-width: 600px) {
+
+	.previewshare-metrics {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 12px;
+	}
+
+	.previewshare-metric-card {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 8px 16px;
+		padding: 16px;
+	}
+
+	.previewshare-metric-label {
+		margin: 0;
+	}
+
+	.previewshare-metric-card strong {
+		font-size: 20px;
+	}
+
+	.previewshare-metric-description {
+		grid-column: 1 / -1;
+		margin: 0;
+	}
+
+	.previewshare-overview-panel,
+	.previewshare-site-defaults > .previewshare-panel-heading,
+	.previewshare-setting-row,
+	.previewshare-overview .previewshare-settings-actions {
+		padding: 20px;
+	}
+
+	.previewshare-site-defaults {
+		padding: 0;
+	}
+
+	.previewshare-expiry-setting .components-base-control__field {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 10px;
+	}
+
+	.previewshare-expiry-setting .components-text-control__input {
+		max-width: 160px;
+	}
+
+	.previewshare-overview
+	.previewshare-settings-actions
+	.previewshare-save-state {
+		flex-basis: 100%;
+	}
+
 }
 
 @media screen and (max-width: 480px) {
@@ -948,7 +1211,6 @@ body.previewshare-settings-screen #wpbody-content {
 		white-space: nowrap;
 	}
 }
-
 
 /* Responsive inventory table for WordPress versions before the
    DataViews React runtime. */
@@ -1029,6 +1291,14 @@ body.previewshare-settings-screen #wpbody-content {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
+}
+
+.previewshare-dialog-actions {
+	display: flex;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	gap: 12px;
+	margin-top: 24px;
 }
 
 .previewshare-legacy-pagination {
@@ -1151,11 +1421,6 @@ body.previewshare-settings-screen #wpbody-content {
 .previewshare-settings .previewshare-plugin-card-mark svg {
 	width: 20px !important;
 	height: 20px !important;
-}
-
-.previewshare-settings .previewshare-content-type-icon svg {
-	width: 24px !important;
-	height: 24px !important;
 }
 
 .previewshare-settings .previewshare-type-summary li svg,

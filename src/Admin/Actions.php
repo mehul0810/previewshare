@@ -679,11 +679,19 @@ class Actions {
 		$this->verify_admin_action( 'previewshare_revoke_links', $post_id );
 
 		$revoked = $this->storage->revoke_token_for_post( $post_id );
+		$links   = $revoked ? [] : $this->storage->get_links_for_post( $post_id );
+		$active  = false;
+		foreach ( $links as $link ) {
+			if ( empty( $link['revoked'] ) && ( null === $link['expires_at'] || (int) $link['expires_at'] > time() ) ) {
+				$active = true;
+				break;
+			}
+		}
 		set_transient(
 			'previewshare_admin_notice_' . get_current_user_id(),
 			[
-				'type'    => $revoked ? 'success' : 'info',
-				'message' => $revoked ? __( 'Preview links revoked.', 'previewshare' ) : __( 'No active preview links were found.', 'previewshare' ),
+				'type'    => $revoked ? 'success' : ( $active ? 'error' : 'info' ),
+				'message' => $revoked ? __( 'Preview links revoked.', 'previewshare' ) : ( $active ? __( 'Preview links could not be revoked.', 'previewshare' ) : __( 'No active preview links were found.', 'previewshare' ) ),
 			],
 			10 * MINUTE_IN_SECONDS
 		);
@@ -813,6 +821,10 @@ class Actions {
 		wp_register_style( 'previewshare-preview-bar', false, [], $version );
 		wp_enqueue_style( 'previewshare-preview-bar' );
 		wp_add_inline_style( 'previewshare-preview-bar', $this->get_preview_bar_styles() );
+
+		wp_register_script( 'previewshare-preview-bar', false, [], $version, true );
+		wp_enqueue_script( 'previewshare-preview-bar' );
+		wp_add_inline_script( 'previewshare-preview-bar', $this->get_preview_bar_script() );
 	}
 
 	/**
@@ -859,11 +871,7 @@ class Actions {
 	private function get_preview_bar_styles(): string {
 		return '
 html {
-	margin-top: 40px !important;
-}
-
-body.previewshare-preview-active.admin-bar {
-	padding-top: 40px;
+	margin-top: var(--previewshare-preview-bar-offset, 40px) !important;
 }
 
 .previewshare-preview-bar {
@@ -915,6 +923,33 @@ body.admin-bar .previewshare-preview-bar {
 		top: 46px;
 	}
 }
+';
+	}
+
+	/**
+	 * Keep the page offset in sync with the rendered preview bar height.
+	 *
+	 * @return string JavaScript for the preview bar.
+	 */
+	private function get_preview_bar_script(): string {
+		return '
+(function () {
+	var bar = document.querySelector(".previewshare-preview-bar");
+	if (!bar) {
+		return;
+	}
+
+	function updateOffset() {
+		var offset = Math.max(40, Math.ceil(bar.getBoundingClientRect().bottom));
+		document.documentElement.style.setProperty("--previewshare-preview-bar-offset", offset + "px");
+	}
+
+	updateOffset();
+	window.addEventListener("resize", updateOffset);
+	if (window.ResizeObserver) {
+		new ResizeObserver(updateOffset).observe(bar);
+	}
+}());
 ';
 	}
 

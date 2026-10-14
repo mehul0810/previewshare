@@ -187,7 +187,7 @@ const ReviewLinkControls = ( { link, postId, onPolicySaved, notify } ) => {
 					</p>
 					<p className="description">
 						{ __(
-							'Responses and reviewer identity are removed after 90 days. Revoking the link stops new responses and keeps existing history until then.',
+							'While PreviewShare is active, responses and reviewer identity are removed after 90 days. Revoking the link stops new responses and keeps existing history. Deactivating or uninstalling PreviewShare stops cleanup and leaves existing records in the site database.',
 							'previewshare'
 						) }
 					</p>
@@ -624,7 +624,7 @@ const PreviewSharePanel = () => {
 							checked={ responsesEnabled }
 							onChange={ setResponsesEnabled }
 							help={ __(
-								'Reviewers can approve, request changes, or comment on this link. Responses are kept for 90 days.',
+								'Reviewers can approve, request changes, or comment on this link. While PreviewShare is active, responses are removed after 90 days.',
 								'previewshare'
 							) }
 						/>

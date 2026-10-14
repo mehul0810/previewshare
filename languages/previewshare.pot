@@ -363,7 +363,7 @@ msgid "Email"
 msgstr ""
 
 #: src/Includes/ReviewForm.php:109
-msgid "Responses and any identity you provide are removed after 90 days."
+msgid "While PreviewShare is active, responses and any identity you provide are removed after 90 days. If the site owner deactivates or uninstalls the plugin, existing records remain in the site database."
 msgstr ""
 
 #: src/Includes/ReviewForm.php:110
@@ -397,6 +397,10 @@ msgstr ""
 
 #: src/REST/ReviewController.php:179
 msgid "Too many responses. Please try again later."
+msgstr ""
+
+#: src/REST/ReviewController.php:460
+msgid "We could not accept your response right now. Please try again shortly."
 msgstr ""
 
 #: src/REST/ReviewController.php:190
@@ -556,7 +560,7 @@ msgid "Require name and email"
 msgstr ""
 
 #: assets/src/js/admin/main.js:189
-msgid "Responses and reviewer identity are removed after 90 days. Revoking the link stops new responses and keeps existing history until then."
+msgid "While PreviewShare is active, responses and reviewer identity are removed after 90 days. Revoking the link stops new responses and keeps existing history. Deactivating or uninstalling PreviewShare stops cleanup and leaves existing records in the site database."
 msgstr ""
 
 #: assets/src/js/admin/main.js:207
@@ -625,7 +629,7 @@ msgid "Client review, legal approval, etc."
 msgstr ""
 
 #: assets/src/js/admin/main.js:626
-msgid "Reviewers can approve, request changes, or comment on this link. Responses are kept for 90 days."
+msgid "Reviewers can approve, request changes, or comment on this link. While PreviewShare is active, responses are removed after 90 days."
 msgstr ""
 
 #: assets/src/js/admin/main.js:651
@@ -792,13 +796,6 @@ msgstr ""
 msgid "Untitled content"
 msgstr ""
 
-#. translators: 1: Content type. 2: Post ID.
-#: assets/src/js/settings.js:322
-#: assets/src/js/settings.js:1556
-#, js-format
-msgid "%1$s - ID %2$d"
-msgstr ""
-
 #: assets/src/js/settings.js:340
 #: assets/src/js/settings.js:1523
 #: assets/src/js/settings.js:1608
@@ -815,6 +812,18 @@ msgstr ""
 #: assets/src/js/settings.js:386
 #: assets/src/js/settings.js:1663
 msgid "Extend"
+msgstr ""
+
+#. translators: 1: Preview link label. 2: Content title. 3: Short unique link reference.
+#: assets/src/js/settings.js:259
+#, javascript-format
+msgid "Extend %1$s link for %2$s, reference %3$s"
+msgstr ""
+
+#. translators: 1: Content title. 2: Short unique link reference.
+#: assets/src/js/settings.js:271
+#, javascript-format
+msgid "Extend preview link for %1$s, reference %2$s"
 msgstr ""
 
 #: assets/src/js/settings.js:395
@@ -1097,24 +1106,6 @@ msgstr ""
 msgid "Next"
 msgstr ""
 
-#. translators: %d: Number of links.
-#: assets/src/js/settings.js:1880
-#, js-format
-msgid "%d link in this site inventory."
-msgid_plural "%d links in this site inventory."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %d: Number of loaded expiring links.
-#: assets/src/js/settings.js:1905
-#, js-format
-msgid "Expiring soon (%d)"
-msgstr ""
-
-#: assets/src/js/settings.js:1916
-msgid "Only loaded links are included. Load more links to include the rest of the inventory."
-msgstr ""
-
 #. translators: 1: Number of loaded links. 2: Total links.
 #: assets/src/js/settings.js:1966
 #, js-format
@@ -1243,4 +1234,107 @@ msgstr ""
 
 #: src/Services/ReviewResponseService.php:567
 msgid "PreviewShare could not save erasure progress. Please restart the erasure request."
+msgstr ""
+
+#: assets/src/js/settings.js:1262
+msgid "Manage your preview links and site defaults in one place."
+msgstr ""
+
+#: assets/src/js/settings.js:1274
+msgid "View preview links"
+msgstr ""
+
+#: assets/src/js/settings.js:1286
+msgid "Create preview links from the content editor."
+msgstr ""
+
+#: assets/src/js/settings.js:1295
+msgid "Used when you create a new preview link."
+msgstr ""
+
+#: assets/src/js/settings.js:1306
+msgid "Controls caching for preview token lookups."
+msgstr ""
+
+#: assets/src/js/settings.js:1554
+msgid "Restore the original defaults for all PreviewShare settings."
+msgstr ""
+
+
+#. translators: %d: Post ID.
+#: assets/src/js/settings.js:368
+#: assets/src/js/settings.js:1923
+#, js-format
+msgid "#%d"
+msgstr ""
+
+#: assets/src/js/settings.js:395
+msgid "Content type"
+msgstr ""
+
+#: assets/src/js/settings.js:2247
+msgid "Manage preview links, monitor views and expiry, and revoke access when a review is complete."
+msgstr ""
+
+#: assets/src/js/settings.js:1150
+msgid "Preview link revoked and deleted."
+msgstr ""
+
+#: assets/src/js/settings.js:1166
+msgid "Preview link could not be deleted. Please try again."
+msgstr ""
+
+#: assets/src/js/settings.js:1198
+#: assets/src/js/settings.js:1275
+msgid "Delete link"
+msgstr ""
+
+#: assets/src/js/settings.js:1218
+msgid "Delete preview link?"
+msgstr ""
+
+#: assets/src/js/settings.js:1225
+msgid "This will revoke the preview link and permanently remove its entry from the list."
+msgstr ""
+
+#: assets/src/js/settings.js:2522
+msgid "Choose where editors can create preview links. Changes save automatically."
+msgstr ""
+
+#. translators: 1: Content type label. 2: Unique content type name.
+#: assets/src/js/settings.js:2569
+#, javascript-format
+msgid "%1$s (%2$s)"
+msgstr ""
+
+#: assets/src/js/settings.js:2632
+msgid "Retry save"
+msgstr ""
+
+#: assets/src/js/settings.js:2771
+msgid "Settings and reviewer feedback"
+msgstr ""
+
+#: assets/src/js/settings.js:2795
+msgid "WordPress compatibility"
+msgstr ""
+
+#: assets/src/js/settings.js:2810
+msgid "Diagnostics and maintenance"
+msgstr ""
+
+#: assets/src/js/settings.js:2826
+msgid "First release"
+msgstr ""
+
+#: assets/src/js/settings.js:2854
+msgid "Updates, improvements, and fixes in each version."
+msgstr ""
+
+#: assets/src/js/settings.js:2911
+msgid "Installed"
+msgstr ""
+
+#: assets/src/js/settings.js:2898
+msgid "Latest"
 msgstr ""

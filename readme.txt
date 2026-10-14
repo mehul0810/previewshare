@@ -117,7 +117,7 @@ PreviewShare marks an approval stale when saved post text, metadata, taxonomy te
 
 = How long is reviewer feedback kept? =
 
-Responses, comments, and any name or email supplied by the reviewer are stored as private WordPress records and scheduled for automatic deletion after 90 days. The records are available through WordPress personal-data export and erasure tools when an email address was supplied. Site owners should include this use in their privacy notice and ensure WordPress scheduled tasks run reliably.
+Responses, comments, and any name or email supplied by the reviewer are stored as private WordPress records. While PreviewShare is active, WordPress scheduled tasks remove records after 90 days. Deactivating or uninstalling PreviewShare stops that cleanup but preserves existing records in the site's database; reactivating it resumes cleanup. The records are available through WordPress personal-data export and erasure tools when an email address was supplied and PreviewShare is active. Site owners should describe this behavior in their privacy notice and ensure WordPress scheduled tasks run reliably.
 
 = Does PreviewShare expose private content publicly? =
 
@@ -135,6 +135,13 @@ Production ZIP files are built from the source repository with:
 The release artifact includes compiled assets, Composer autoload files, `composer.json`, plugin PHP, languages, readme, and license files. Development files such as `node_modules`, source assets, CI configuration, tests, and build tooling are excluded from production ZIP files.
 
 == Changelog ==
+
+= Unreleased =
+* Make release notes easier to scan with version summaries, latest and installed-version labels, and expandable older entries.
+* Improve preview-link inventory filters, descriptions, dates, and content IDs.
+* Add row actions to revoke access or revoke and delete a preview-link entry, with confirmation before deletion.
+* Retry concurrent revocation updates and report an error when all preview links could not be revoked.
+* Simplify content type selection with autosaving checkboxes and keep the selected settings tab after refresh.
 
 = 1.1.0 =
 * Redesigned the PreviewShare settings workspace across Overview, Preview Links, Content Types, Changelog, and More plugins.
