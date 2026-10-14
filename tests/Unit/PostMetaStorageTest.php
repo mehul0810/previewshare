@@ -49,16 +49,17 @@ class PostMetaStorageTest extends TestCase {
 		$stored_links = null;
 
 		Functions\expect( 'get_post_meta' )
-			->times( 4 )
+			->times( 3 )
 			->andReturnUsing(
 				static function( int $requested_post_id, string $key, bool $single ) use ( $post_id ) {
-					if ( $requested_post_id !== $post_id || true !== $single ) {
+					if ( $requested_post_id !== $post_id ) {
 						return null;
 					}
 
-					return '_previewshare_links' === $key ? [] : '';
+					return '' === $key || '_previewshare_links' === $key ? [] : '';
 				}
 			);
+		Functions\when( 'wp_cache_delete' )->justReturn( true );
 		Functions\expect( 'get_current_user_id' )->once()->andReturn( 7 );
 		Functions\expect( 'update_post_meta' )
 			->once()
@@ -94,7 +95,8 @@ class PostMetaStorageTest extends TestCase {
 		$token   = 'rollback-token';
 		$hash    = hash_hmac( 'sha256', $token, self::HASH_KEY );
 		$meta    = [];
-		Functions\when( 'get_post_meta' )->alias( static function( int $requested_post_id, string $key, bool $single ) use ( &$meta, $post_id ) { return $requested_post_id === $post_id && $single ? ( $meta[ $key ] ?? '' ) : ''; } );
+		Functions\when( 'wp_cache_delete' )->justReturn( true );
+		Functions\when( 'get_post_meta' )->alias( static function( int $requested_post_id, string $key, bool $single ) use ( &$meta, $post_id ) { return $post_id !== $requested_post_id ? '' : ( '' === $key ? array_map( static function( $value ): array { return [ maybe_serialize( $value ) ]; }, $meta ) : ( $meta[ $key ] ?? '' ) ); } );
 		Functions\when( 'get_current_user_id' )->justReturn( 7 );
 		Functions\when( 'update_post_meta' )->alias( static function( int $requested_post_id, string $key, $value, $previous = null ) use ( &$meta, $post_id, $hash ) {
 			if ( $requested_post_id !== $post_id || ( null !== $previous && ( $meta[ $key ] ?? null ) !== $previous ) ) { return false; }
@@ -246,7 +248,7 @@ class PostMetaStorageTest extends TestCase {
 			return isset( $meta[ $args['meta_key'] ] ) ? [ $post_id ] : [];
 		} );
 		Functions\when( 'get_post_meta' )->alias( static function( int $requested_post_id, string $key, bool $single ) use ( &$meta, $post_id ) {
-			return $post_id === $requested_post_id && $single ? ( $meta[ $key ] ?? '' ) : '';
+			return $post_id !== $requested_post_id ? '' : ( '' === $key ? array_map( static function( $value ): array { return [ maybe_serialize( $value ) ]; }, $meta ) : ( $meta[ $key ] ?? '' ) );
 		} );
 		Functions\when( 'update_post_meta' )->alias( static function( int $requested_post_id, string $key, $value, $previous = null ) use ( &$meta, $post_id ) {
 			if ( $post_id !== $requested_post_id || ( null !== $previous && ( $meta[ $key ] ?? null ) !== $previous ) ) {
@@ -283,6 +285,7 @@ class PostMetaStorageTest extends TestCase {
 		$post_id   = 815;
 		$old_token = 'legacy-visible-token';
 		$old_hash  = hash_hmac( 'sha256', $old_token, self::HASH_KEY );
+		Functions\when( 'wp_cache_delete' )->justReturn( true );
 		$old_link  = [ 'hash' => $old_hash, 'label' => 'Legacy link', 'created_at' => time() - 20, 'created_by' => 1, 'expires_at' => null, 'revoked' => 0 ];
 		$meta      = [
 			'_previewshare_token_hash' => $old_hash,
@@ -293,7 +296,7 @@ class PostMetaStorageTest extends TestCase {
 		Functions\when( 'get_option' )->alias( static function( string $key, $default = false ) { return 'previewshare_enable_caching' === $key ? false : $default; } );
 		Functions\when( 'get_current_user_id' )->justReturn( 1 );
 		Functions\when( 'get_posts' )->alias( static function( array $args ) use ( &$meta, $post_id ): array { return isset( $meta[ $args['meta_key'] ] ) ? [ $post_id ] : []; } );
-		Functions\when( 'get_post_meta' )->alias( static function( int $requested_post_id, string $key, bool $single ) use ( &$meta, $post_id ) { return $requested_post_id === $post_id && $single ? ( $meta[ $key ] ?? '' ) : ''; } );
+		Functions\when( 'get_post_meta' )->alias( static function( int $requested_post_id, string $key, bool $single ) use ( &$meta, $post_id ) { return $post_id !== $requested_post_id ? '' : ( '' === $key ? array_map( static function( $value ): array { return [ maybe_serialize( $value ) ]; }, $meta ) : ( $meta[ $key ] ?? '' ) ); } );
 		Functions\when( 'update_post_meta' )->alias( static function( int $requested_post_id, string $key, $value, $previous = null ) use ( &$meta, $post_id ) { if ( $requested_post_id !== $post_id || ( null !== $previous && ( $meta[ $key ] ?? null ) !== $previous ) ) { return false; } $meta[ $key ] = $value; return true; } );
 
 		$this->assertTrue( $storage->store_token( $post_id, 'new-visible-token', 0, 'New link' ) );
@@ -326,7 +329,7 @@ class PostMetaStorageTest extends TestCase {
 		$GLOBALS['wpdb']->lookup_result = $post_id;
 		Functions\when( 'get_option' )->alias( static function( string $key, $default = false ) { return 'previewshare_enable_caching' === $key ? false : $default; } );
 		Functions\when( 'get_posts' )->alias( static function( array $args ) use ( &$meta, $post_id ): array { return isset( $meta[ $args['meta_key'] ] ) ? [ $post_id ] : []; } );
-		Functions\when( 'get_post_meta' )->alias( static function( int $requested_post_id, string $key, bool $single ) use ( &$meta, $post_id ) { return $requested_post_id === $post_id && $single ? ( $meta[ $key ] ?? '' ) : ''; } );
+		Functions\when( 'get_post_meta' )->alias( static function( int $requested_post_id, string $key, bool $single ) use ( &$meta, $post_id ) { return $post_id !== $requested_post_id ? '' : ( '' === $key ? array_map( static function( $value ): array { return [ maybe_serialize( $value ) ]; }, $meta ) : ( $meta[ $key ] ?? '' ) ); } );
 		Functions\when( 'update_post_meta' )->alias( static function( int $requested_post_id, string $key, $value, $previous = null ) use ( &$meta, $post_id ) { if ( $requested_post_id !== $post_id || ( null !== $previous && ( $meta[ $key ] ?? null ) !== $previous ) ) { return false; } $meta[ $key ] = $value; return true; } );
 		Functions\when( 'delete_post_meta' )->alias( static function( int $requested_post_id, string $key, $previous = null ) use ( &$meta, $post_id ) { if ( $requested_post_id !== $post_id || ( null !== $previous && ( $meta[ $key ] ?? null ) !== $previous ) ) { return false; } unset( $meta[ $key ] ); return true; } );
 		Functions\when( 'wp_cache_delete' )->justReturn( true );
@@ -367,7 +370,7 @@ class PostMetaStorageTest extends TestCase {
 		);
 		Functions\when( 'get_option' )->alias( static function( string $key, $default = false ) { return 'previewshare_enable_caching' === $key ? false : $default; } );
 		Functions\when( 'get_posts' )->alias( static function( array $args ) use ( &$meta, $post_id ): array { return isset( $meta[ $args['meta_key'] ] ) ? [ $post_id ] : []; } );
-		Functions\when( 'get_post_meta' )->alias( static function( int $requested_post_id, string $key, bool $single ) use ( &$meta, $post_id ) { return $requested_post_id === $post_id && $single ? ( $meta[ $key ] ?? '' ) : ''; } );
+		Functions\when( 'get_post_meta' )->alias( static function( int $requested_post_id, string $key, bool $single ) use ( &$meta, $post_id ) { return $post_id !== $requested_post_id ? '' : ( '' === $key ? array_map( static function( $value ): array { return [ maybe_serialize( $value ) ]; }, $meta ) : ( $meta[ $key ] ?? '' ) ); } );
 		Functions\when( 'update_post_meta' )->alias( static function( int $requested_post_id, string $key, $value, $previous = null ) use ( &$meta, $post_id ) { if ( $requested_post_id !== $post_id || ( null !== $previous && ( $meta[ $key ] ?? null ) !== $previous ) ) { return false; } $meta[ $key ] = $value; return true; } );
 		Functions\when( 'wp_cache_delete' )->justReturn( true );
 		$GLOBALS['wpdb']->lookup_result = $post_id;
@@ -424,7 +427,7 @@ class PostMetaStorageTest extends TestCase {
 			return isset( $meta[ $args['meta_key'] ] ) ? [ $post_id ] : [];
 		} );
 		Functions\when( 'get_post_meta' )->alias( static function( int $requested_post_id, string $key, bool $single ) use ( &$meta, $post_id ) {
-			return $post_id === $requested_post_id && $single ? ( $meta[ $key ] ?? '' ) : '';
+			return $post_id !== $requested_post_id ? '' : ( '' === $key ? array_map( static function( $value ): array { return [ maybe_serialize( $value ) ]; }, $meta ) : ( $meta[ $key ] ?? '' ) );
 		} );
 		Functions\when( 'update_post_meta' )->alias( static function( int $requested_post_id, string $key, $value, $previous = null ) use ( &$meta, $post_id ) {
 			if ( $post_id !== $requested_post_id || ( null !== $previous && ( $meta[ $key ] ?? null ) !== $previous ) ) {
@@ -599,36 +602,18 @@ class PostMetaStorageTest extends TestCase {
 		$post_id        = 790;
 		$hash           = 'detail-hash';
 		$last_viewed_at = time() - 10;
-		$base_link      = [
-			'hash'           => $hash,
-			'label'          => 'Active',
-			'created_at'     => time() - 60,
-			'created_by'     => 1,
-			'expires_at'     => time() + 60,
-			'revoked'        => 0,
-			'last_viewed_at' => null,
-			'view_count'     => 0,
+		$detail         = [
+			'hash' => $hash, 'label' => 'Active', 'created_at' => time() - 60,
+			'created_by' => 1, 'expires_at' => time() + 60, 'revoked' => 0,
+			'last_viewed_at' => $last_viewed_at, 'view_count' => 4,
 		];
-
-		Functions\expect( 'get_post_meta' )
-			->twice()
-			->andReturnUsing(
-				static function( int $requested_post_id, string $key, bool $single ) use ( $post_id, $hash, $base_link, $last_viewed_at ) {
-					if ( $requested_post_id !== $post_id || true !== $single ) {
-						return null;
-					}
-
-					if ( '_previewshare_links' === $key ) {
-						return [ $hash => $base_link ];
-					}
-
-					$detail                    = $base_link;
-					$detail['last_viewed_at']  = $last_viewed_at;
-					$detail['view_count']      = 4;
-
-					return $detail;
-				}
-			);
+		Functions\expect( 'wp_cache_delete' )->once()->with( $post_id, 'post_meta' )->andReturn( true );
+		Functions\expect( 'get_post_meta' )->once()->with( $post_id, '', false )->andReturn(
+			[
+				'_previewshare_links' => [ serialize( [ $hash => array_merge( $detail, [ 'view_count' => 0, 'last_viewed_at' => null ] ) ] ) ],
+				'_previewshare_token:' . $hash => [ serialize( $detail ) ],
+			]
+		);
 
 		$meta = $storage->get_token_meta( $post_id );
 

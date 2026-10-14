@@ -143,6 +143,7 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 * Improved preview-link inventory filters, descriptions, dates, and content IDs.
 * Added row actions to revoke access or revoke and delete a preview-link entry, with confirmation before deletion.
 * Added retries for concurrent revocation updates and clearer errors when preview links could not all be revoked.
+* Kept concurrently generated preview links visible in post summaries and included all stored links when revoking preview access.
 * Simplified content type selection with autosaving checkboxes and kept the selected settings tab after refresh.
 * Made release notes easier to scan with version summaries, latest and installed-version labels, and expandable older entries.
 * Added an Expiring soon view and a fixed 24-hour extension action for eligible preview links.
