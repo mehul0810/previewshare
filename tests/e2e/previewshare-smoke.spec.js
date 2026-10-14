@@ -950,6 +950,129 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await anonymousContext.close();
 } );
 
+test( 'concurrent initial links stay revocable after a fresh link is generated', async ( {
+	page,
+	admin,
+	requestUtils,
+	browser,
+	baseURL,
+} ) => {
+	const post = await requestUtils.createPost( {
+		title: `PreviewShare concurrent generation ${ Date.now() }`,
+		content: 'Synthetic concurrent generation draft.',
+		status: 'draft',
+	} );
+	createdPostIds.add( post.id );
+	const initialState = `
+$links = get_post_meta( ${ Number( post.id ) }, '_previewshare_links', true );
+if ( ! empty( $links ) ) { fwrite( STDERR, 'Concurrent generation fixture did not start with an empty link collection.' ); exit( 1 ); }
+`;
+	runWpCli( FIXTURE_WP_CLI, [ 'eval', initialState ] );
+	await visitEditor( admin, post.id );
+	const nonce = await page.evaluate(
+		() => window.previewshare_rest?.nonce || ''
+	);
+	expect( nonce ).toBeTruthy();
+	const initialResults = await page.evaluate(
+		async ( { postId, restNonce } ) => {
+			const requests = Array.from( { length: 2 }, ( _, index ) =>
+				fetch( '/wp-json/previewshare/v1/v2/generate', {
+					method: 'POST',
+					credentials: 'same-origin',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-WP-Nonce': restNonce,
+					},
+					body: JSON.stringify( {
+						post_id: postId,
+						ttl_hours: 6,
+						label: `Concurrent initial ${ index }`,
+						responses_enabled: false,
+						identity_required: false,
+					} ),
+				} )
+			);
+			return Promise.all(
+				requests.map( async ( response ) => ( {
+					status: response.status,
+					body: await response.json(),
+				} ) )
+			);
+		},
+		{ postId: post.id, restNonce: nonce }
+	);
+	expect( initialResults.map( ( result ) => result.status ) ).toEqual( [
+		200, 200,
+	] );
+	const originalUrls = initialResults.map( ( result ) =>
+		resolvePreviewUrlForTestServer( result.body.url, baseURL )
+	);
+	expect( new Set( originalUrls ).size ).toBe( originalUrls.length );
+	const revoke = await page.evaluate(
+		async ( { postId, restNonce } ) => {
+			const response = await fetch(
+				'/wp-json/previewshare/v1/v2/revoke',
+				{
+					method: 'POST',
+					credentials: 'same-origin',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-WP-Nonce': restNonce,
+					},
+					body: JSON.stringify( { post_id: postId } ),
+				}
+			);
+			return response.status;
+		},
+		{ postId: post.id, restNonce: nonce }
+	);
+	expect( revoke ).toBe( 200 );
+	const regenerated = await page.evaluate(
+		async ( { postId, restNonce } ) => {
+			const response = await fetch(
+				'/wp-json/previewshare/v1/v2/generate',
+				{
+					method: 'POST',
+					credentials: 'same-origin',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-WP-Nonce': restNonce,
+					},
+					body: JSON.stringify( {
+						post_id: postId,
+						ttl_hours: 6,
+						label: 'Fresh after revoke',
+						responses_enabled: false,
+						identity_required: false,
+					} ),
+				}
+			);
+			return { status: response.status, body: await response.json() };
+		},
+		{ postId: post.id, restNonce: nonce }
+	);
+	expect( regenerated.status ).toBe( 200 );
+	const anonymousContext = await browser.newContext( {
+		baseURL,
+		storageState: { cookies: [], origins: [] },
+	} );
+	const anonymous = await anonymousContext.newPage();
+	for ( const originalUrl of originalUrls ) {
+		const oldResponse = await anonymous.goto( originalUrl );
+		expect( oldResponse.status() ).toBe( 410 );
+	}
+	const freshResponse = await anonymous.goto(
+		resolvePreviewUrlForTestServer( regenerated.body.url, baseURL )
+	);
+	expect( freshResponse.status() ).toBe( 200 );
+	await expect(
+		anonymous.getByText( 'Synthetic concurrent generation draft.', {
+			exact: true,
+		} )
+	).toBeVisible();
+	await anonymousContext.close();
+} );
+
 test( 'anonymous reviewers can send comments by keyboard and expired links reject responses', async ( {
 	page,
 	admin,
@@ -1385,5 +1508,405 @@ if ( count( get_posts( array(
 	'meta_value' => $target_email,
 ) ) ) !== 100 ) { fwrite( STDERR, 'Failed retry did not leave the 100 undeleted target responses intact.' ); exit( 1 ); }
 `;
-	runWpCli( FIXTURE_WP_CLI, [ 'eval', erasureProof ] );
+	 runWpCli( FIXTURE_WP_CLI, [ 'eval', erasureProof ] );
+} );
+
+test( 'Classic post-list generation returns a private copy page without storing the URL in a notice', async ( {
+	page,
+	admin,
+	requestUtils,
+	browser,
+	baseURL,
+} ) => {
+	const post = await requestUtils.createPost( {
+		title: `PreviewShare Classic action ${ Date.now() }`,
+		content: 'Synthetic Classic action draft.',
+		status: 'draft',
+	} );
+	createdPostIds.add( post.id );
+
+	await admin.visitAdminPage( 'edit.php', 'post_type=post' );
+	const row = page.locator( `#post-${ post.id }` );
+	await row.hover();
+	const generateLink = row.getByRole( 'link', {
+		name: 'Generate Preview Link',
+		exact: true,
+	} );
+	await expect( generateLink ).toBeVisible();
+	const actionUrl = new URL( await generateLink.getAttribute( 'href' ) );
+	expect( actionUrl.searchParams.get( 'action' ) ).toBe(
+		'previewshare_generate_link'
+	);
+	expect( actionUrl.searchParams.get( 'post_id' ) ).toBe( String( post.id ) );
+	expect( actionUrl.searchParams.get( '_wpnonce' ) ).toBeTruthy();
+
+	const anonymousContext = await browser.newContext( {
+		baseURL,
+		storageState: { cookies: [], origins: [] },
+	} );
+	const unauthenticated = await anonymousContext.request.get(
+		new URL(
+			`${ actionUrl.pathname }?${ new URLSearchParams( {
+				action: actionUrl.searchParams.get( 'action' ),
+				post_id: String( post.id ),
+			} ) }`,
+			baseURL
+		).toString(),
+		{ failOnStatusCode: false }
+	);
+	expect( [ 400, 403 ] ).toContain( unauthenticated.status() );
+
+	const [ resultPageResponse ] = await Promise.all( [
+		page.waitForResponse(
+			( response ) =>
+				response.request().isNavigationRequest() &&
+				response.url().includes( 'admin-post.php' )
+		),
+		generateLink.click(),
+	] );
+	expect( resultPageResponse.status() ).toBe( 200 );
+	expect( resultPageResponse.headers()[ 'cache-control' ] ).toMatch(
+		/no-store/i
+	);
+	const previewInput = page.getByRole( 'textbox', { name: 'Preview link' } );
+	await expect( previewInput ).toHaveAttribute( 'readonly', '' );
+	const previewUrl = resolvePreviewUrlForTestServer(
+		await previewInput.inputValue(),
+		baseURL
+	);
+	await expect( page.getByRole( 'link', { name: /Back to/ } ) ).toBeVisible();
+
+	const transientProof = `
+$post_id = ${ Number( post.id ) };
+global $wpdb;
+$transient = get_transient( 'previewshare_admin_notice_' . get_current_user_id() );
+if ( is_array( $transient ) && isset( $transient['url'] ) ) { fwrite( STDERR, 'Generated URL was stored in an admin notice transient.' ); exit( 1 ); }
+$transient_options = $wpdb->get_col( "SELECT option_value FROM {$wpdb->options} WHERE option_name LIKE '_transient_previewshare_admin_notice_%'" );
+foreach ( $transient_options as $option_value ) { if ( false !== strpos( (string) $option_value, '${ previewUrl.replace(
+		/'/g,
+		"\\'"
+	) }' ) ) { fwrite( STDERR, 'Generated URL was stored in a notice option.' ); exit( 1 ); } }
+$token = (string) get_post_meta( $post_id, '_previewshare_token_hash', true );
+if ( ! $token ) { fwrite( STDERR, 'Classic action did not persist a generated preview link.' ); exit( 1 ); }
+`;
+	runWpCli( FIXTURE_WP_CLI, [ 'eval', transientProof ] );
+	const anonymous = await anonymousContext.newPage();
+	const previewResponse = await anonymous.goto( previewUrl );
+	expect( previewResponse.status() ).toBe( 200 );
+	await expect(
+		anonymous.getByText( 'Synthetic Classic action draft.', {
+			exact: true,
+		} )
+	).toBeVisible();
+	expect(
+		runWpCliForOutput( FIXTURE_WP_CLI, [
+			'post',
+			'get',
+			String( post.id ),
+			'--field=post_status',
+		] )
+	).toBe( 'draft' );
+
+	const revoke = await page.request.post(
+		new URL( `/wp-json/previewshare/v1/v2/revoke`, baseURL ).toString(),
+		{
+			data: { post_id: post.id },
+			headers: {
+				'X-WP-Nonce': await page.evaluate(
+					() => window.wpApiSettings?.nonce || ''
+				),
+			},
+		}
+	);
+	if ( revoke.status() !== 200 ) {
+		// Use the editor's established UI to revoke if the REST request needs its editor nonce.
+		await visitEditor( admin, post.id );
+		await ensurePreviewSharePanelOpen( page );
+		const enabled = page.getByRole( 'checkbox', {
+			name: 'Enable Public Preview',
+		} );
+		if ( await enabled.isChecked() ) {
+			await enabled.uncheck();
+		}
+	}
+	const unavailable = await anonymous.goto( previewUrl );
+	expect( unavailable.status() ).toBe( 410 );
+	await anonymousContext.close();
+} );
+
+test( 'uncertain reviewer submission retries its original payload before sending later edits', async ( {
+	page,
+	admin,
+	requestUtils,
+	browser,
+	baseURL,
+} ) => {
+	test.setTimeout( 180000 );
+	const post = await requestUtils.createPost( {
+		title: `PreviewShare retry ${ Date.now() }`,
+		content: 'Synthetic retry draft.',
+		status: 'draft',
+	} );
+	createdPostIds.add( post.id );
+	await visitEditor( admin, post.id );
+	await ensurePreviewSharePanelOpen( page );
+	await page
+		.getByRole( 'checkbox', { name: 'Allow reviewer responses' } )
+		.check();
+	await page
+		.getByRole( 'checkbox', { name: 'Require name and email' } )
+		.check();
+	const [ generatedResponse ] = await Promise.all( [
+		page.waitForResponse( isGeneratePreviewResponse ),
+		page.getByRole( 'button', { name: 'Generate & copy' } ).click(),
+	] );
+	const generated = await generatedResponse.json();
+	const anonymousContext = await browser.newContext( {
+		baseURL,
+		storageState: { cookies: [], origins: [] },
+	} );
+	const anonymous = await anonymousContext.newPage();
+	await anonymous.goto(
+		resolvePreviewUrlForTestServer( generated.url, baseURL )
+	);
+	const form = anonymous.locator( '#previewshare-review-form' );
+	const original = {
+		name: 'Original Reviewer',
+		email: 'original@example.test',
+		comment: 'Original payload must be the one retried.',
+	};
+	await form.getByRole( 'textbox', { name: 'Name' } ).fill( original.name );
+	await form.getByRole( 'textbox', { name: 'Email' } ).fill( original.email );
+	await form.getByRole( 'radio', { name: 'Approve' } ).check();
+	await form
+		.getByRole( 'textbox', { name: 'Comment' } )
+		.fill( original.comment );
+	let firstRequestBody;
+	let interceptedFirstRequest = false;
+	let releaseRetry;
+	let signalRetry;
+	const retryHeld = new Promise( ( resolve ) => ( releaseRetry = resolve ) );
+	const retryRequested = new Promise(
+		( resolve ) => ( signalRetry = resolve )
+	);
+	let retryAttempt = false;
+	await anonymous.route(
+		'**/wp-json/previewshare/v1/reviews/submit*',
+		async ( route ) => {
+			if ( ! interceptedFirstRequest ) {
+				interceptedFirstRequest = true;
+				const committedResponse = await route.fetch();
+				expect( [ 200, 201 ] ).toContain( committedResponse.status() );
+				firstRequestBody = route.request().postDataJSON();
+				await route.abort();
+				return;
+			}
+			if ( retryAttempt ) {
+				signalRetry();
+				await retryHeld;
+			}
+			await route.continue();
+		}
+	);
+	await form.getByRole( 'button', { name: 'Send response' } ).click();
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Try again to check the earlier response before sending your edits.'
+	);
+	await form
+		.getByRole( 'textbox', { name: 'Name' } )
+		.fill( 'Later Reviewer' );
+	await form
+		.getByRole( 'textbox', { name: 'Email' } )
+		.fill( 'later@example.test' );
+	await form.getByRole( 'radio', { name: 'Request changes' } ).check();
+	await form
+		.getByRole( 'textbox', { name: 'Comment' } )
+		.fill( 'Later typed comment.' );
+	retryAttempt = true;
+	const retryAction = form
+		.getByRole( 'button', { name: 'Send response' } )
+		.click();
+	await retryRequested;
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Checking your earlier response. Your current edits have not been sent.'
+	);
+	releaseRetry();
+	const [ retryResponse ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		retryAction,
+	] );
+	expect( [ 200, 201 ] ).toContain( retryResponse.status() );
+	const retried = retryResponse.request().postDataJSON();
+	expect( retried ).toEqual( firstRequestBody );
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Your earlier response was received. Your current edits have not been sent; send again to submit them.'
+	);
+	await expect( form.getByRole( 'textbox', { name: 'Name' } ) ).toHaveValue(
+		'Later Reviewer'
+	);
+	await expect(
+		form.getByRole( 'textbox', { name: 'Comment' } )
+	).toHaveValue( 'Later typed comment.' );
+	await expect(
+		form.getByRole( 'radio', { name: 'Request changes' } )
+	).toBeChecked();
+
+	const persistedProof = `
+$post_id = ${ Number( post.id ) };
+$reviews = get_posts( array( 'post_type' => 'previewshare_review', 'post_status' => 'private', 'post_parent' => $post_id, 'posts_per_page' => -1 ) );
+if ( count( $reviews ) !== 1 ) { fwrite( STDERR, 'Expected exactly one persisted response after retry.' ); exit( 1 ); }
+if ( 'approve' !== get_post_meta( $reviews[0]->ID, '_previewshare_response_type', true ) || 'Original Reviewer' !== get_post_meta( $reviews[0]->ID, '_previewshare_reviewer_name', true ) || 'Original payload must be the one retried.' !== $reviews[0]->post_content ) { fwrite( STDERR, 'Retry changed the committed private response.' ); exit( 1 ); }
+`;
+	runWpCli( FIXTURE_WP_CLI, [ 'eval', persistedProof ] );
+	await visitEditor( admin, post.id );
+	await ensurePreviewSharePanelOpen( page );
+	await page
+		.getByRole( 'button', { name: 'Review settings and history' } )
+		.click();
+	await expect(
+		page.locator( '.previewshare-panel__review-history' )
+	).toContainText( 'Original Reviewer' );
+	await expect(
+		page.locator( '.previewshare-panel__review-history' )
+	).toContainText( 'Original payload must be the one retried.' );
+
+	const [ newSubmission ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		form.getByRole( 'button', { name: 'Send response' } ).click(),
+	] );
+	expect( newSubmission.status() ).toBe( 201 );
+	const newPayload = newSubmission.request().postDataJSON();
+	expect( newPayload.request_id ).not.toBe( firstRequestBody.request_id );
+	expect( newPayload.name ).toBe( 'Later Reviewer' );
+	expect( newPayload.response_type ).toBe( 'request_changes' );
+	expect( newPayload.comment ).toBe( 'Later typed comment.' );
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Your response was received.'
+	);
+	runWpCli( FIXTURE_WP_CLI, [
+		'eval',
+		`$ids = get_posts( array( 'post_type' => 'previewshare_review', 'post_status' => 'private', 'post_parent' => ${ Number(
+			post.id
+		) }, 'fields' => 'ids', 'posts_per_page' => -1 ) ); if ( count( $ids ) !== 2 ) { fwrite( STDERR, 'Expected a separately persisted second response.' ); exit( 1 ); }`,
+	] );
+	await anonymousContext.close();
+} );
+
+test( 'review form limits use UTF-16 units and preserve stored Unicode content', async ( {
+	page,
+	admin,
+	requestUtils,
+	browser,
+	baseURL,
+} ) => {
+	const post = await requestUtils.createPost( {
+		title: `PreviewShare Unicode limits ${ Date.now() }`,
+		content: 'Synthetic Unicode validation draft.',
+		status: 'draft',
+	} );
+	createdPostIds.add( post.id );
+	await visitEditor( admin, post.id );
+	await ensurePreviewSharePanelOpen( page );
+	await page
+		.getByRole( 'checkbox', { name: 'Allow reviewer responses' } )
+		.check();
+	await page
+		.getByRole( 'checkbox', { name: 'Require name and email' } )
+		.check();
+	const [ generatedResponse ] = await Promise.all( [
+		page.waitForResponse( isGeneratePreviewResponse ),
+		page.getByRole( 'button', { name: 'Generate & copy' } ).click(),
+	] );
+	const generated = await generatedResponse.json();
+	const anonymousContext = await browser.newContext( {
+		baseURL,
+		storageState: { cookies: [], origins: [] },
+	} );
+	const anonymous = await anonymousContext.newPage();
+	await anonymous.goto(
+		resolvePreviewUrlForTestServer( generated.url, baseURL )
+	);
+	const form = anonymous.locator( '#previewshare-review-form' );
+	const name = `${ '李'.repeat( 115 ) }éع😀`;
+	const comment = `中文 café مرحبا 😀 ${ '文'.repeat( 4970 ) }`;
+	const nameField = form.getByRole( 'textbox', { name: 'Name' } );
+	const commentField = form.getByRole( 'textbox', { name: 'Comment' } );
+	await expect( nameField ).toHaveAttribute( 'maxlength', '120' );
+	await expect( commentField ).toHaveAttribute( 'maxlength', '5000' );
+	expect( name.length ).toBeLessThanOrEqual( 120 );
+	expect( comment.length ).toBeLessThanOrEqual( 5000 );
+	await nameField.fill( name );
+	await form
+		.getByRole( 'textbox', { name: 'Email' } )
+		.fill( 'unicode@example.test' );
+	await form.getByRole( 'radio', { name: 'Comment' } ).check();
+	await commentField.fill( comment );
+	const overlongName = `${ name }😀`;
+	await nameField.fill( overlongName );
+	const nameConstraint = await nameField.evaluate(
+		( input ) => input.validity.tooLong
+	);
+	if ( nameConstraint ) {
+		const rejected = await anonymous.evaluate( () => {
+			const formElement = document.querySelector(
+				'#previewshare-review-form'
+			);
+			return ! formElement.checkValidity();
+		} );
+		expect( rejected ).toBe( true );
+	}
+	await expect( nameField ).toHaveValue( overlongName );
+	await nameField.fill( name );
+	const overlongComment = `${ comment }${ '文'.repeat( 20 ) }`;
+	await commentField.fill( overlongComment );
+	await expect( commentField ).toHaveValue( overlongComment );
+	await expect( commentField ).toHaveAttribute( 'maxlength', '5000' );
+	await nameField.fill( name );
+	await commentField.fill( comment );
+	const [ accepted ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		form.getByRole( 'button', { name: 'Send response' } ).click(),
+	] );
+	expect( accepted.status() ).toBe( 201 );
+	const persistedUnicode = `
+$post_id = ${ Number( post.id ) };
+$review = get_posts( array( 'post_type' => 'previewshare_review', 'post_status' => 'private', 'post_parent' => $post_id, 'posts_per_page' => 1 ) );
+if ( count( $review ) !== 1 || '${ name.replace(
+		/'/g,
+		"\\'"
+	) }' !== get_post_meta( $review[0]->ID, '_previewshare_reviewer_name', true ) || '${ comment.replace(
+		/'/g,
+		"\\'"
+	) }' !== $review[0]->post_content ) { fwrite( STDERR, 'Stored Unicode response does not match the submitted fields.' ); exit( 1 ); }
+`;
+	runWpCli( FIXTURE_WP_CLI, [ 'eval', persistedUnicode ] );
+	for ( const [ field, value, requestId ] of [
+		[ 'name', `${ '界'.repeat( 121 ) }`, 'e2e-name-limit-123456' ],
+		[ 'comment', `${ '字'.repeat( 5001 ) }`, 'e2e-comment-limit-123456' ],
+	] ) {
+		const body = {
+			...accepted.request().postDataJSON(),
+			request_id: requestId,
+			[ field ]: value,
+		};
+		const invalid = await anonymousContext.request.post(
+			new URL(
+				'/wp-json/previewshare/v1/reviews/submit',
+				baseURL
+			).toString(),
+			{ data: body }
+		);
+		expect( invalid.status() ).toBe( 400 );
+		const error = await invalid.json();
+		expect( error.code ).toMatch(
+			field === 'name' ? /review_.*name/ : /review_.*comment/
+		);
+	}
+	await anonymousContext.close();
 } );
