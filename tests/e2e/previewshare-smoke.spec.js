@@ -650,6 +650,7 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	const legacyInventory = page.locator(
 		'.previewshare-tab-content > .previewshare-legacy-inventory'
 	);
+	await expect( legacyInventory ).toBeVisible();
 	const usingLegacyInventory = await legacyInventory.isVisible();
 	expect( usingLegacyInventory ).toBe( true );
 	const inventoryTable = usingLegacyInventory
@@ -1547,6 +1548,10 @@ test( 'Classic post-list generation returns a private copy page without storing 
 		baseURL,
 		storageState: { cookies: [], origins: [] },
 	} );
+	const initialPostState = runWpCliForOutput( FIXTURE_WP_CLI, [
+		'eval',
+		`$post_id = ${ Number( post.id ) }; echo wp_json_encode( array( get_post_meta( $post_id, '_previewshare_links', true ), get_post_meta( $post_id, '_previewshare_token_hash', true ) ) );`,
+	] );
 	const unauthenticated = await anonymousContext.request.get(
 		new URL(
 			`${ actionUrl.pathname }?${ new URLSearchParams( {
@@ -1557,7 +1562,20 @@ test( 'Classic post-list generation returns a private copy page without storing 
 		).toString(),
 		{ failOnStatusCode: false }
 	);
-	expect( [ 400, 403 ] ).toContain( unauthenticated.status() );
+	expect( unauthenticated.status() ).toBe( 200 );
+	const unauthenticatedBody = await unauthenticated.text();
+	expect( unauthenticatedBody ).not.toMatch(
+		/previewshare-generated-url|previewshare_token=/i
+	);
+	const postStateAfterUnauthenticatedRequest = runWpCliForOutput(
+		FIXTURE_WP_CLI,
+		[
+			'eval',
+			`$post_id = ${ Number( post.id ) }; echo wp_json_encode( array( get_post_meta( $post_id, '_previewshare_links', true ), get_post_meta( $post_id, '_previewshare_token_hash', true ) ) );`,
+		]
+	);
+	expect( postStateAfterUnauthenticatedRequest ).toBe( initialPostState );
+	await anonymousContext.close();
 
 	const [ resultPageResponse ] = await Promise.all( [
 		page.waitForResponse(
