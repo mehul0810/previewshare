@@ -560,11 +560,53 @@ class Actions {
 	/**
 	 * Register Classic Editor meta boxes.
 	 *
+	 * @param string        $post_type Current post type from the Core hook.
+	 * @param \WP_Post|null $post      Current post from the Core hook.
 	 * @return void
 	 */
-	public function register_classic_meta_boxes(): void {
-		foreach ( \previewshare_get_supported_post_types() as $post_type ) {
-			if ( function_exists( 'use_block_editor_for_post_type' ) && use_block_editor_for_post_type( $post_type ) ) {
+	public function register_classic_meta_boxes( $post_type = '', $post = null ): void {
+		// Core supplies the post while firing `add_meta_boxes`. The per-post
+		// editor filter is needed because plugins such as Classic Editor can
+		// choose the editor for an individual post type instance.
+		if ( ! $post instanceof \WP_Post && function_exists( 'get_post' ) ) {
+			$post = get_post();
+		}
+
+		if ( $post instanceof \WP_Post ) {
+			$post_type = (string) $post->post_type;
+		}
+
+		$screen = null;
+		if ( ! $post instanceof \WP_Post && function_exists( 'get_current_screen' ) ) {
+			$screen = get_current_screen();
+			if ( $screen && ! empty( $screen->post_type ) ) {
+				$post_type = (string) $screen->post_type;
+			}
+		}
+
+		$supported_post_types = \previewshare_get_supported_post_types();
+		if ( '' !== $post_type && ! in_array( $post_type, $supported_post_types, true ) ) {
+			return;
+		}
+
+		$has_current_editor = $post instanceof \WP_Post && function_exists( 'use_block_editor_for_post' );
+		if ( $has_current_editor ) {
+			if ( use_block_editor_for_post( $post ) ) {
+				return;
+			}
+		} elseif ( $screen && method_exists( $screen, 'is_block_editor' ) ) {
+			$has_current_editor = true;
+			if ( $screen->is_block_editor() ) {
+				return;
+			}
+		}
+
+		// With the Core hook arguments, register only for the editor currently
+		// being prepared. Keep the no-argument callback behavior for callers that
+		// invoke this public method directly or on older hook implementations.
+		$post_types = '' !== $post_type ? [ $post_type ] : $supported_post_types;
+		foreach ( $post_types as $post_type ) {
+			if ( ! $has_current_editor && function_exists( 'use_block_editor_for_post_type' ) && use_block_editor_for_post_type( $post_type ) ) {
 				continue;
 			}
 

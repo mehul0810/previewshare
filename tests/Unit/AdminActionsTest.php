@@ -87,6 +87,58 @@ class AdminActionsTest extends TestCase {
 		];
 	}
 
+	public function test_classic_editor_meta_box_uses_the_per_post_editor_selection(): void {
+		$actions = $this->make_actions();
+		$post    = new WP_Post( [ 'ID' => 42, 'post_type' => 'post', 'post_status' => 'draft' ] );
+		$this->mock_classic_meta_box_post_types();
+
+		Functions\expect( 'use_block_editor_for_post' )->once()->with( $post )->andReturn( false );
+		Functions\expect( 'use_block_editor_for_post_type' )->never();
+		Functions\expect( '__' )->once()->with( 'PreviewShare', 'previewshare' )->andReturn( 'PreviewShare' );
+		Functions\expect( 'add_meta_box' )
+			->once()
+			->with( 'previewshare-classic', 'PreviewShare', [ $actions, 'render_classic_meta_box' ], 'post', 'side', 'default' );
+
+		$actions->register_classic_meta_boxes( 'post', $post );
+	}
+
+	public function test_classic_editor_meta_box_is_omitted_for_a_block_editor_post(): void {
+		$actions = $this->make_actions();
+		$post    = new WP_Post( [ 'ID' => 42, 'post_type' => 'post', 'post_status' => 'draft' ] );
+		$this->mock_classic_meta_box_post_types();
+
+		Functions\expect( 'use_block_editor_for_post' )->once()->with( $post )->andReturn( true );
+		Functions\expect( 'add_meta_box' )->never();
+
+		$actions->register_classic_meta_boxes( 'post', $post );
+	}
+
+	public function test_classic_editor_meta_box_keeps_global_classic_editor_fallback(): void {
+		$actions = $this->make_actions();
+		$this->mock_classic_meta_box_post_types();
+
+		Functions\expect( 'get_post' )->once()->andReturn( null );
+		Functions\expect( 'use_block_editor_for_post_type' )->once()->with( 'post' )->andReturn( false );
+		Functions\expect( '__' )->once()->with( 'PreviewShare', 'previewshare' )->andReturn( 'PreviewShare' );
+		Functions\expect( 'add_meta_box' )
+			->once()
+			->with( 'previewshare-classic', 'PreviewShare', [ $actions, 'render_classic_meta_box' ], 'post', 'side', 'default' );
+
+		$actions->register_classic_meta_boxes();
+	}
+
+	public function test_classic_editor_meta_box_is_not_registered_for_unsupported_post_type(): void {
+		$actions = $this->make_actions();
+		$post    = new WP_Post( [ 'ID' => 42, 'post_type' => 'attachment', 'post_status' => 'inherit' ] );
+		$this->mock_classic_meta_box_post_types();
+
+		Functions\expect( 'use_block_editor_for_post' )->never();
+		Functions\expect( 'use_block_editor_for_post_type' )->never();
+		Functions\expect( 'add_meta_box' )->never();
+
+		$actions->register_classic_meta_boxes( 'attachment', $post );
+	}
+
 	public function test_classic_generate_link_failure_keeps_message_only_notice(): void {
 		$storage      = Mockery::mock( PostMetaStorage::class );
 		$actions      = $this->make_actions( $storage );
@@ -190,6 +242,32 @@ class AdminActionsTest extends TestCase {
 		Functions\when( 'esc_html__' )->returnArg( 1 );
 		Functions\expect( 'current_user_can' )->once()->with( 'edit_post', 42 )->andReturn( true );
 		Functions\expect( 'check_admin_referer' )->once()->with( 'previewshare_generate_link_42' );
+	}
+
+	private function mock_classic_meta_box_post_types(): void {
+		$types = [
+			'post' => (object) [
+				'label'  => 'Posts',
+				'labels' => (object) [ 'singular_name' => 'Post' ],
+			],
+		];
+		Functions\expect( 'get_post_types' )
+			->twice()
+			->with( [ 'public' => true ], 'objects' )
+			->andReturn( $types );
+		Functions\expect( 'is_post_type_viewable' )->twice()->andReturn( true );
+		Functions\when( 'get_option' )->alias(
+			static function( string $option, $default = false ) {
+				$values = [
+					'previewshare_post_types'        => [ 'post' ],
+					'previewshare_default_ttl_hours' => 6,
+					'previewshare_enable_logging'    => false,
+					'previewshare_enable_caching'    => true,
+				];
+
+				return $values[ $option ] ?? $default;
+			}
+		);
 	}
 
 	public function test_preview_bar_styles_are_registered_through_enqueue_api(): void {
