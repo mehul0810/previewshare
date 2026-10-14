@@ -111,6 +111,28 @@ async function expectCellTextToFit( cells ) {
 	expect( overflowingText ).toEqual( [] );
 }
 
+async function setInventoryStatus( page, hasModernRuntime, name, checked ) {
+	if ( ! hasModernRuntime ) {
+		await page
+			.getByRole( 'checkbox', { name, exact: true } )
+			.setChecked( checked );
+		return;
+	}
+
+	// Compact modern rows retain the native DataViews filter controls.
+	await page.getByRole( 'button', { name: /^Status\b/ } ).click();
+	const options = page.getByRole( 'listbox', { name: 'List of: Status' } );
+	const option = options.getByRole( 'option', { name, exact: true } );
+	await expect( option ).toBeVisible();
+	const selection = option.locator( '.is-selected' );
+	if ( ( await selection.count() ) > 0 !== checked ) {
+		await option.click();
+	}
+	await expect( selection ).toHaveCount( checked ? 1 : 0 );
+	await page.keyboard.press( 'Escape' );
+	await expect( options ).not.toBeVisible();
+}
+
 function runWpCli( command, args ) {
 	const [ executable, ...commandArgs ] = command
 		.trim()
@@ -647,15 +669,19 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	const previousExpiry = generatedLink.expires_at;
 	await page.getByRole( 'tab', { name: 'Preview links' } ).click();
 	const modernInventory = page.locator( '.previewshare-dataviews' );
-	const legacyInventory = page.locator(
-		'.previewshare-tab-content > .previewshare-legacy-inventory'
+	// Both runtimes use compact rows at 1280px. Modern WordPress nests them
+	// inside DataViews, while the fallback renders its own toolbar and rows.
+	const compactInventory = page.locator(
+		'.previewshare-tab-content .previewshare-legacy-inventory'
 	);
-	await expect( legacyInventory ).toBeVisible();
-	const usingLegacyInventory = await legacyInventory.isVisible();
-	expect( usingLegacyInventory ).toBe( true );
-	const inventoryTable = usingLegacyInventory
-		? legacyInventory
-		: modernInventory;
+	await expect( compactInventory ).toBeVisible();
+	const hasModernRuntime = await page.evaluate(
+		() => typeof window.wp.element.useInsertionEffect === 'function'
+	);
+	if ( hasModernRuntime ) {
+		await expect( modernInventory ).toBeVisible();
+	}
+	const inventoryTable = compactInventory;
 	const expiringStatus = inventoryTable.locator(
 		'.previewshare-status.is-expiring_soon'
 	);
@@ -704,19 +730,12 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await linkSearch.fill( 'no matching preview link' );
 	await expect( extendButton ).toHaveCount( 0 );
 	await linkSearch.fill( 'E2E smoke' );
-	const expiredFilter = page.getByRole( 'checkbox', { name: 'Expired' } );
-	await expiredFilter.check();
+	await setInventoryStatus( page, hasModernRuntime, 'Expired', true );
 	await expect( extendButton ).toHaveCount( 0 );
-	await expiredFilter.uncheck();
-	const expiringFilter = page.getByRole( 'checkbox', {
-		name: 'Expiring soon',
-	} );
-	await expiringFilter.check();
+	await setInventoryStatus( page, hasModernRuntime, 'Expired', false );
+	await setInventoryStatus( page, hasModernRuntime, 'Expiring soon', true );
 	await expect( extendButton ).toBeVisible();
 	await page.setViewportSize( { width: 1600, height: 900 } );
-	const hasModernRuntime = await page.evaluate(
-		() => typeof window.wp.element.useInsertionEffect === 'function'
-	);
 	if ( hasModernRuntime ) {
 		await expect( modernInventory ).toBeVisible();
 		await expect(
@@ -731,89 +750,153 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		} );
 	}
 	await page.setViewportSize( { width: 1280, height: 900 } );
-	await expect( legacyInventory ).toBeVisible();
-	await expect(
-		legacyInventory.getByRole( 'checkbox', { name: 'Expiring soon' } )
-	).toBeChecked();
+	await expect( compactInventory ).toBeVisible();
+	if ( hasModernRuntime ) {
+		await expect(
+			modernInventory.getByRole( 'button', {
+				name: /^Status includes: Expiring soon$/,
+			} )
+		).toBeVisible();
+	} else {
+		await expect(
+			compactInventory.getByRole( 'checkbox', { name: 'Expiring soon' } )
+		).toBeChecked();
+	}
 	await page.screenshot( {
 		path: testInfo.outputPath( 'previewshare-preview-links-expiring.png' ),
 		fullPage: true,
 	} );
-	await page.setViewportSize( { width: 390, height: 844 } );
-	const mobileInventory = legacyInventory;
-	await expect( mobileInventory ).toBeVisible();
-	const mobileStatus = mobileInventory.locator(
-		'.previewshare-status.is-expiring_soon'
-	);
-	const mobileCard = mobileStatus.locator( 'xpath=ancestor::tr[1]' );
-	for ( const label of [
-		'Content',
-		'Label',
-		'Status',
-		'Views',
-		'Expires',
-		'Last viewed',
-		'Actions',
-	] ) {
-		const cell = mobileCard.locator( `td[data-label="${ label }"]` );
-		await expect( cell ).toBeVisible();
-		await expect( cell ).not.toBeEmpty();
-	}
-	await expect( mobileCard ).toContainText( generatedLink.post_title );
-	await expect( mobileCard ).toContainText( generatedLink.label );
-	const mobileExtendButton = mobileCard.getByRole( 'button', {
-		name: extendButtonName,
-		exact: true,
-	} );
-	await mobileExtendButton.focus();
-	await expect( mobileExtendButton ).toBeFocused();
-	await expect( mobileExtendButton ).toBeInViewport();
-	const mobilePageWidth = await page.evaluate(
-		() => document.documentElement.scrollWidth
-	);
-	expect( mobilePageWidth ).toBeLessThanOrEqual( 390 );
-	const cardScrollMetrics = await mobileCard.evaluate( ( card ) => ( {
-		clientWidth: card.clientWidth,
-		scrollWidth: card.scrollWidth,
-	} ) );
-	expect( cardScrollMetrics.scrollWidth ).toBeLessThanOrEqual(
-		cardScrollMetrics.clientWidth
-	);
-	await expect( mobileStatus ).toHaveText( 'Expiring soon' );
-
-	const expiringStatusIsPainted = await mobileStatus.evaluate( ( status ) => {
-		const bounds = status.getBoundingClientRect();
-		const visibleElement = document.elementFromPoint(
-			bounds.left + bounds.width / 2,
-			bounds.top + bounds.height / 2
+	for ( const width of [ 390, 320 ] ) {
+		await page.setViewportSize( { width, height: 844 } );
+		const mobileInventory = compactInventory;
+		await expect( mobileInventory ).toBeVisible();
+		const mobileStatus = mobileInventory.locator(
+			'.previewshare-status.is-expiring_soon'
 		);
-
-		return status === visibleElement || status.contains( visibleElement );
-	} );
-	expect( expiringStatusIsPainted ).toBe( true );
-	const extendButtonIsPainted = await mobileExtendButton.evaluate(
-		( button ) => {
-			const bounds = button.getBoundingClientRect();
-			const visibleElement = document.elementFromPoint(
-				bounds.left + bounds.width / 2,
-				bounds.top + bounds.height / 2
-			);
-
-			return (
-				button === visibleElement || button.contains( visibleElement )
-			);
+		const mobileCard = mobileStatus.locator( 'xpath=ancestor::tr[1]' );
+		for ( const label of [
+			'Content',
+			'Label',
+			'Status',
+			'Views',
+			'Expires',
+			'Last viewed',
+			'Actions',
+		] ) {
+			const cell = mobileCard.locator( `td[data-label="${ label }"]` );
+			await expect( cell ).toBeVisible();
+			await expect( cell ).not.toBeEmpty();
 		}
-	);
-	expect( extendButtonIsPainted ).toBe( true );
-	const mobileExtendBounds = await mobileExtendButton.boundingBox();
-	expect( mobileExtendBounds ).not.toBeNull();
-	expect(
-		mobileExtendBounds.x + mobileExtendBounds.width
-	).toBeLessThanOrEqual( 390 );
-	await page.screenshot( {
-		path: testInfo.outputPath( 'previewshare-preview-links-mobile.png' ),
-		fullPage: true,
-	} );
+		await expect( mobileCard ).toContainText( generatedLink.post_title );
+		await expect( mobileCard ).toContainText( generatedLink.label );
+		await expectCellTextToFit( mobileCard.locator( 'td' ) );
+		const mobileExtendButton = mobileCard.getByRole( 'button', {
+			name: extendButtonName,
+			exact: true,
+		} );
+		await mobileExtendButton.focus();
+		await expect( mobileExtendButton ).toBeFocused();
+		await mobileExtendButton.press( 'Tab' );
+		const mobileGenerateButton = mobileCard.getByRole( 'button', {
+			name: 'Generate & copy',
+			exact: true,
+		} );
+		await expect( mobileGenerateButton ).toBeFocused();
+		await mobileGenerateButton.press( 'Tab' );
+		const mobileRevokeButton = mobileCard.getByRole( 'button', {
+			name: 'Revoke link',
+			exact: true,
+		} );
+		await expect( mobileRevokeButton ).toBeFocused();
+		await expect( mobileRevokeButton ).toBeInViewport();
+		await mobileRevokeButton.press( 'Tab' );
+		const mobileDeleteButton = mobileCard.getByRole( 'button', {
+			name: 'Delete link',
+			exact: true,
+		} );
+		await expect( mobileDeleteButton ).toBeFocused();
+		await expect( mobileDeleteButton ).toBeInViewport();
+		await mobileDeleteButton.press( 'Enter' );
+		const deleteConfirmation = page.getByRole( 'dialog', {
+			name: 'Delete preview link?',
+			exact: true,
+		} );
+		await expect( deleteConfirmation ).toBeVisible();
+		await expect( deleteConfirmation ).toContainText(
+			generatedLink.post_title
+		);
+		await expect( deleteConfirmation ).toContainText( generatedLink.label );
+		await expect( deleteConfirmation ).toContainText(
+			'This will revoke the preview link and permanently remove its entry from the list.'
+		);
+		await expect(
+			deleteConfirmation.getByRole( 'button', {
+				name: 'Delete link',
+				exact: true,
+			} )
+		).toBeEnabled();
+		await deleteConfirmation
+			.getByRole( 'button', { name: 'Cancel' } )
+			.click();
+		await expect( deleteConfirmation ).not.toBeVisible();
+		await mobileExtendButton.focus();
+		await expect( mobileExtendButton ).toBeFocused();
+		await expect( mobileExtendButton ).toBeInViewport();
+		const mobilePageWidth = await page.evaluate(
+			() => document.documentElement.scrollWidth
+		);
+		expect( mobilePageWidth ).toBeLessThanOrEqual( width );
+		const cardScrollMetrics = await mobileCard.evaluate( ( card ) => ( {
+			clientWidth: card.clientWidth,
+			scrollWidth: card.scrollWidth,
+		} ) );
+		expect( cardScrollMetrics.scrollWidth ).toBeLessThanOrEqual(
+			cardScrollMetrics.clientWidth
+		);
+		await expect( mobileStatus ).toHaveText( 'Expiring soon' );
+
+		const expiringStatusIsPainted = await mobileStatus.evaluate(
+			( status ) => {
+				const bounds = status.getBoundingClientRect();
+				const visibleElement = document.elementFromPoint(
+					bounds.left + bounds.width / 2,
+					bounds.top + bounds.height / 2
+				);
+
+				return (
+					status === visibleElement ||
+					status.contains( visibleElement )
+				);
+			}
+		);
+		expect( expiringStatusIsPainted ).toBe( true );
+		const extendButtonIsPainted = await mobileExtendButton.evaluate(
+			( button ) => {
+				const bounds = button.getBoundingClientRect();
+				const visibleElement = document.elementFromPoint(
+					bounds.left + bounds.width / 2,
+					bounds.top + bounds.height / 2
+				);
+
+				return (
+					button === visibleElement ||
+					button.contains( visibleElement )
+				);
+			}
+		);
+		expect( extendButtonIsPainted ).toBe( true );
+		const mobileExtendBounds = await mobileExtendButton.boundingBox();
+		expect( mobileExtendBounds ).not.toBeNull();
+		expect(
+			mobileExtendBounds.x + mobileExtendBounds.width
+		).toBeLessThanOrEqual( width );
+		await page.screenshot( {
+			path: testInfo.outputPath(
+				`previewshare-preview-links-mobile-${ width }.png`
+			),
+			fullPage: true,
+		} );
+	}
 	await page.setViewportSize( { width: 1280, height: 900 } );
 	const [ extendResponse ] = await Promise.all( [
 		page.waitForResponse( isExtendPreviewResponse ),
