@@ -86,4 +86,4 @@ vendor/**/phpunit.xml*
 
 /.playwright-cli
 
-/docs/qa
+/docs
