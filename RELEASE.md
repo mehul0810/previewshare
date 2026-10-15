@@ -7,9 +7,9 @@
 - The production release source is the approved commit on `main`; a release branch or candidate commit alone is not release proof.
 
 ## Branching rules for work
-- Keep routine integration work on `develop` and open pull requests against `develop`.
-- When release stabilization is needed, create a version-scoped `release/<version>` branch from `develop` and keep it limited to that version.
-- Promote the approved release through the repository's mainline-first process. Create the production tag and package from the approved `main` commit, then publish only through the authorized release workflow.
+- Create a version-scoped `release/<version>` branch from `develop` before implementation for that milestone, and keep it limited to that version.
+- Open pull requests for milestone work against the matching `release/<version>` branch.
+- Promote the approved release through the mainline-first process. Merge the release to `main`, then create the production tag and package from the approved `main` commit and publish through the authorized release workflow.
 
 ## WordPress.org metadata hygiene
 - Keep `readme.txt` to a maximum of 5 high-intent generic tags.
