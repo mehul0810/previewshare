@@ -1,0 +1,6 @@
+### Result
+{"siteLocale":"fr_FR","userLocale":"en_US","browserZone":"Asia/Calcutta","table":"Content\tLabel\tStatus\tViews\tExpires\tLast viewed\tActions\nLegal review\n#7\nQA review 3\nExpiring soon\nComment received\nExtend\n0\n9 octobre 2026 09:38 -0400\nNever\nGenerate & copy\nRevoke link\nClient review\n#6\nQA review 2\nExpiring soon\nComment received\nExtend\n0\n9 octobre 2026 09:38 -0400\nNever\nGenerate & copy\nRevoke link\nEditorial review — long content title to exercise wrapping and row alignment\n#5\nQA review 1\nExpiring soon\nComment received\nExtend\n0\n9 octobre 2026 09:38 -0400\nNever\nGenerate & copy\nRevoke link"}
+### Ran Playwright code
+```js
+await (async page=>{await page.getByRole("tab",{name:"Preview links",exact:true}).click(); await page.screenshot({path:"output/playwright/site-locale-fr-user-en.png",fullPage:true}); return await page.evaluate(()=>({siteLocale:previewshare_settings.date_settings.date_l10n.locale,userLocale:wp.date.getSettings().l10n.locale,browserZone:Intl.DateTimeFormat().resolvedOptions().timeZone,table:document.querySelector(".previewshare-legacy-link-table").innerText}));})(page);
+```

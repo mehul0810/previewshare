@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    target-branch: "release/1.1.0"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+    groups:
+      npm_and_yarn:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
