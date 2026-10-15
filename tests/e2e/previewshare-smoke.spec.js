@@ -1480,8 +1480,8 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	await expect(
 		page.locator( '.previewshare-panel__review-state' )
 	).toHaveText( 'Approved' );
-	await expect( page.getByText( 'Review Tester' ) ).toBeVisible();
-	await expect( page.getByText( 'reviewer@example.test' ) ).toBeVisible();
+	await expect( page.getByText( 'Review Tester' ).first() ).toBeVisible();
+	await expect( page.getByText( 'reviewer@example.test' ).first() ).toBeVisible();
 
 	runWpCli( FIXTURE_WP_CLI, [
 		'post',
