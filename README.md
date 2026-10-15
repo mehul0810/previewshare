@@ -26,7 +26,11 @@ For a published installation, download a ZIP from [Releases](https://github.com/
 
 After activation, open PreviewShare in the WordPress admin. Review the enabled content types and default expiry, then generate a link from a supported post's PreviewShare controls. Send the URL to the reviewer. Revoking the link stops access through that URL; generate and share a replacement when needed.
 
-Reviewer feedback is opt-in for each link. Site owners can choose whether name and email are optional or required; these fields are self-reported and do not authenticate the reviewer. Daily WordPress scheduled cleanup deletes responses and any provided identity older than 90 days while the plugin is active. Cleanup depends on scheduled tasks running. WordPress privacy tools support export and erasure. Deactivation or uninstall stops cleanup and preserves existing records; reactivation resumes cleanup.
+Reviewer feedback is opt-in for each link. Site owners can choose whether name and email are optional or required; these fields are self-reported and do not authenticate the reviewer.
+
+Daily WordPress scheduled cleanup deletes responses and any provided identity older than 90 days while the plugin is active. Cleanup depends on scheduled tasks running. Deactivation or uninstall stops cleanup and preserves existing records; reactivation resumes cleanup.
+
+While PreviewShare is active, WordPress privacy tools can export or erase responses using the email address supplied by the reviewer. They cannot locate responses submitted without an email address.
 
 ## Maintainer Documentation
 

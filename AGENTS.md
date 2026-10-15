@@ -11,7 +11,7 @@ Verify release status from published tags and the [Releases page](https://github
 - `previewshare.php` loads configuration and Composer autoloading; `src/Plugin.php` composes and registers plugin services.
 - `src/Services/TokenService.php` creates and validates secret tokens. Keep raw tokens and usable preview URLs out of persistent plugin storage and logs; store hashed references.
 - `src/Services/PostMetaStorage.php` stores link detail records. Those records are authoritative; aggregate compatibility metadata is a projection, not the sole inventory source.
-- `src/Services/ReviewResponseService.php` owns private reviewer responses, retention, cleanup, and WordPress privacy exporter/eraser hooks. `src/Services/ReviewVersion.php` ties approval freshness to saved content.
+- `src/Services/ReviewResponseService.php` owns private reviewer responses, retention, cleanup, and email-based WordPress privacy exporter/eraser hooks. `src/Services/ReviewVersion.php` ties approval freshness to saved content.
 - `src/REST/PreviewController.php` and `ReviewController.php` enforce link, capability, ownership, and response boundaries. `src/Abilities/PreviewAbilities.php` exposes optional WordPress Abilities API support through feature detection.
 - `src/Admin/Actions.php` coordinates preview resolution, Classic Editor actions, and the frontend preview bar. `assets/src/js/admin` and `settings.js` provide editor/settings interfaces; `assets/src/js/frontend` provides the reviewer form.
 - Unit tests are under `tests/Unit`; isolated WordPress runtime fixtures are under `tests/Runtime`; Playwright flows live in `tests/e2e`.
@@ -20,7 +20,7 @@ Preserve authorization checks, object ownership checks, nonces where applicable,
 
 Reviewer responses are opt-in per link; name/email may be optional or required. Saved-content changes make an approval stale. Retry errors must preserve the entered response for correction or retry. Inputs are limited to 120 UTF-16 code units for names and 5,000 for comments.
 
-Daily WordPress scheduled cleanup deletes responses and identity older than 90 days while the plugin is active; timing depends on scheduled tasks running. Deactivation or uninstall stops cleanup and preserves records; reactivation resumes cleanup. Do not change these data, retention, security, or public extension contracts without explicit product approval.
+Daily WordPress scheduled cleanup deletes responses and identity older than 90 days while the plugin is active; timing depends on scheduled tasks running. Deactivation or uninstall stops cleanup and preserves records; reactivation resumes cleanup. WordPress privacy export and erasure require a supplied reviewer email address and the active plugin; do not claim those tools can locate email-less responses. Do not change these data, retention, security, or public extension contracts without explicit product approval.
 
 ## Local setup and commands
 
