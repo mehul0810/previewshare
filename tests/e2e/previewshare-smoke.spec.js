@@ -1395,6 +1395,65 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	await expect( form.getByRole( 'status' ) ).toHaveText(
 		'This content changed after you opened the preview. Refresh the page to review the latest version before approving.'
 	);
+	const rejectedApproval = submitResponse.request().postDataJSON();
+	await form.getByRole( 'radio', { name: 'Comment' } ).check();
+	await form
+		.getByRole( 'textbox', { name: 'Comment' } )
+		.fill( 'Comment after rejected approval.' );
+	const [ commentResponse ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		form.getByRole( 'button', { name: 'Send response' } ).click(),
+	] );
+	expect( commentResponse.status() ).toBe( 201 );
+	expect( commentResponse.request().postDataJSON() ).toMatchObject( {
+		response_type: 'comment',
+		comment: 'Comment after rejected approval.',
+	} );
+	expect( commentResponse.request().postDataJSON().request_id ).not.toBe(
+		rejectedApproval.request_id
+	);
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Your response was received.'
+	);
+
+	await anonymous.goto( previewUrl );
+	await form.getByRole( 'textbox', { name: 'Name' } ).fill( 'Review Tester' );
+	await form
+		.getByRole( 'textbox', { name: 'Email' } )
+		.fill( 'reviewer@example.test' );
+	runWpCli( FIXTURE_WP_CLI, [
+		'post',
+		'update',
+		String( post.id ),
+		'--post_content=Second revised review draft before approval.',
+	] );
+	const [ secondStale ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		form.getByRole( 'button', { name: 'Send response' } ).click(),
+	] );
+	expect( secondStale.status() ).toBe( 409 );
+	await form.getByRole( 'radio', { name: 'Request changes' } ).check();
+	await form
+		.getByRole( 'textbox', { name: 'Comment' } )
+		.fill( 'Changes after rejected approval.' );
+	const [ changesResponse ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		form.getByRole( 'button', { name: 'Send response' } ).click(),
+	] );
+	expect( changesResponse.status() ).toBe( 201 );
+	expect( changesResponse.request().postDataJSON() ).toMatchObject( {
+		response_type: 'request_changes',
+		comment: 'Changes after rejected approval.',
+	} );
+	expect( changesResponse.request().postDataJSON().request_id ).not.toBe(
+		secondStale.request().postDataJSON().request_id
+	);
 	const noJsContext = await browser.newContext( {
 		baseURL,
 		javaScriptEnabled: false,
@@ -1421,8 +1480,8 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	await expect(
 		page.locator( '.previewshare-panel__review-state' )
 	).toHaveText( 'Approved' );
-	await expect( page.getByText( 'Review Tester' ) ).toBeVisible();
-	await expect( page.getByText( 'reviewer@example.test' ) ).toBeVisible();
+	await expect( page.getByText( 'Review Tester' ).first() ).toBeVisible();
+	await expect( page.getByText( 'reviewer@example.test' ).first() ).toBeVisible();
 
 	runWpCli( FIXTURE_WP_CLI, [
 		'post',
@@ -1469,7 +1528,9 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	await expect(
 		page.getByText( 'Please revise the opening paragraph.' )
 	).toBeVisible();
-	await page.getByRole( 'button', { name: 'Resolve', exact: true } ).click();
+	await page.locator( '.previewshare-panel__review-history li' )
+		.filter( { hasText: 'Please revise the opening paragraph.' } )
+		.getByRole( 'button', { name: 'Resolve', exact: true } ).click();
 	await expect( page.getByText( 'Resolved', { exact: true } ) ).toBeVisible();
 
 	const [ revokeResponse ] = await Promise.all( [
@@ -1481,7 +1542,7 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	expect( revokeResponse.status() ).toBe( 200 );
 	await expect(
 		page.locator( '.previewshare-panel__review-history li' )
-	).toHaveCount( 2 );
+	).toHaveCount( 4 );
 	const rejected = await anonymousContext.request.post(
 		new URL( '/wp-json/previewshare/v1/reviews/submit', baseURL ).toString(),
 		{
@@ -1496,7 +1557,7 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 $post_id = ${ Number( post.id ) };
 $args = array( 'post_type' => 'previewshare_review', 'post_status' => 'private', 'post_parent' => $post_id, 'fields' => 'ids', 'posts_per_page' => -1 );
 $ids = get_posts( $args );
-if ( count( $ids ) !== 2 ) { fwrite( STDERR, 'Expected two private review records.' ); exit( 1 ); }
+if ( count( $ids ) !== 4 ) { fwrite( STDERR, 'Expected four private review records.' ); exit( 1 ); }
 foreach ( $ids as $id ) { if ( '0000-00-00 00:00:00' === get_post( $id )->post_date_gmt ) { fwrite( STDERR, 'Review GMT date was not stored.' ); exit( 1 ); } }
 $hash = (string) get_post_meta( $ids[0], '_previewshare_link_hash', true );
 $reviews = PreviewShare\\Container::get( 'reviews' );
@@ -1504,9 +1565,9 @@ $latest = $reviews->latest_for_links( array( $hash => $post_id ) );
 if ( ! isset( $latest[ $hash ] ) || 'request_changes' !== $latest[ $hash ]['response_type'] ) { fwrite( STDERR, 'Batched inventory missed the latest response.' ); exit( 1 ); }
 $exporters = apply_filters( 'wp_privacy_personal_data_exporters', array() );
 $export = call_user_func( $exporters['previewshare-reviews']['callback'], 'reviewer@example.test', 1 );
-if ( count( $export['data'] ) !== 2 ) { fwrite( STDERR, 'Privacy exporter missed reviewer responses.' ); exit( 1 ); }
+if ( count( $export['data'] ) !== 4 ) { fwrite( STDERR, 'Privacy exporter missed reviewer responses.' ); exit( 1 ); }
 do_action( 'previewshare_cleanup_reviews' );
-if ( count( get_posts( $args ) ) !== 2 ) { fwrite( STDERR, 'Fresh review records were removed early.' ); exit( 1 ); }
+if ( count( get_posts( $args ) ) !== 4 ) { fwrite( STDERR, 'Fresh review records were removed early.' ); exit( 1 ); }
 $old = time() - ( 91 * DAY_IN_SECONDS );
 foreach ( $ids as $id ) { wp_update_post( array( 'ID' => $id, 'post_date' => gmdate( 'Y-m-d H:i:s', $old ), 'post_date_gmt' => gmdate( 'Y-m-d H:i:s', $old ) ) ); }
 do_action( 'previewshare_cleanup_reviews' );
