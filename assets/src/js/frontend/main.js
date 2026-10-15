@@ -98,6 +98,8 @@ if ( form && config ) {
 			} );
 			const result = await response.json();
 			if ( result.code === 'review_stale_version' ) {
+				// The rejected approval was never stored, so later choices need a new payload.
+				pending = null;
 				message.textContent = config.messages.stale;
 				return;
 			}

@@ -1395,6 +1395,65 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	await expect( form.getByRole( 'status' ) ).toHaveText(
 		'This content changed after you opened the preview. Refresh the page to review the latest version before approving.'
 	);
+	const rejectedApproval = submitResponse.request().postDataJSON();
+	await form.getByRole( 'radio', { name: 'Comment' } ).check();
+	await form
+		.getByRole( 'textbox', { name: 'Comment' } )
+		.fill( 'Comment after rejected approval.' );
+	const [ commentResponse ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		form.getByRole( 'button', { name: 'Send response' } ).click(),
+	] );
+	expect( commentResponse.status() ).toBe( 201 );
+	expect( commentResponse.request().postDataJSON() ).toMatchObject( {
+		response_type: 'comment',
+		comment: 'Comment after rejected approval.',
+	} );
+	expect( commentResponse.request().postDataJSON().request_id ).not.toBe(
+		rejectedApproval.request_id
+	);
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Your response was received.'
+	);
+
+	await anonymous.goto( previewUrl );
+	await form.getByRole( 'textbox', { name: 'Name' } ).fill( 'Review Tester' );
+	await form
+		.getByRole( 'textbox', { name: 'Email' } )
+		.fill( 'reviewer@example.test' );
+	runWpCli( FIXTURE_WP_CLI, [
+		'post',
+		'update',
+		String( post.id ),
+		'--post_content=Second revised review draft before approval.',
+	] );
+	const [ secondStale ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		form.getByRole( 'button', { name: 'Send response' } ).click(),
+	] );
+	expect( secondStale.status() ).toBe( 409 );
+	await form.getByRole( 'radio', { name: 'Request changes' } ).check();
+	await form
+		.getByRole( 'textbox', { name: 'Comment' } )
+		.fill( 'Changes after rejected approval.' );
+	const [ changesResponse ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		form.getByRole( 'button', { name: 'Send response' } ).click(),
+	] );
+	expect( changesResponse.status() ).toBe( 201 );
+	expect( changesResponse.request().postDataJSON() ).toMatchObject( {
+		response_type: 'request_changes',
+		comment: 'Changes after rejected approval.',
+	} );
+	expect( changesResponse.request().postDataJSON().request_id ).not.toBe(
+		secondStale.request().postDataJSON().request_id
+	);
 	const noJsContext = await browser.newContext( {
 		baseURL,
 		javaScriptEnabled: false,
