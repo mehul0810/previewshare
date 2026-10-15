@@ -381,3 +381,32 @@ function previewshare_get_asset_metadata( string $relative_path, array $extra_de
 		'version'      => isset( $asset['version'] ) && is_string( $asset['version'] ) ? $asset['version'] : $version,
 	];
 }
+
+/**
+ * Get site date display settings without inheriting an admin user's locale.
+ *
+ * @return array<string,mixed> Formats and translated calendar names for admin UI.
+ */
+function previewshare_get_date_display_settings(): array {
+	global $wp_locale;
+
+	$switched = switch_to_locale( get_locale() );
+	$settings = [
+		'date_format' => get_option( 'date_format' ),
+		'time_format' => get_option( 'time_format' ),
+		'date_l10n'   => [
+			'locale'        => get_locale(),
+			'months'        => array_values( $wp_locale->month ),
+			'monthsShort'   => array_values( $wp_locale->month_abbrev ),
+			'weekdays'      => array_values( $wp_locale->weekday ),
+			'weekdaysShort' => array_values( $wp_locale->weekday_abbrev ),
+			'meridiem'      => (object) $wp_locale->meridiem,
+		],
+	];
+
+	if ( $switched ) {
+		restore_previous_locale();
+	}
+
+	return $settings;
+}

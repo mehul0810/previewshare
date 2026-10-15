@@ -190,12 +190,12 @@ final class ReviewController {
 			return new \WP_Error( 'review_rate_limited', __( 'Too many responses. Please try again later.', 'previewshare' ), [ 'status' => 429 ] );
 		}
 
-		$type       = sanitize_key( (string) $request->get_param( 'response_type' ) );
-		$name       = sanitize_text_field( (string) $request->get_param( 'name' ) );
-		$raw_email  = trim( (string) $request->get_param( 'email' ) );
-		$email      = sanitize_email( $raw_email );
-		$comment    = sanitize_textarea_field( (string) $request->get_param( 'comment' ) );
-		$request_id = (string) $request->get_param( 'request_id' );
+		$type        = sanitize_key( (string) $request->get_param( 'response_type' ) );
+		$raw_name    = (string) $request->get_param( 'name' );
+		$raw_email   = trim( (string) $request->get_param( 'email' ) );
+		$email       = sanitize_email( $raw_email );
+		$raw_comment = (string) $request->get_param( 'comment' );
+		$request_id  = (string) $request->get_param( 'request_id' );
 
 		if ( ! in_array( $type, [ 'approve', 'request_changes', 'comment' ], true ) ) {
 			return new \WP_Error( 'review_invalid_type', __( 'Choose a valid response.', 'previewshare' ), [ 'status' => 400 ] );
@@ -210,8 +210,30 @@ final class ReviewController {
 		if ( 'approve' === $type && ! hash_equals( $content_fingerprint, ReviewVersion::fingerprint( $post ) ) ) {
 			return new \WP_Error( 'review_stale_version', __( 'This content changed after you opened the preview. Refresh the page to review the latest version before approving.', 'previewshare' ), [ 'status' => 409 ] );
 		}
-		if ( strlen( $name ) > 120 || strlen( $email ) > 190 || strlen( $comment ) > 5000 ) {
-			return new \WP_Error( 'review_too_long', __( 'Your response is too long. Shorten it and try again.', 'previewshare' ), [ 'status' => 400 ] );
+		// HTML maxlength counts UTF-16 units. Reject malformed or oversized raw
+		// input before sanitization, then apply the visible limits to saved text.
+		if ( ! preg_match( '//u', $raw_name ) ) {
+			return new \WP_Error( 'review_invalid_name', __( 'Enter a valid name.', 'previewshare' ), [ 'status' => 400 ] );
+		}
+		if ( ! preg_match( '//u', $raw_comment ) ) {
+			return new \WP_Error( 'review_invalid_comment', __( 'Enter a valid comment.', 'previewshare' ), [ 'status' => 400 ] );
+		}
+		if ( strlen( $raw_name ) > 480 ) {
+			return new \WP_Error( 'review_name_too_long', __( 'Shorten your name and try again.', 'previewshare' ), [ 'status' => 400 ] );
+		}
+		if ( strlen( $raw_comment ) > 20000 ) {
+			return new \WP_Error( 'review_comment_too_long', __( 'Shorten your comment and try again.', 'previewshare' ), [ 'status' => 400 ] );
+		}
+		$name    = sanitize_text_field( $raw_name );
+		$comment = sanitize_textarea_field( $raw_comment );
+		if ( $this->exceeds_utf16_limit( $name, 120 ) ) {
+			return new \WP_Error( 'review_name_too_long', __( 'Shorten your name and try again.', 'previewshare' ), [ 'status' => 400 ] );
+		}
+		if ( $this->exceeds_utf16_limit( $comment, 5000 ) ) {
+			return new \WP_Error( 'review_comment_too_long', __( 'Shorten your comment and try again.', 'previewshare' ), [ 'status' => 400 ] );
+		}
+		if ( strlen( $email ) > 190 ) {
+			return new \WP_Error( 'review_email_too_long', __( 'Shorten your email address and try again.', 'previewshare' ), [ 'status' => 400 ] );
 		}
 		if ( '' !== $raw_email && ( $email !== $raw_email || ! is_email( $email ) ) ) {
 			return new \WP_Error( 'review_invalid_email', __( 'Enter a valid email address.', 'previewshare' ), [ 'status' => 400 ] );
@@ -246,6 +268,17 @@ final class ReviewController {
 			],
 			201
 		);
+	}
+
+	/**
+	 * Match the browser's maxlength count without requiring mbstring or iconv.
+	 *
+	 * @param string $value Valid UTF-8 text.
+	 * @param int    $limit Maximum UTF-16 code units.
+	 * @return bool
+	 */
+	private function exceeds_utf16_limit( string $value, int $limit ): bool {
+		return preg_match_all( '/./us', $value ) + preg_match_all( '/[\x{10000}-\x{10FFFF}]/u', $value ) > $limit;
 	}
 
 	/**

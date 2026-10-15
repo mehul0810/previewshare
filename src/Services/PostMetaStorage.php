@@ -61,8 +61,8 @@ class PostMetaStorage {
 		$hash    = $this->token_service->hash( $token );
 		$now     = time();
 		$expires = $ttl_hours > 0 ? ( $now + ( $ttl_hours * HOUR_IN_SECONDS ) ) : null;
-		// The read-only fallback preserves a genuine legacy sibling during its
-		// first migration into the aggregate map.
+		// The aggregate is a compatibility projection. Authoritative detail rows
+		// keep every sibling visible even when concurrent initialization replaces it.
 		$stored_links          = get_post_meta( $post_id, self::LINKS_META_KEY, true );
 		$links                 = $this->get_links_for_post( $post_id );
 		$current_user          = get_current_user_id();
@@ -301,8 +301,6 @@ class PostMetaStorage {
 		if ( empty( $links ) ) {
 			return null;
 		}
-
-		$links = $this->hydrate_link_detail_records( $post_id, $links );
 
 		uasort(
 			$links,
@@ -624,7 +622,10 @@ class PostMetaStorage {
 	}
 
 	/**
-	 * Revoke all current links for a post.
+	 * Revoke every authoritative link in the initial post snapshot.
+	 *
+	 * A new detail row inserted after that snapshot is a later generation and
+	 * may survive. Existing detail rows are never restored from the aggregate.
 	 *
 	 * @param int $post_id Post ID.
 	 * @return bool True when a token was revoked.
@@ -655,25 +656,30 @@ class PostMetaStorage {
 	}
 
 	/**
-	 * Return all link records for a post.
+	 * Return the authoritative link snapshot for a post.
+	 *
+	 * The aggregate is only a compatibility projection: initial concurrent
+	 * writes can replace it because WordPress has no unique post-meta key and
+	 * an empty previous value does not constrain update_post_meta(). Enumerate
+	 * detail rows instead, including legacy and previously unlisted links.
 	 *
 	 * @param int $post_id Post ID.
 	 * @return array<string,LinkRecord>
 	 */
 	public function get_links_for_post( int $post_id ): array {
-		$links = get_post_meta( $post_id, self::LINKS_META_KEY, true );
+		// A request-local meta cache may predate another request's generation.
+		wp_cache_delete( $post_id, 'post_meta' );
+		$metadata = get_post_meta( $post_id, '', false );
+		$links    = [];
 
-		if ( ! is_array( $links ) ) {
-			$links = [];
-		}
-
-		$links = $this->normalize_links( $links );
-
-		if ( empty( $links ) ) {
-			$legacy = $this->get_legacy_link_for_post( $post_id );
-
-			if ( $legacy ) {
-				$links[ $legacy['hash'] ] = $legacy;
+		foreach ( is_array( $metadata ) ? $metadata : [] as $key => $values ) {
+			if ( 0 !== strpos( (string) $key, self::DETAIL_META_PREFIX ) || ! is_array( $values ) ) {
+				continue;
+			}
+			$hash   = substr( (string) $key, strlen( self::DETAIL_META_PREFIX ) );
+			$detail = maybe_unserialize( $values[0] ?? null );
+			if ( '' !== $hash && is_array( $detail ) ) {
+				$links[ $hash ] = $this->normalize_link_record( $detail, $hash );
 			}
 		}
 
@@ -939,73 +945,6 @@ class PostMetaStorage {
 		}
 
 		return $this->normalize_link_record( $detail, $hash );
-	}
-
-	/**
-	 * Merge current detail rows into a link collection.
-	 *
-	 * @param int                      $post_id Post ID.
-	 * @param array<string,LinkRecord> $links Link collection.
-	 * @return array<string,LinkRecord>
-	 */
-	private function hydrate_link_detail_records( int $post_id, array $links ): array {
-		foreach ( array_keys( $links ) as $hash ) {
-			$detail = $this->get_link_detail_record( $post_id, $hash );
-
-			if ( $detail ) {
-				$links[ $hash ] = $detail;
-			}
-		}
-
-		return $links;
-	}
-
-	/**
-	 * Get a legacy single-token record.
-	 *
-	 * @param int $post_id Post ID.
-	 * @return LinkRecord|null
-	 */
-	private function get_legacy_link_for_post( int $post_id ): ?array {
-		$hash = get_post_meta( $post_id, self::CURRENT_HASH_META_KEY, true );
-
-		if ( ! is_string( $hash ) || '' === $hash ) {
-			return null;
-		}
-
-		$detail = get_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, true );
-
-		if ( ! is_array( $detail ) ) {
-			return null;
-		}
-
-		return $this->normalize_link_record( $detail, $hash );
-	}
-
-	/**
-	 * Normalize a link collection.
-	 *
-	 * @param array<mixed> $links Raw links.
-	 * @return array<string,LinkRecord>
-	 */
-	private function normalize_links( array $links ): array {
-		$normalized = [];
-
-		foreach ( $links as $hash => $link ) {
-			if ( ! is_array( $link ) ) {
-				continue;
-			}
-
-			$hash = is_string( $hash ) ? $hash : ( $link['hash'] ?? '' );
-
-			if ( ! is_string( $hash ) || '' === $hash ) {
-				continue;
-			}
-
-			$normalized[ $hash ] = $this->normalize_link_record( $link, $hash );
-		}
-
-		return $normalized;
 	}
 
 	/**

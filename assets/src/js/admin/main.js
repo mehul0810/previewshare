@@ -1,3 +1,4 @@
+import { formatSiteDate, formatPreviewLabel } from '../date-utils';
 /**
  * PreviewShare Editor Plugin.
  *
@@ -217,9 +218,10 @@ const ReviewLinkControls = ( { link, postId, onPolicySaved, notify } ) => {
 											response.created_at * 1000
 										).toISOString() }
 									>
-										{ new Date(
-											response.created_at * 1000
-										).toLocaleString() }
+										{ formatSiteDate(
+											response.created_at,
+											window.previewshare_rest
+										) }
 									</time>
 									{ response.comment && (
 										<p>{ response.comment }</p>
@@ -705,11 +707,10 @@ const PreviewSharePanel = () => {
 										key={ link.id }
 									>
 										<span className="previewshare-panel__link-label">
-											{ link.label ||
-												__(
-													'Preview link',
-													'previewshare'
-												) }
+											{ formatPreviewLabel(
+												link,
+												window.previewshare_rest
+											) }
 										</span>
 										<span className="previewshare-panel__link-meta">
 											<span>
