@@ -720,9 +720,16 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		page.getByRole( 'button', { name: extendButtonName, exact: true } )
 	).toBeVisible();
-	const linkSearch = page.getByRole( 'textbox', {
-		name: 'Search preview links',
-	} );
+	const linkSearch = hasModernRuntime
+		? page.getByRole( 'searchbox', {
+				name: 'Search preview links',
+				exact: true,
+		  } )
+		: page.getByRole( 'textbox', {
+				name: 'Search preview links',
+				exact: true,
+		  } );
+	await expect( linkSearch ).toBeVisible();
 	await linkSearch.fill( String( generatedLink.id ) );
 	await expect( extendButton ).toHaveCount( 0 );
 	await linkSearch.fill( 'E2E smoke' );
