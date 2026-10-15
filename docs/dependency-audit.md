@@ -1,36 +1,28 @@
 # Dependency Audit Notes
 
-## npm dev-tooling alerts
+## Historical npm audit snapshot
 
-Last reviewed for PR #60 on 2026-09-08.
+This section records the review of PR #60 on 2026-09-08. The counts describe the exact lockfile revisions below, not the current dependency graph or present security status.
 
-PreviewShare does not ship npm packages in the production plugin artifact. The release ZIP is built from compiled assets and excludes `node_modules`, package manifests, and build tooling. Production npm audit remains clean with:
-
-```bash
-npm run audit:prod
-```
-
-PR #60 updates six direct WordPress development dependencies. A clean install with Node.js 20.19.0 produced the following full-audit comparison:
+PR #60 updated six direct WordPress development dependencies. A clean install with Node.js 20.19.0 produced this full-audit comparison:
 
 | Lockfile | Low | Moderate | High | Critical | Total |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | PR base `fa8c5d32097dd317e4d1443eff2b23e5b436a56f` | 1 | 9 | 19 | 1 | 30 |
 | PR #60 head `eb4b2693a117e7be45ac721de93e3e1bcb9ae9fd` | 1 | 25 | 18 | 1 | 45 |
 
-This is a full-audit regression of 15 findings: 16 additional moderate findings and one fewer high finding. The full audit covers development tooling as well as the shipped product and is recorded here for review; it is not a release gate in place of the production audit. The production audit remains the CI gate and passed at the PR head with zero vulnerabilities:
+The recorded total increased by 15: 16 additional moderate findings and one fewer high finding. At that PR head, `npm run audit:prod` reported zero vulnerabilities. Neither result establishes the risk of a later lockfile or build.
 
-```bash
+Earlier dependency work in that review included `@wordpress/scripts` 32.4.1, `@wordpress/components` 35.0.1, removal of the unused direct `@wordpress/edit-post` dependency, and npm overrides for compatible transitive fixes. These are historical observations, not current version recommendations.
+
+## Audit scope and policy
+
+The production audit command is:
+
+```sh
 npm run audit:prod
-# found 0 vulnerabilities
 ```
 
-The existing audit policy remains unchanged: do not use `npm audit fix --force` or make a major toolchain upgrade solely to suppress development-only findings. Any future dependency update must run and report both the full audit and `npm run audit:prod`.
+It runs `npm audit --omit=dev --audit-level=moderate`. The release ZIP excludes `node_modules` and npm manifests, but can include compiled code from packages declared as development dependencies. Omitting development dependencies from an audit therefore does not establish that the emitted browser assets are free of advisories. Assess build-time tooling and code included in shipped assets separately.
 
-Earlier development dependency work reduced findings where npm provided a safe package path:
-
-- `@wordpress/scripts` updated to `32.4.1`.
-- `@wordpress/components` updated to `35.0.1`.
-- Unused direct `@wordpress/edit-post` development dependency removed.
-- npm `overrides` pin patched transitive dev-tooling packages for `http-proxy-middleware`, `js-yaml`, `markdown-it`, `minimatch`, `serialize-javascript`, `uuid`, and `webpack-dev-server`.
-
-Current full-audit findings are confined to the development graph. They must remain visible in audit documentation and be reassessed when the upstream WordPress package graph provides a compatible remediation.
+The existing policy remains unchanged: `npm run audit:prod` is the CI audit gate. Any dependency update must run and report both the full audit and `npm run audit:prod` against its exact lockfile. Do not use `npm audit fix --force` or make a major toolchain upgrade solely to suppress audit findings. Evaluate compatible fixes and their effect on the built artifact.
