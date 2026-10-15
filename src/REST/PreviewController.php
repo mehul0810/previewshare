@@ -155,6 +155,25 @@ class PreviewController {
 			]
 		);
 
+		// Delete one inventory entry after its preview access has been revoked.
+		register_rest_route(
+			'previewshare/v1',
+			'/tokens/delete',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'delete_by_id' ],
+				'permission_callback' => function () {
+					return current_user_can( 'manage_options' );
+				},
+				'args'                => [
+					'id' => [
+						'required' => true,
+						'type'     => 'string',
+					],
+				],
+			]
+		);
+
 		// Extend one expiring link by a fixed 24-hour interval.
 		register_rest_route(
 			'previewshare/v1',
@@ -337,13 +356,20 @@ class PreviewController {
 	 * @return \WP_REST_Response|\WP_Error
 	 */
 	public function revoke_by_id( $request ) {
-		$id = sanitize_key( (string) $request->get_param( 'id' ) );
+		$id = $request->get_param( 'id' );
 
-		if ( ! $id ) {
+		if ( ! is_string( $id ) || 1 !== preg_match( '/\\A[a-fA-F0-9]{64}\\z/', $id ) ) {
 			return new \WP_Error( 'invalid_id', 'Invalid token id', [ 'status' => 400 ] );
 		}
 
-		$revoked = $this->storage->revoke_token_by_id( $id );
+		if ( ! $this->storage->get_token_context_by_id( strtolower( $id ) ) ) {
+			return new \WP_Error( 'link_not_found', 'Preview link not found.', [ 'status' => 404 ] );
+		}
+
+		$revoked = $this->storage->revoke_token_by_id( strtolower( $id ) );
+		if ( ! $revoked ) {
+			return new \WP_Error( 'link_revoke_failed', 'Preview access could not be revoked.', [ 'status' => 500 ] );
+		}
 
 		\previewshare_log(
 			'revoke_by_id',
@@ -354,7 +380,36 @@ class PreviewController {
 			]
 		);
 
-		return new \WP_REST_Response( [ 'revoked' => (bool) $revoked ], 200 );
+		return new \WP_REST_Response( [ 'revoked' => true ], 200 );
+	}
+
+	/**
+	 * Delete one preview link from inventory after revoking its access.
+	 *
+	 * @param \WP_REST_Request<array<string,mixed>> $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function delete_by_id( $request ) {
+		$id = $request->get_param( 'id' );
+		if ( ! is_string( $id ) || 1 !== preg_match( '/\\A[a-fA-F0-9]{64}\\z/', $id ) ) {
+			return new \WP_Error( 'invalid_id', 'Invalid token id', [ 'status' => 400 ] );
+		}
+
+		$result = $this->storage->delete_token_by_id( strtolower( $id ) );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+		if ( true !== $result ) {
+			return new \WP_Error( 'link_not_found', 'Preview link not found.', [ 'status' => 404 ] );
+		}
+
+		return new \WP_REST_Response(
+			[
+				'deleted' => true,
+				'revoked' => true,
+			],
+			200
+		);
 	}
 
 	/**
@@ -503,8 +558,17 @@ class PreviewController {
 		$post_id = absint( $request->get_param( 'post_id' ) );
 		if ( $post_id ) {
 			$revoked = $this->storage->revoke_token_for_post( $post_id );
+			if ( ! $revoked ) {
+				return new \WP_REST_Response(
+					[
+						'revoked' => false,
+						'message' => __( 'Preview links could not be revoked.', 'previewshare' ),
+					],
+					500
+				);
+			}
 
-			return new \WP_REST_Response( [ 'revoked' => (bool) $revoked ], 200 );
+			return new \WP_REST_Response( [ 'revoked' => true ], 200 );
 		}
 
 		$token = $request->get_param( 'token' );

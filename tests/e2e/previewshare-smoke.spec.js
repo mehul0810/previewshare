@@ -111,6 +111,28 @@ async function expectCellTextToFit( cells ) {
 	expect( overflowingText ).toEqual( [] );
 }
 
+async function setInventoryStatus( page, hasModernRuntime, name, checked ) {
+	if ( ! hasModernRuntime ) {
+		await page
+			.getByRole( 'checkbox', { name, exact: true } )
+			.setChecked( checked );
+		return;
+	}
+
+	// Compact modern rows retain the native DataViews filter controls.
+	await page.getByRole( 'button', { name: /^Status\b/ } ).click();
+	const options = page.getByRole( 'listbox', { name: 'List of: Status' } );
+	const option = options.getByRole( 'option', { name, exact: true } );
+	await expect( option ).toBeVisible();
+	const selection = option.locator( '.is-selected' );
+	if ( ( await selection.count() ) > 0 !== checked ) {
+		await option.click();
+	}
+	await expect( selection ).toHaveCount( checked ? 1 : 0 );
+	await page.keyboard.press( 'Escape' );
+	await expect( options ).not.toBeVisible();
+}
+
 function runWpCli( command, args ) {
 	const [ executable, ...commandArgs ] = command
 		.trim()
@@ -647,14 +669,19 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	const previousExpiry = generatedLink.expires_at;
 	await page.getByRole( 'tab', { name: 'Preview links' } ).click();
 	const modernInventory = page.locator( '.previewshare-dataviews' );
-	const legacyInventory = page.locator(
-		'.previewshare-tab-content > .previewshare-legacy-inventory'
+	// Both runtimes use compact rows at 1280px. Modern WordPress nests them
+	// inside DataViews, while the fallback renders its own toolbar and rows.
+	const compactInventory = page.locator(
+		'.previewshare-tab-content .previewshare-legacy-inventory'
 	);
-	const usingLegacyInventory = await legacyInventory.isVisible();
-	expect( usingLegacyInventory ).toBe( true );
-	const inventoryTable = usingLegacyInventory
-		? legacyInventory
-		: modernInventory;
+	await expect( compactInventory ).toBeVisible();
+	const hasModernRuntime = await page.evaluate(
+		() => typeof window.wp.element.useInsertionEffect === 'function'
+	);
+	if ( hasModernRuntime ) {
+		await expect( modernInventory ).toBeVisible();
+	}
+	const inventoryTable = compactInventory;
 	const expiringStatus = inventoryTable.locator(
 		'.previewshare-status.is-expiring_soon'
 	);
@@ -693,9 +720,16 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		page.getByRole( 'button', { name: extendButtonName, exact: true } )
 	).toBeVisible();
-	const linkSearch = page.getByRole( 'textbox', {
-		name: 'Search preview links',
-	} );
+	const linkSearch = hasModernRuntime
+		? page.getByRole( 'searchbox', {
+				name: 'Search preview links',
+				exact: true,
+		  } )
+		: page.getByRole( 'textbox', {
+				name: 'Search preview links',
+				exact: true,
+		  } );
+	await expect( linkSearch ).toBeVisible();
 	await linkSearch.fill( String( generatedLink.id ) );
 	await expect( extendButton ).toHaveCount( 0 );
 	await linkSearch.fill( 'E2E smoke' );
@@ -703,19 +737,12 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await linkSearch.fill( 'no matching preview link' );
 	await expect( extendButton ).toHaveCount( 0 );
 	await linkSearch.fill( 'E2E smoke' );
-	const expiredFilter = page.getByRole( 'checkbox', { name: 'Expired' } );
-	await expiredFilter.check();
+	await setInventoryStatus( page, hasModernRuntime, 'Expired', true );
 	await expect( extendButton ).toHaveCount( 0 );
-	await expiredFilter.uncheck();
-	const expiringFilter = page.getByRole( 'checkbox', {
-		name: 'Expiring soon',
-	} );
-	await expiringFilter.check();
+	await setInventoryStatus( page, hasModernRuntime, 'Expired', false );
+	await setInventoryStatus( page, hasModernRuntime, 'Expiring soon', true );
 	await expect( extendButton ).toBeVisible();
 	await page.setViewportSize( { width: 1600, height: 900 } );
-	const hasModernRuntime = await page.evaluate(
-		() => typeof window.wp.element.useInsertionEffect === 'function'
-	);
 	if ( hasModernRuntime ) {
 		await expect( modernInventory ).toBeVisible();
 		await expect(
@@ -730,89 +757,153 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		} );
 	}
 	await page.setViewportSize( { width: 1280, height: 900 } );
-	await expect( legacyInventory ).toBeVisible();
-	await expect(
-		legacyInventory.getByRole( 'checkbox', { name: 'Expiring soon' } )
-	).toBeChecked();
+	await expect( compactInventory ).toBeVisible();
+	if ( hasModernRuntime ) {
+		await expect(
+			modernInventory.getByRole( 'button', {
+				name: /^Status includes: Expiring soon$/,
+			} )
+		).toBeVisible();
+	} else {
+		await expect(
+			compactInventory.getByRole( 'checkbox', { name: 'Expiring soon' } )
+		).toBeChecked();
+	}
 	await page.screenshot( {
 		path: testInfo.outputPath( 'previewshare-preview-links-expiring.png' ),
 		fullPage: true,
 	} );
-	await page.setViewportSize( { width: 390, height: 844 } );
-	const mobileInventory = legacyInventory;
-	await expect( mobileInventory ).toBeVisible();
-	const mobileStatus = mobileInventory.locator(
-		'.previewshare-status.is-expiring_soon'
-	);
-	const mobileCard = mobileStatus.locator( 'xpath=ancestor::tr[1]' );
-	for ( const label of [
-		'Content',
-		'Label',
-		'Status',
-		'Views',
-		'Expires',
-		'Last viewed',
-		'Actions',
-	] ) {
-		const cell = mobileCard.locator( `td[data-label="${ label }"]` );
-		await expect( cell ).toBeVisible();
-		await expect( cell ).not.toBeEmpty();
-	}
-	await expect( mobileCard ).toContainText( generatedLink.post_title );
-	await expect( mobileCard ).toContainText( generatedLink.label );
-	const mobileExtendButton = mobileCard.getByRole( 'button', {
-		name: extendButtonName,
-		exact: true,
-	} );
-	await mobileExtendButton.focus();
-	await expect( mobileExtendButton ).toBeFocused();
-	await expect( mobileExtendButton ).toBeInViewport();
-	const mobilePageWidth = await page.evaluate(
-		() => document.documentElement.scrollWidth
-	);
-	expect( mobilePageWidth ).toBeLessThanOrEqual( 390 );
-	const cardScrollMetrics = await mobileCard.evaluate( ( card ) => ( {
-		clientWidth: card.clientWidth,
-		scrollWidth: card.scrollWidth,
-	} ) );
-	expect( cardScrollMetrics.scrollWidth ).toBeLessThanOrEqual(
-		cardScrollMetrics.clientWidth
-	);
-	await expect( mobileStatus ).toHaveText( 'Expiring soon' );
-
-	const expiringStatusIsPainted = await mobileStatus.evaluate( ( status ) => {
-		const bounds = status.getBoundingClientRect();
-		const visibleElement = document.elementFromPoint(
-			bounds.left + bounds.width / 2,
-			bounds.top + bounds.height / 2
+	for ( const width of [ 390, 320 ] ) {
+		await page.setViewportSize( { width, height: 844 } );
+		const mobileInventory = compactInventory;
+		await expect( mobileInventory ).toBeVisible();
+		const mobileStatus = mobileInventory.locator(
+			'.previewshare-status.is-expiring_soon'
 		);
-
-		return status === visibleElement || status.contains( visibleElement );
-	} );
-	expect( expiringStatusIsPainted ).toBe( true );
-	const extendButtonIsPainted = await mobileExtendButton.evaluate(
-		( button ) => {
-			const bounds = button.getBoundingClientRect();
-			const visibleElement = document.elementFromPoint(
-				bounds.left + bounds.width / 2,
-				bounds.top + bounds.height / 2
-			);
-
-			return (
-				button === visibleElement || button.contains( visibleElement )
-			);
+		const mobileCard = mobileStatus.locator( 'xpath=ancestor::tr[1]' );
+		for ( const label of [
+			'Content',
+			'Label',
+			'Status',
+			'Views',
+			'Expires',
+			'Last viewed',
+			'Actions',
+		] ) {
+			const cell = mobileCard.locator( `td[data-label="${ label }"]` );
+			await expect( cell ).toBeVisible();
+			await expect( cell ).not.toBeEmpty();
 		}
-	);
-	expect( extendButtonIsPainted ).toBe( true );
-	const mobileExtendBounds = await mobileExtendButton.boundingBox();
-	expect( mobileExtendBounds ).not.toBeNull();
-	expect(
-		mobileExtendBounds.x + mobileExtendBounds.width
-	).toBeLessThanOrEqual( 390 );
-	await page.screenshot( {
-		path: testInfo.outputPath( 'previewshare-preview-links-mobile.png' ),
-		fullPage: true,
-	} );
+		await expect( mobileCard ).toContainText( generatedLink.post_title );
+		await expect( mobileCard ).toContainText( generatedLink.label );
+		await expectCellTextToFit( mobileCard.locator( 'td' ) );
+		const mobileExtendButton = mobileCard.getByRole( 'button', {
+			name: extendButtonName,
+			exact: true,
+		} );
+		await mobileExtendButton.focus();
+		await expect( mobileExtendButton ).toBeFocused();
+		await mobileExtendButton.press( 'Tab' );
+		const mobileGenerateButton = mobileCard.getByRole( 'button', {
+			name: 'Generate & copy',
+			exact: true,
+		} );
+		await expect( mobileGenerateButton ).toBeFocused();
+		await mobileGenerateButton.press( 'Tab' );
+		const mobileRevokeButton = mobileCard.getByRole( 'button', {
+			name: 'Revoke link',
+			exact: true,
+		} );
+		await expect( mobileRevokeButton ).toBeFocused();
+		await expect( mobileRevokeButton ).toBeInViewport();
+		await mobileRevokeButton.press( 'Tab' );
+		const mobileDeleteButton = mobileCard.getByRole( 'button', {
+			name: 'Delete link',
+			exact: true,
+		} );
+		await expect( mobileDeleteButton ).toBeFocused();
+		await expect( mobileDeleteButton ).toBeInViewport();
+		await mobileDeleteButton.press( 'Enter' );
+		const deleteConfirmation = page.getByRole( 'dialog', {
+			name: 'Delete preview link?',
+			exact: true,
+		} );
+		await expect( deleteConfirmation ).toBeVisible();
+		await expect( deleteConfirmation ).toContainText(
+			generatedLink.post_title
+		);
+		await expect( deleteConfirmation ).toContainText( generatedLink.label );
+		await expect( deleteConfirmation ).toContainText(
+			'This will revoke the preview link and permanently remove its entry from the list.'
+		);
+		await expect(
+			deleteConfirmation.getByRole( 'button', {
+				name: 'Delete link',
+				exact: true,
+			} )
+		).toBeEnabled();
+		await deleteConfirmation
+			.getByRole( 'button', { name: 'Cancel' } )
+			.click();
+		await expect( deleteConfirmation ).not.toBeVisible();
+		await mobileExtendButton.focus();
+		await expect( mobileExtendButton ).toBeFocused();
+		await expect( mobileExtendButton ).toBeInViewport();
+		const mobilePageWidth = await page.evaluate(
+			() => document.documentElement.scrollWidth
+		);
+		expect( mobilePageWidth ).toBeLessThanOrEqual( width );
+		const cardScrollMetrics = await mobileCard.evaluate( ( card ) => ( {
+			clientWidth: card.clientWidth,
+			scrollWidth: card.scrollWidth,
+		} ) );
+		expect( cardScrollMetrics.scrollWidth ).toBeLessThanOrEqual(
+			cardScrollMetrics.clientWidth
+		);
+		await expect( mobileStatus ).toHaveText( 'Expiring soon' );
+
+		const expiringStatusIsPainted = await mobileStatus.evaluate(
+			( status ) => {
+				const bounds = status.getBoundingClientRect();
+				const visibleElement = document.elementFromPoint(
+					bounds.left + bounds.width / 2,
+					bounds.top + bounds.height / 2
+				);
+
+				return (
+					status === visibleElement ||
+					status.contains( visibleElement )
+				);
+			}
+		);
+		expect( expiringStatusIsPainted ).toBe( true );
+		const extendButtonIsPainted = await mobileExtendButton.evaluate(
+			( button ) => {
+				const bounds = button.getBoundingClientRect();
+				const visibleElement = document.elementFromPoint(
+					bounds.left + bounds.width / 2,
+					bounds.top + bounds.height / 2
+				);
+
+				return (
+					button === visibleElement ||
+					button.contains( visibleElement )
+				);
+			}
+		);
+		expect( extendButtonIsPainted ).toBe( true );
+		const mobileExtendBounds = await mobileExtendButton.boundingBox();
+		expect( mobileExtendBounds ).not.toBeNull();
+		expect(
+			mobileExtendBounds.x + mobileExtendBounds.width
+		).toBeLessThanOrEqual( width );
+		await page.screenshot( {
+			path: testInfo.outputPath(
+				`previewshare-preview-links-mobile-${ width }.png`
+			),
+			fullPage: true,
+		} );
+	}
 	await page.setViewportSize( { width: 1280, height: 900 } );
 	const [ extendResponse ] = await Promise.all( [
 		page.waitForResponse( isExtendPreviewResponse ),
@@ -947,6 +1038,132 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		fullPage: true,
 	} );
 
+	await anonymousContext.close();
+} );
+
+test( 'concurrent initial links stay revocable after a fresh link is generated', async ( {
+	page,
+	admin,
+	requestUtils,
+	browser,
+	baseURL,
+} ) => {
+	const post = await requestUtils.createPost( {
+		title: `PreviewShare concurrent generation ${ Date.now() }`,
+		content: 'Synthetic concurrent generation draft.',
+		status: 'draft',
+	} );
+	createdPostIds.add( post.id );
+	const initialState = `
+$links = get_post_meta( ${ Number( post.id ) }, '_previewshare_links', true );
+if ( ! empty( $links ) ) { fwrite( STDERR, 'Concurrent generation fixture did not start with an empty link collection.' ); exit( 1 ); }
+`;
+	runWpCli( FIXTURE_WP_CLI, [ 'eval', initialState ] );
+	await visitEditor( admin, post.id );
+	const nonce = await page.evaluate(
+		() => window.previewshare_rest?.nonce || ''
+	);
+	expect( nonce ).toBeTruthy();
+	const initialResults = await page.evaluate(
+		async ( { postId, restNonce } ) => {
+			const requests = Array.from( { length: 2 }, ( _, index ) =>
+				fetch( '/wp-json/previewshare/v1/v2/generate', {
+					method: 'POST',
+					credentials: 'same-origin',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-WP-Nonce': restNonce,
+					},
+					body: JSON.stringify( {
+						post_id: postId,
+						ttl_hours: 6,
+						label: `Concurrent initial ${ index }`,
+						responses_enabled: false,
+						identity_required: false,
+					} ),
+				} )
+			);
+			return Promise.all(
+				requests.map( async ( request ) => {
+					const response = await request;
+					return {
+						status: response.status,
+						body: await response.json(),
+					};
+				} )
+			);
+		},
+		{ postId: post.id, restNonce: nonce }
+	);
+	expect( initialResults.map( ( result ) => result.status ) ).toEqual( [
+		200, 200,
+	] );
+	const originalUrls = initialResults.map( ( result ) =>
+		resolvePreviewUrlForTestServer( result.body.url, baseURL )
+	);
+	expect( new Set( originalUrls ).size ).toBe( originalUrls.length );
+	const revoke = await page.evaluate(
+		async ( { postId, restNonce } ) => {
+			const response = await fetch(
+				'/wp-json/previewshare/v1/v2/revoke',
+				{
+					method: 'POST',
+					credentials: 'same-origin',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-WP-Nonce': restNonce,
+					},
+					body: JSON.stringify( { post_id: postId } ),
+				}
+			);
+			return response.status;
+		},
+		{ postId: post.id, restNonce: nonce }
+	);
+	expect( revoke ).toBe( 200 );
+	const regenerated = await page.evaluate(
+		async ( { postId, restNonce } ) => {
+			const response = await fetch(
+				'/wp-json/previewshare/v1/v2/generate',
+				{
+					method: 'POST',
+					credentials: 'same-origin',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-WP-Nonce': restNonce,
+					},
+					body: JSON.stringify( {
+						post_id: postId,
+						ttl_hours: 6,
+						label: 'Fresh after revoke',
+						responses_enabled: false,
+						identity_required: false,
+					} ),
+				}
+			);
+			return { status: response.status, body: await response.json() };
+		},
+		{ postId: post.id, restNonce: nonce }
+	);
+	expect( regenerated.status ).toBe( 200 );
+	const anonymousContext = await browser.newContext( {
+		baseURL,
+		storageState: { cookies: [], origins: [] },
+	} );
+	const anonymous = await anonymousContext.newPage();
+	for ( const originalUrl of originalUrls ) {
+		const oldResponse = await anonymous.goto( originalUrl );
+		expect( oldResponse.status() ).toBe( 410 );
+	}
+	const freshResponse = await anonymous.goto(
+		resolvePreviewUrlForTestServer( regenerated.body.url, baseURL )
+	);
+	expect( freshResponse.status() ).toBe( 200 );
+	await expect(
+		anonymous.getByText( 'Synthetic concurrent generation draft.', {
+			exact: true,
+		} )
+	).toBeVisible();
 	await anonymousContext.close();
 } );
 
@@ -1385,5 +1602,413 @@ if ( count( get_posts( array(
 	'meta_value' => $target_email,
 ) ) ) !== 100 ) { fwrite( STDERR, 'Failed retry did not leave the 100 undeleted target responses intact.' ); exit( 1 ); }
 `;
-	runWpCli( FIXTURE_WP_CLI, [ 'eval', erasureProof ] );
+	 runWpCli( FIXTURE_WP_CLI, [ 'eval', erasureProof ] );
+} );
+
+test( 'Classic post-list generation returns a private copy page without storing the URL in a notice', async ( {
+	page,
+	admin,
+	requestUtils,
+	browser,
+	baseURL,
+} ) => {
+	const post = await requestUtils.createPost( {
+		title: `PreviewShare Classic action ${ Date.now() }`,
+		content: 'Synthetic Classic action draft.',
+		status: 'draft',
+	} );
+	createdPostIds.add( post.id );
+
+	await admin.visitAdminPage( 'edit.php', 'post_type=post' );
+	const row = page.locator( `#post-${ post.id }` );
+	await row.hover();
+	const generateLink = row.getByRole( 'link', {
+		name: 'Generate Preview Link',
+		exact: true,
+	} );
+	await expect( generateLink ).toBeVisible();
+	const actionUrl = new URL( await generateLink.getAttribute( 'href' ) );
+	expect( actionUrl.searchParams.get( 'action' ) ).toBe(
+		'previewshare_generate_link'
+	);
+	expect( actionUrl.searchParams.get( 'post_id' ) ).toBe( String( post.id ) );
+	expect( actionUrl.searchParams.get( '_wpnonce' ) ).toBeTruthy();
+
+	const anonymousContext = await browser.newContext( {
+		baseURL,
+		storageState: { cookies: [], origins: [] },
+	} );
+	const readPreviewSharePostMeta = () =>
+		runWpCliForOutput( FIXTURE_WP_CLI, [
+			'eval',
+			`$post_id = ${ Number( post.id ) }; $meta = array(); foreach ( get_post_meta( $post_id ) as $key => $values ) { if ( 0 === strpos( (string) $key, '_previewshare_' ) ) { $meta[ $key ] = $values; } } ksort( $meta ); echo wp_json_encode( $meta );`,
+		] );
+	const initialPostState = readPreviewSharePostMeta();
+	const unauthenticated = await anonymousContext.request.get(
+		new URL(
+			`${ actionUrl.pathname }?${ new URLSearchParams( {
+				action: actionUrl.searchParams.get( 'action' ),
+				post_id: String( post.id ),
+			} ) }`,
+			baseURL
+		).toString(),
+		{ failOnStatusCode: false }
+	);
+	expect( [ 200, 400, 403 ] ).toContain( unauthenticated.status() );
+	const unauthenticatedBody = await unauthenticated.text();
+	expect( unauthenticatedBody ).not.toMatch(
+		/previewshare-generated-url|previewshare_token=|\/preview\/[a-f0-9]{48}/i
+	);
+	const postStateAfterUnauthenticatedRequest = readPreviewSharePostMeta();
+	expect( postStateAfterUnauthenticatedRequest ).toBe( initialPostState );
+
+	const [ resultPageResponse ] = await Promise.all( [
+		page.waitForResponse(
+			( response ) =>
+				response.request().isNavigationRequest() &&
+				response.url().includes( 'admin-post.php' )
+		),
+		generateLink.click(),
+	] );
+	expect( resultPageResponse.status() ).toBe( 200 );
+	expect( resultPageResponse.headers()[ 'cache-control' ] ).toMatch(
+		/no-store/i
+	);
+	const previewInput = page.getByRole( 'textbox', { name: 'Preview link' } );
+	await expect( previewInput ).toHaveAttribute( 'readonly', '' );
+	const previewUrl = resolvePreviewUrlForTestServer(
+		await previewInput.inputValue(),
+		baseURL
+	);
+	await expect( page.getByRole( 'link', { name: /Back to/ } ) ).toBeVisible();
+
+	const transientProof = `
+$post_id = ${ Number( post.id ) };
+global $wpdb;
+$transient = get_transient( 'previewshare_admin_notice_' . get_current_user_id() );
+if ( is_array( $transient ) && isset( $transient['url'] ) ) { fwrite( STDERR, 'Generated URL was stored in an admin notice transient.' ); exit( 1 ); }
+$transient_options = $wpdb->get_col( "SELECT option_value FROM {$wpdb->options} WHERE option_name LIKE '_transient_previewshare_admin_notice_%'" );
+foreach ( $transient_options as $option_value ) { if ( false !== strpos( (string) $option_value, '${ previewUrl.replace(
+		/'/g,
+		"\\'"
+	) }' ) ) { fwrite( STDERR, 'Generated URL was stored in a notice option.' ); exit( 1 ); } }
+$token = (string) get_post_meta( $post_id, '_previewshare_token_hash', true );
+if ( ! $token ) { fwrite( STDERR, 'Classic action did not persist a generated preview link.' ); exit( 1 ); }
+`;
+	runWpCli( FIXTURE_WP_CLI, [ 'eval', transientProof ] );
+	const anonymous = await anonymousContext.newPage();
+	const previewResponse = await anonymous.goto( previewUrl );
+	expect( previewResponse.status() ).toBe( 200 );
+	await expect(
+		anonymous.getByText( 'Synthetic Classic action draft.', {
+			exact: true,
+		} )
+	).toBeVisible();
+	expect(
+		runWpCliForOutput( FIXTURE_WP_CLI, [
+			'post',
+			'get',
+			String( post.id ),
+			'--field=post_status',
+		] )
+	).toBe( 'draft' );
+
+	await visitEditor( admin, post.id );
+	const editorNonce = await page.evaluate(
+		() => window.previewshare_rest?.nonce || ''
+	);
+	expect( editorNonce ).toBeTruthy();
+	const revoke = await page.request.post(
+		new URL( `/wp-json/previewshare/v1/v2/revoke`, baseURL ).toString(),
+		{
+			data: { post_id: post.id },
+			headers: {
+				'X-WP-Nonce': editorNonce,
+			},
+		}
+	);
+	expect( revoke.status() ).toBe( 200 );
+	const unavailable = await anonymous.goto( previewUrl );
+	expect( unavailable.status() ).toBe( 410 );
+	await anonymousContext.close();
+} );
+
+test( 'uncertain reviewer submission retries its original payload before sending later edits', async ( {
+	page,
+	admin,
+	requestUtils,
+	browser,
+	baseURL,
+} ) => {
+	test.setTimeout( 180000 );
+	const post = await requestUtils.createPost( {
+		title: `PreviewShare retry ${ Date.now() }`,
+		content: 'Synthetic retry draft.',
+		status: 'draft',
+	} );
+	createdPostIds.add( post.id );
+	await visitEditor( admin, post.id );
+	await ensurePreviewSharePanelOpen( page );
+	await page
+		.getByRole( 'checkbox', { name: 'Allow reviewer responses' } )
+		.check();
+	await page
+		.getByRole( 'checkbox', { name: 'Require name and email' } )
+		.check();
+	const [ generatedResponse ] = await Promise.all( [
+		page.waitForResponse( isGeneratePreviewResponse ),
+		page.getByRole( 'button', { name: 'Generate & copy' } ).click(),
+	] );
+	const generated = await generatedResponse.json();
+	const anonymousContext = await browser.newContext( {
+		baseURL,
+		storageState: { cookies: [], origins: [] },
+	} );
+	const anonymous = await anonymousContext.newPage();
+	await anonymous.goto(
+		resolvePreviewUrlForTestServer( generated.url, baseURL )
+	);
+	const form = anonymous.locator( '#previewshare-review-form' );
+	const original = {
+		name: 'Original Reviewer',
+		email: 'original@example.test',
+		comment: 'Original payload must be the one retried.',
+	};
+	await form.getByRole( 'textbox', { name: 'Name' } ).fill( original.name );
+	await form.getByRole( 'textbox', { name: 'Email' } ).fill( original.email );
+	await form.getByRole( 'radio', { name: 'Approve' } ).check();
+	await form
+		.getByRole( 'textbox', { name: 'Comment' } )
+		.fill( original.comment );
+	let firstRequestBody;
+	let interceptedFirstRequest = false;
+	let releaseRetry;
+	let signalRetry;
+	const retryHeld = new Promise( ( resolve ) => ( releaseRetry = resolve ) );
+	const retryRequested = new Promise(
+		( resolve ) => ( signalRetry = resolve )
+	);
+	let retryAttempt = false;
+	await anonymous.route(
+		'**/wp-json/previewshare/v1/reviews/submit*',
+		async ( route ) => {
+			if ( ! interceptedFirstRequest ) {
+				interceptedFirstRequest = true;
+				const committedResponse = await route.fetch();
+				expect( [ 200, 201 ] ).toContain( committedResponse.status() );
+				firstRequestBody = route.request().postDataJSON();
+				await route.abort();
+				return;
+			}
+			if ( retryAttempt ) {
+				signalRetry();
+				await retryHeld;
+			}
+			await route.continue();
+		}
+	);
+	await form.getByRole( 'button', { name: 'Send response' } ).click();
+	await expect( form.getByRole( 'status' ) ).toContainText(
+		'Try again to check the earlier response before sending your edits.'
+	);
+	await form
+		.getByRole( 'textbox', { name: 'Name' } )
+		.fill( 'Later Reviewer' );
+	await form
+		.getByRole( 'textbox', { name: 'Email' } )
+		.fill( 'later@example.test' );
+	await form.getByRole( 'radio', { name: 'Request changes' } ).check();
+	await form
+		.getByRole( 'textbox', { name: 'Comment' } )
+		.fill( 'Later typed comment.' );
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Try again to check the earlier response before sending your edits.'
+	);
+	retryAttempt = true;
+	const retryAction = form
+		.getByRole( 'button', { name: 'Send response' } )
+		.click();
+	await retryRequested;
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Checking your earlier response. Your current edits have not been sent.'
+	);
+	releaseRetry();
+	const [ retryResponse ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		retryAction,
+	] );
+	expect( retryResponse.status() ).toBe( 409 );
+	const duplicateResult = await retryResponse.json();
+	expect( duplicateResult.code ).toBe( 'review_duplicate' );
+	const retried = retryResponse.request().postDataJSON();
+	expect( retried ).toEqual( firstRequestBody );
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Your earlier response was received. Your current edits have not been sent; send again to submit them.'
+	);
+	await expect( form.getByRole( 'textbox', { name: 'Name' } ) ).toHaveValue(
+		'Later Reviewer'
+	);
+	await expect(
+		form.getByRole( 'textbox', { name: 'Comment' } )
+	).toHaveValue( 'Later typed comment.' );
+	await expect(
+		form.getByRole( 'radio', { name: 'Request changes' } )
+	).toBeChecked();
+
+	const persistedProof = `
+$post_id = ${ Number( post.id ) };
+$reviews = get_posts( array( 'post_type' => 'previewshare_review', 'post_status' => 'private', 'post_parent' => $post_id, 'posts_per_page' => -1 ) );
+if ( count( $reviews ) !== 1 ) { fwrite( STDERR, 'Expected exactly one persisted response after retry.' ); exit( 1 ); }
+if ( 'approve' !== get_post_meta( $reviews[0]->ID, '_previewshare_response_type', true ) || 'Original Reviewer' !== get_post_meta( $reviews[0]->ID, '_previewshare_reviewer_name', true ) || 'Original payload must be the one retried.' !== $reviews[0]->post_content ) { fwrite( STDERR, 'Retry changed the committed private response.' ); exit( 1 ); }
+`;
+	runWpCli( FIXTURE_WP_CLI, [ 'eval', persistedProof ] );
+	await visitEditor( admin, post.id );
+	await ensurePreviewSharePanelOpen( page );
+	await page
+		.getByRole( 'button', { name: 'Review settings and history' } )
+		.click();
+	await expect(
+		page.locator( '.previewshare-panel__review-history' )
+	).toContainText( 'Original Reviewer' );
+	await expect(
+		page.locator( '.previewshare-panel__review-history' )
+	).toContainText( 'Original payload must be the one retried.' );
+
+	const [ newSubmission ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		form.getByRole( 'button', { name: 'Send response' } ).click(),
+	] );
+	expect( newSubmission.status() ).toBe( 201 );
+	const newPayload = newSubmission.request().postDataJSON();
+	expect( newPayload.request_id ).not.toBe( firstRequestBody.request_id );
+	expect( newPayload.name ).toBe( 'Later Reviewer' );
+	expect( newPayload.response_type ).toBe( 'request_changes' );
+	expect( newPayload.comment ).toBe( 'Later typed comment.' );
+	await expect( form.getByRole( 'status' ) ).toHaveText(
+		'Your response was received.'
+	);
+	runWpCli( FIXTURE_WP_CLI, [
+		'eval',
+		`$ids = get_posts( array( 'post_type' => 'previewshare_review', 'post_status' => 'private', 'post_parent' => ${ Number(
+			post.id
+		) }, 'fields' => 'ids', 'posts_per_page' => -1 ) ); if ( count( $ids ) !== 2 ) { fwrite( STDERR, 'Expected a separately persisted second response.' ); exit( 1 ); }`,
+	] );
+	await anonymousContext.close();
+} );
+
+test( 'review form limits use UTF-16 units and preserve stored Unicode content', async ( {
+	page,
+	admin,
+	requestUtils,
+	browser,
+	baseURL,
+} ) => {
+	const post = await requestUtils.createPost( {
+		title: `PreviewShare Unicode limits ${ Date.now() }`,
+		content: 'Synthetic Unicode validation draft.',
+		status: 'draft',
+	} );
+	createdPostIds.add( post.id );
+	await visitEditor( admin, post.id );
+	await ensurePreviewSharePanelOpen( page );
+	await page
+		.getByRole( 'checkbox', { name: 'Allow reviewer responses' } )
+		.check();
+	await page
+		.getByRole( 'checkbox', { name: 'Require name and email' } )
+		.check();
+	const [ generatedResponse ] = await Promise.all( [
+		page.waitForResponse( isGeneratePreviewResponse ),
+		page.getByRole( 'button', { name: 'Generate & copy' } ).click(),
+	] );
+	const generated = await generatedResponse.json();
+	const anonymousContext = await browser.newContext( {
+		baseURL,
+		storageState: { cookies: [], origins: [] },
+	} );
+	const anonymous = await anonymousContext.newPage();
+	await anonymous.goto(
+		resolvePreviewUrlForTestServer( generated.url, baseURL )
+	);
+	const form = anonymous.locator( '#previewshare-review-form' );
+	const name = `${ '李'.repeat( 116 ) }éع😀`;
+	const commentPrefix = '中文 café مرحبا 😀 ';
+	const comment = `${ commentPrefix }${ '文'.repeat(
+		5000 - commentPrefix.length
+	) }`;
+	const nameField = form.getByRole( 'textbox', { name: 'Name' } );
+	const commentField = form.getByRole( 'textbox', { name: 'Comment' } );
+	await expect( nameField ).toHaveAttribute( 'maxlength', '120' );
+	await expect( commentField ).toHaveAttribute( 'maxlength', '5000' );
+	expect( name.length ).toBe( 120 );
+	expect( comment.length ).toBe( 5000 );
+	await nameField.fill( name );
+	await form
+		.getByRole( 'textbox', { name: 'Email' } )
+		.fill( 'unicode@example.test' );
+	await form.getByRole( 'radio', { name: 'Comment' } ).check();
+	await commentField.fill( comment );
+	const submitButton = form.getByRole( 'button', { name: 'Send response' } );
+	const boundaryRoute = '**/wp-json/previewshare/v1/reviews/submit*';
+	const invalidRequestIds = [];
+	const submitInvalidBoundary = async ( field, value, expectedCode ) => {
+		await anonymous.route( boundaryRoute, async ( route ) => {
+			const payload = route.request().postDataJSON();
+			invalidRequestIds.push( payload.request_id );
+			payload[ field ] = value;
+			await route.continue( { postData: JSON.stringify( payload ) } );
+		} );
+		const [ invalidResponse ] = await Promise.all( [
+			anonymous.waitForResponse( ( response ) =>
+				responseMatchesRoute(
+					response,
+					'/previewshare/v1/reviews/submit'
+				)
+			),
+			submitButton.click(),
+		] );
+		await anonymous.unroute( boundaryRoute );
+		expect( invalidResponse.status() ).toBe( 400 );
+		expect( ( await invalidResponse.json() ).code ).toBe( expectedCode );
+		await expect( nameField ).toHaveValue( name );
+		await expect( commentField ).toHaveValue( comment );
+	};
+	await submitInvalidBoundary(
+		'name',
+		`${ name }x`,
+		'review_name_too_long'
+	);
+	await submitInvalidBoundary(
+		'comment',
+		`${ comment }x`,
+		'review_comment_too_long'
+	);
+	expect( invalidRequestIds[ 0 ] ).not.toBe( invalidRequestIds[ 1 ] );
+	const [ accepted ] = await Promise.all( [
+		anonymous.waitForResponse( ( response ) =>
+			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )
+		),
+		form.getByRole( 'button', { name: 'Send response' } ).click(),
+	] );
+	expect( accepted.status() ).toBe( 201 );
+	const persistedUnicode = `
+$post_id = ${ Number( post.id ) };
+$review = get_posts( array( 'post_type' => 'previewshare_review', 'post_status' => 'private', 'post_parent' => $post_id, 'posts_per_page' => 1 ) );
+if ( count( $review ) !== 1 || '${ name.replace(
+		/'/g,
+		"\\'"
+	) }' !== get_post_meta( $review[0]->ID, '_previewshare_reviewer_name', true ) || '${ comment.replace(
+		/'/g,
+		"\\'"
+	) }' !== $review[0]->post_content ) { fwrite( STDERR, 'Stored Unicode response does not match the submitted fields.' ); exit( 1 ); }
+`;
+	runWpCli( FIXTURE_WP_CLI, [ 'eval', persistedUnicode ] );
+	expect( accepted.request().postDataJSON().request_id ).not.toBe(
+		invalidRequestIds[ 1 ]
+	);
+	await anonymousContext.close();
 } );

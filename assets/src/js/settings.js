@@ -3,13 +3,13 @@ import { DataViews, filterSortAndPaginate } from '@wordpress/dataviews/wp';
 import removeAccents from 'remove-accents';
 import {
 	check,
+	chevronDown,
 	copy,
 	arrowRight,
 	help,
 	grid,
 	link,
 	page,
-	post,
 	timeToRead,
 	trash,
 } from '@wordpress/icons';
@@ -32,12 +32,14 @@ import {
 		useRef,
 		useState,
 	} = wp.element;
-	const { __, _n, sprintf } = wp.i18n;
+	const { __, sprintf } = wp.i18n;
 	const {
 		Button,
 		CheckboxControl,
 		Icon,
+		Modal,
 		Notice,
+		SearchControl,
 		Spinner,
 		TextControl,
 		ToggleControl,
@@ -70,6 +72,15 @@ import {
 			title: __( 'More plugins', 'previewshare' ),
 		},
 	];
+
+	function getTabFromUrl() {
+		const tabName = new URL( window.location.href ).searchParams.get(
+			'tab'
+		);
+		return tabDefinitions.some( ( tab ) => tab.name === tabName )
+			? tabName
+			: 'overview';
+	}
 	const pluginCatalog = [
 		{
 			name: 'ThemeRouter',
@@ -281,18 +292,6 @@ import {
 		return labels[ state ] || '';
 	}
 
-	function getPostTypeIcon( postType ) {
-		if ( postType === 'post' ) {
-			return post;
-		}
-
-		if ( postType === 'page' ) {
-			return page;
-		}
-
-		return grid;
-	}
-
 	function getPostTypeLabel( postType, availablePostTypes ) {
 		return (
 			availablePostTypes[ postType ] ||
@@ -315,7 +314,12 @@ import {
 		};
 	}
 
-	function getTokenFields( onExtend, workingTokenId, inventoryItems ) {
+	function getTokenFields(
+		onExtend,
+		workingTokenId,
+		inventoryItems,
+		availablePostTypes = {}
+	) {
 		const statusElements = [
 			{
 				value: 'active',
@@ -348,7 +352,11 @@ import {
 					const title =
 						item.post_title ||
 						__( 'Untitled content', 'previewshare' );
-					const meta = '#' + ( Number( item.post_id ) || 0 );
+					const meta = sprintf(
+						/* translators: %d: Post ID. */
+						__( '#%d', 'previewshare' ),
+						Number( item.post_id ) || 0
+					);
 
 					return el(
 						'div',
@@ -369,12 +377,28 @@ import {
 				render: ( { item } ) => formatPreviewLabel( item, localized ),
 			},
 			{
+				id: 'post_type',
+				type: 'text',
+				label: __( 'Content type', 'previewshare' ),
+				elements: Object.entries( availablePostTypes ).map(
+					( [ value, label ] ) => ( {
+						value,
+						label,
+					} )
+				),
+				filterBy: { operators: [ 'isAny' ] },
+				getValue: ( { item } ) => item.post_type,
+				render: ( { item } ) =>
+					availablePostTypes[ item.post_type ] || item.post_type,
+			},
+			{
 				id: 'status',
 				type: 'text',
 				label: __( 'Status', 'previewshare' ),
 				elements: statusElements,
 				filterBy: {
 					operators: [ 'isAny' ],
+					isPrimary: true,
 				},
 				getValue: ( { item } ) =>
 					isExpiringSoon( item )
@@ -427,6 +451,7 @@ import {
 				id: 'expires_at',
 				type: 'integer',
 				label: __( 'Expires', 'previewshare' ),
+				filterBy: false,
 				getValue: ( { item } ) => Number( item.expires_at ) || 0,
 				render: ( { item } ) => formatDate( item.expires_at ),
 			},
@@ -434,6 +459,7 @@ import {
 				id: 'last_viewed_at',
 				type: 'integer',
 				label: __( 'Last viewed', 'previewshare' ),
+				filterBy: false,
 				getValue: ( { item } ) => Number( item.last_viewed_at ) || 0,
 				render: ( { item } ) => formatDate( item.last_viewed_at ),
 			},
@@ -442,6 +468,7 @@ import {
 				type: 'integer',
 				label: __( 'Created', 'previewshare' ),
 				enableHiding: true,
+				filterBy: false,
 				getValue: ( { item } ) => Number( item.created_at ) || 0,
 				render: ( { item } ) => formatDate( item.created_at ),
 			},
@@ -508,7 +535,7 @@ import {
 			localized.settings || fallbackSettings
 		);
 		const [ settings, setSettings ] = useState( initialSettings );
-		const [ activeTab, setActiveTab ] = useState( 'overview' );
+		const [ activeTab, setActiveTab ] = useState( getTabFromUrl );
 		const [ tokens, setTokens ] = useState( [] );
 		const [ totalTokens, setTotalTokens ] = useState( 0 );
 		const [ hasMoreTokens, setHasMoreTokens ] = useState( false );
@@ -541,12 +568,13 @@ import {
 				typeof window.matchMedia === 'function' &&
 				window.matchMedia( '(max-width: 1440px)' ).matches
 		);
-		const [ expiringOnly, setExpiringOnly ] = useState( false );
 		const [ loadingSettings, setLoadingSettings ] = useState( true );
 		const [ loadingTokens, setLoadingTokens ] = useState( true );
 		const [ savingSettings, setSavingSettings ] = useState( false );
 		const [ saveState, setSaveState ] = useState( 'saved' );
 		const [ workingTokenId, setWorkingTokenId ] = useState( '' );
+		const [ deleteCandidate, setDeleteCandidate ] = useState( null );
+		const [ deleteError, setDeleteError ] = useState( '' );
 		const [ notice, setNotice ] = useState( null );
 		const persistedSettingsRef = useRef( initialSettings );
 		const latestSettingsRef = useRef( initialSettings );
@@ -560,6 +588,58 @@ import {
 		const tokensRef = useRef( [] );
 		const nextInventoryPageRef = useRef( 1 );
 		const mountedRef = useRef( false );
+		const tabListRef = useRef( null );
+
+		useEffect( () => {
+			const revealActiveTab = () => {
+				const tabList = tabListRef.current;
+				const selectedTab = tabList?.querySelector(
+					'[aria-selected="true"]'
+				);
+
+				if ( ! selectedTab ) {
+					return;
+				}
+
+				const listBounds = tabList.getBoundingClientRect();
+				const tabBounds = selectedTab.getBoundingClientRect();
+
+				// Keep the current location visible without moving the page vertically.
+				if ( tabBounds.left < listBounds.left ) {
+					tabList.scrollLeft += tabBounds.left - listBounds.left;
+				} else if ( tabBounds.right > listBounds.right ) {
+					tabList.scrollLeft += tabBounds.right - listBounds.right;
+				}
+			};
+
+			revealActiveTab();
+			const observer =
+				typeof window.ResizeObserver === 'function'
+					? new window.ResizeObserver( revealActiveTab )
+					: null;
+			observer?.observe( tabListRef.current );
+			window.addEventListener( 'resize', revealActiveTab );
+			return () => {
+				observer?.disconnect();
+				window.removeEventListener( 'resize', revealActiveTab );
+			};
+		}, [ activeTab ] );
+
+		useEffect( () => {
+			const url = new URL( window.location.href );
+			url.searchParams.set( 'tab', activeTab );
+			window.history.replaceState(
+				window.history.state,
+				'',
+				url.toString()
+			);
+		}, [ activeTab ] );
+
+		useEffect( () => {
+			const syncTab = () => setActiveTab( getTabFromUrl() );
+			window.addEventListener( 'popstate', syncTab );
+			return () => window.removeEventListener( 'popstate', syncTab );
+		}, [] );
 
 		useEffect( () => {
 			if ( typeof window.matchMedia !== 'function' ) {
@@ -1057,13 +1137,25 @@ import {
 		}
 
 		function handleRevoke( id ) {
+			if ( workingTokenId ) {
+				return;
+			}
 			setWorkingTokenId( id );
 
 			apiFetch( '/tokens/revoke', {
 				method: 'POST',
 				body: { id },
 			} )
-				.then( () => {
+				.then( ( data ) => {
+					if ( data.revoked !== true ) {
+						throw new Error( 'revoke_failed' );
+					}
+					tokensRef.current = tokensRef.current.map( ( item ) =>
+						item.id === id
+							? { ...item, status: 'revoked', revoked: true }
+							: item
+					);
+					setTokens( tokensRef.current );
 					notify(
 						'success',
 						__( 'Preview link revoked.', 'previewshare' )
@@ -1080,6 +1172,158 @@ import {
 					);
 				} )
 				.finally( () => setWorkingTokenId( '' ) );
+		}
+
+		function handleDelete( id ) {
+			if ( workingTokenId ) {
+				return;
+			}
+			setWorkingTokenId( id );
+			setDeleteError( '' );
+
+			apiFetch( '/tokens/delete', { method: 'POST', body: { id } } )
+				.then( ( data ) => {
+					if ( data.deleted !== true || data.revoked !== true ) {
+						throw new Error( 'delete_failed' );
+					}
+					tokensRef.current = tokensRef.current.filter(
+						( item ) => item.id !== id
+					);
+					setTokens( tokensRef.current );
+					setTotalTokens( ( total ) => Math.max( 0, total - 1 ) );
+					setView( ( current ) => ( { ...current, page: 1 } ) );
+					setDeleteCandidate( null );
+					notify(
+						'success',
+						__(
+							'Preview link revoked and deleted.',
+							'previewshare'
+						)
+					);
+					fetchTokens();
+					window.setTimeout(
+						() =>
+							document
+								.getElementById( 'previewshare-tab-previews' )
+								?.focus(),
+						0
+					);
+				} )
+				.catch( () =>
+					setDeleteError(
+						__(
+							'Preview link could not be deleted. Please try again.',
+							'previewshare'
+						)
+					)
+				)
+				.finally( () => setWorkingTokenId( '' ) );
+		}
+
+		function getInventoryActions() {
+			return [
+				{
+					id: 'generate',
+					label: __( 'Generate & copy', 'previewshare' ),
+					icon: el( Icon, { icon: copy } ),
+					disabled: Boolean( workingTokenId ),
+					isEligible: ( item ) => Boolean( item.post_id ),
+					callback: ( items ) =>
+						items[ 0 ] &&
+						handleGenerateAndCopy( items[ 0 ].post_id ),
+				},
+				{
+					id: 'revoke',
+					label: __( 'Revoke link', 'previewshare' ),
+					icon: el( Icon, { icon: trash } ),
+					disabled: Boolean( workingTokenId ),
+					isEligible: ( item ) => item.status !== 'revoked',
+					callback: ( items ) =>
+						items[ 0 ] && handleRevoke( items[ 0 ].id ),
+				},
+				{
+					id: 'delete',
+					label: __( 'Delete link', 'previewshare' ),
+					icon: el( Icon, { icon: trash } ),
+					disabled: Boolean( workingTokenId ),
+					callback: ( items ) => {
+						if ( items[ 0 ] && ! workingTokenId ) {
+							setDeleteError( '' );
+							setDeleteCandidate( items[ 0 ] );
+						}
+					},
+				},
+			];
+		}
+
+		function renderDeleteConfirmation() {
+			if ( ! deleteCandidate ) {
+				return null;
+			}
+			return el(
+				Modal,
+				{
+					title: __( 'Delete preview link?', 'previewshare' ),
+					onRequestClose: () =>
+						! workingTokenId && setDeleteCandidate( null ),
+				},
+				el(
+					'p',
+					null,
+					__(
+						'This will revoke the preview link and permanently remove its entry from the list.',
+						'previewshare'
+					)
+				),
+				el(
+					'p',
+					null,
+					el(
+						'strong',
+						null,
+						deleteCandidate.post_title ||
+							__( 'Untitled content', 'previewshare' )
+					),
+					' · ',
+					deleteCandidate.label ||
+						__( 'Preview link', 'previewshare' )
+				),
+				deleteError
+					? el(
+							Notice,
+							{
+								status: 'error',
+								className: 'previewshare-app-notice',
+								isDismissible: false,
+							},
+							deleteError
+					  )
+					: null,
+				el(
+					'div',
+					{ className: 'previewshare-dialog-actions' },
+					el(
+						Button,
+						{
+							variant: 'tertiary',
+							disabled: Boolean( workingTokenId ),
+							onClick: () => setDeleteCandidate( null ),
+						},
+						__( 'Cancel', 'previewshare' )
+					),
+					el(
+						Button,
+						{
+							variant: 'primary',
+							isDestructive: true,
+							isBusy: Boolean( workingTokenId ),
+							disabled: Boolean( workingTokenId ),
+							onClick: () => handleDelete( deleteCandidate.id ),
+						},
+						__( 'Delete link', 'previewshare' )
+					)
+				)
+			);
 		}
 
 		function handleExtend( id ) {
@@ -1611,12 +1855,18 @@ import {
 			);
 		}
 
-		function renderLegacyLinkTable( items ) {
+		function renderLegacyLinkTable( items, nativeControls = false ) {
 			const selectedStatuses = getFilterValues(
 				( view.filters || [] ).find(
 					( filter ) => filter.field === 'status'
 				)
 			);
+			const selectedPostTypes = getFilterValues(
+				( view.filters || [] ).find(
+					( filter ) => filter.field === 'post_type'
+				)
+			);
+			const availablePostTypes = settings.available_post_types || {};
 			const sortedItems = [ ...items ];
 			const sort = view.sort || {};
 			const sortField = getTokenFields(
@@ -1631,7 +1881,7 @@ import {
 
 				return 'asc' === sort.direction ? 'ascending' : 'descending';
 			};
-			if ( sortField ) {
+			if ( sortField && ! nativeControls ) {
 				sortedItems.sort( ( left, right ) => {
 					const leftValue = sortField.getValue( { item: left } );
 					const rightValue = sortField.getValue( { item: right } );
@@ -1653,107 +1903,180 @@ import {
 				Math.max( 1, Number( view.page ) || 1 ),
 				totalPages
 			);
-			const pageItems = sortedItems.slice(
-				( currentPage - 1 ) * perPage,
-				currentPage * perPage
-			);
+			const pageItems = nativeControls
+				? items
+				: sortedItems.slice(
+						( currentPage - 1 ) * perPage,
+						currentPage * perPage
+				  );
 			const renderCell = ( label, content, className ) =>
 				el( 'td', { className, 'data-label': label }, content );
 
 			return el(
 				'div',
 				{ className: 'previewshare-legacy-inventory' },
-				el(
-					'div',
-					{ className: 'previewshare-legacy-toolbar' },
-					el( TextControl, {
-						label: __( 'Search preview links', 'previewshare' ),
-						value: view.search || '',
-						placeholder: __(
-							'Search by content or label',
-							'previewshare'
-						),
-						onChange: ( search ) =>
-							setView( ( current ) => ( {
-								...current,
-								search,
-								page: 1,
-							} ) ),
-					} ),
+				! nativeControls &&
 					el(
-						'fieldset',
-						{ className: 'previewshare-status-filters' },
-						el( 'legend', null, __( 'Status', 'previewshare' ) ),
-						...[
-							{
-								label: __( 'Active', 'previewshare' ),
-								value: 'active',
-							},
-							{
-								label: __( 'Expiring soon', 'previewshare' ),
-								value: 'expiring_soon',
-							},
-							{
-								label: __( 'Expired', 'previewshare' ),
-								value: 'expired',
-							},
-							{
-								label: __( 'Revoked', 'previewshare' ),
-								value: 'revoked',
-							},
-						].map( ( option ) =>
-							el( CheckboxControl, {
-								key: option.value,
-								label: option.label,
-								checked: selectedStatuses.includes(
-									option.value
-								),
-								onChange: ( checked ) => {
-									setView( ( current ) => {
-										const currentFilters =
-											current.filters || [];
-										const statusFilter =
-											currentFilters.find(
-												( filter ) =>
-													filter.field === 'status'
-											);
-										const statuses = getFilterValues(
-											statusFilter
-										).filter(
-											( status ) =>
-												status !== option.value
-										);
-										if ( checked ) {
-											statuses.push( option.value );
-										}
-
-										return {
-											...current,
-											filters: [
-												...currentFilters.filter(
-													( filter ) =>
-														filter.field !==
-														'status'
-												),
-												...( statuses.length
-													? [
-															{
-																field: 'status',
-																operator:
-																	'isAny',
-																value: statuses,
-															},
-													  ]
-													: [] ),
-											],
-											page: 1,
-										};
-									} );
+						'div',
+						{ className: 'previewshare-legacy-toolbar' },
+						el( TextControl, {
+							label: __( 'Search preview links', 'previewshare' ),
+							value: view.search || '',
+							placeholder: __(
+								'Search by content or label',
+								'previewshare'
+							),
+							onChange: ( search ) =>
+								setView( ( current ) => ( {
+									...current,
+									search,
+									page: 1,
+								} ) ),
+						} ),
+						el(
+							'fieldset',
+							{ className: 'previewshare-status-filters' },
+							el(
+								'legend',
+								null,
+								__( 'Status', 'previewshare' )
+							),
+							...[
+								{
+									label: __( 'Active', 'previewshare' ),
+									value: 'active',
 								},
-							} )
+								{
+									label: __(
+										'Expiring soon',
+										'previewshare'
+									),
+									value: 'expiring_soon',
+								},
+								{
+									label: __( 'Expired', 'previewshare' ),
+									value: 'expired',
+								},
+								{
+									label: __( 'Revoked', 'previewshare' ),
+									value: 'revoked',
+								},
+							].map( ( option ) =>
+								el( CheckboxControl, {
+									key: option.value,
+									label: option.label,
+									checked: selectedStatuses.includes(
+										option.value
+									),
+									onChange: ( checked ) => {
+										setView( ( current ) => {
+											const currentFilters =
+												current.filters || [];
+											const statusFilter =
+												currentFilters.find(
+													( filter ) =>
+														filter.field ===
+														'status'
+												);
+											const statuses = getFilterValues(
+												statusFilter
+											).filter(
+												( status ) =>
+													status !== option.value
+											);
+											if ( checked ) {
+												statuses.push( option.value );
+											}
+
+											return {
+												...current,
+												filters: [
+													...currentFilters.filter(
+														( filter ) =>
+															filter.field !==
+															'status'
+													),
+													...( statuses.length
+														? [
+																{
+																	field: 'status',
+																	operator:
+																		'isAny',
+																	value: statuses,
+																},
+														  ]
+														: [] ),
+												],
+												page: 1,
+											};
+										} );
+									},
+								} )
+							)
+						),
+						el(
+							'fieldset',
+							{ className: 'previewshare-status-filters' },
+							el(
+								'legend',
+								null,
+								__( 'Content type', 'previewshare' )
+							),
+							...Object.entries( availablePostTypes ).map(
+								( [ postType, label ] ) =>
+									el( CheckboxControl, {
+										key: postType,
+										label,
+										checked:
+											selectedPostTypes.includes(
+												postType
+											),
+										onChange: ( checked ) =>
+											setView( ( current ) => {
+												const currentFilters =
+													current.filters || [];
+												const currentPostTypes =
+													getFilterValues(
+														currentFilters.find(
+															( filter ) =>
+																filter.field ===
+																'post_type'
+														)
+													).filter(
+														( value ) =>
+															value !== postType
+													);
+												if ( checked ) {
+													currentPostTypes.push(
+														postType
+													);
+												}
+												return {
+													...current,
+													filters: [
+														...currentFilters.filter(
+															( filter ) =>
+																filter.field !==
+																'post_type'
+														),
+														...( currentPostTypes.length
+															? [
+																	{
+																		field: 'post_type',
+																		operator:
+																			'isAny',
+																		value: currentPostTypes,
+																	},
+															  ]
+															: [] ),
+													],
+													page: 1,
+												};
+											} ),
+									} )
+							)
 						)
-					)
-				),
+					),
 				loadingTokens
 					? el(
 							'div',
@@ -1878,9 +2201,11 @@ import {
 													'Untitled content',
 													'previewshare'
 												);
-											const meta =
-												'#' +
-												( Number( item.post_id ) || 0 );
+											const meta = sprintf(
+												/* translators: %d: Post ID. */
+												__( '#%d', 'previewshare' ),
+												Number( item.post_id ) || 0
+											);
 											const expiringSoon =
 												isExpiringSoon( item );
 											const status = expiringSoon
@@ -2026,50 +2351,37 @@ import {
 															className:
 																'previewshare-legacy-row-actions',
 														},
-														item.post_id
-															? el(
+														...getInventoryActions()
+															.filter(
+																( action ) =>
+																	! action.isEligible ||
+																	action.isEligible(
+																		item
+																	)
+															)
+															.map( ( action ) =>
+																el(
 																	Button,
 																	{
+																		key: action.id,
 																		variant:
 																			'tertiary',
+																		isDestructive:
+																			action.id ===
+																			'delete',
 																		disabled:
-																			Boolean(
-																				workingTokenId
-																			),
+																			action.disabled,
 																		onClick:
 																			() =>
-																				handleGenerateAndCopy(
-																					item.post_id
+																				action.callback(
+																					[
+																						item,
+																					]
 																				),
 																	},
-																	__(
-																		'Generate & copy',
-																		'previewshare'
-																	)
-															  )
-															: null,
-														item.status === 'active'
-															? el(
-																	Button,
-																	{
-																		variant:
-																			'tertiary',
-																		disabled:
-																			Boolean(
-																				workingTokenId
-																			),
-																		onClick:
-																			() =>
-																				handleRevoke(
-																					item.id
-																				),
-																	},
-																	__(
-																		'Revoke link',
-																		'previewshare'
-																	)
-															  )
-															: null
+																	action.label
+																)
+															)
 													),
 													'previewshare-actions-cell'
 												)
@@ -2086,7 +2398,7 @@ import {
 									'previewshare'
 								)
 							),
-				! loadingTokens
+				! nativeControls && ! loadingTokens
 					? el(
 							'div',
 							{ className: 'previewshare-legacy-pagination' },
@@ -2135,16 +2447,14 @@ import {
 			const fields = getTokenFields(
 				handleExtend,
 				workingTokenId,
-				tokens
+				tokens,
+				settings.available_post_types
 			);
-			const visibleTokens = expiringOnly
-				? tokens.filter( ( token ) => isExpiringSoon( token ) )
-				: tokens;
 			const canRenderDataViews = Boolean(
 				DataViews && typeof wp.element.useInsertionEffect === 'function'
 			);
 			const processed = canRenderDataViews
-				? filterSortAndPaginate( visibleTokens, view, fields )
+				? filterSortAndPaginate( tokens, view, fields )
 				: null;
 			const normalizedSearch = normalizeSearchInput( view.search || '' );
 			const searchableFields = fields.filter(
@@ -2154,13 +2464,21 @@ import {
 				( filter ) => filter.field === 'status'
 			);
 			const selectedStatuses = getFilterValues( statusFilter );
-			const legacyTokens = visibleTokens.filter( ( token ) => {
+			const selectedPostTypes = getFilterValues(
+				( view.filters || [] ).find(
+					( filter ) => filter.field === 'post_type'
+				)
+			);
+			const legacyTokens = tokens.filter( ( token ) => {
 				const actualStatus = isExpiringSoon( token )
 					? 'expiring_soon'
 					: token.status;
 				const statusMatches =
 					selectedStatuses.length === 0 ||
 					selectedStatuses.includes( actualStatus );
+				const postTypeMatches =
+					selectedPostTypes.length === 0 ||
+					selectedPostTypes.includes( token.post_type );
 				const searchMatches =
 					! normalizedSearch ||
 					searchableFields.some( ( field ) =>
@@ -2169,119 +2487,86 @@ import {
 						).includes( normalizedSearch )
 					);
 
-				return statusMatches && searchMatches;
+				return statusMatches && postTypeMatches && searchMatches;
 			} );
-			const actions = [
-				{
-					id: 'generate',
-					label: __( 'Generate & copy', 'previewshare' ),
-					icon: el( Icon, { icon: copy } ),
-					isEligible: ( item ) =>
-						Boolean( item.post_id ) && ! workingTokenId,
-					callback: ( items ) => {
-						if ( items[ 0 ] ) {
-							handleGenerateAndCopy( items[ 0 ].post_id );
-						}
-					},
-				},
-				{
-					id: 'revoke',
-					label: __( 'Revoke link', 'previewshare' ),
-					icon: el( Icon, { icon: trash } ),
-					isEligible: ( item ) =>
-						item.status === 'active' && ! workingTokenId,
-					callback: ( items ) => {
-						if ( items[ 0 ] ) {
-							handleRevoke( items[ 0 ].id );
-						}
-					},
-				},
-			];
+			const actions = getInventoryActions();
 
 			return el(
 				'div',
 				{ className: 'previewshare-tab-content' },
 				renderTabIntro(
 					__( 'Preview links', 'previewshare' ),
-					sprintf(
-						/* translators: %d: Number of links. */
-						_n(
-							'%d link in this site inventory.',
-							'%d links in this site inventory.',
-							totalTokens,
-							'previewshare'
-						),
-						totalTokens
+					__(
+						'Manage preview links, monitor views and expiry, and revoke access when a review is complete.',
+						'previewshare'
 					)
 				),
-				el(
-					'div',
-					{ className: 'previewshare-link-quick-filters' },
-					el(
-						Button,
-						{
-							variant: expiringOnly ? 'primary' : 'secondary',
-							'aria-pressed': expiringOnly,
-							onClick: () => {
-								setExpiringOnly( ! expiringOnly );
-								setView( ( current ) => ( {
-									...current,
-									page: 1,
-								} ) );
-							},
-						},
-						sprintf(
-							/* translators: %d: Number of loaded expiring links. */
-							__( 'Expiring soon (%d)', 'previewshare' ),
-							tokens.filter( ( token ) =>
-								isExpiringSoon( token )
-							).length
-						)
-					)
-				),
-				expiringOnly && hasMoreTokens
-					? el(
-							'p',
-							{ className: 'previewshare-inline-note' },
-							__(
-								'Only loaded links are included. Load more links to include the rest of the inventory.',
-								'previewshare'
-							)
-					  )
-					: null,
-				! canRenderDataViews || compactInventory
+				! canRenderDataViews
 					? renderLegacyLinkTable( legacyTokens )
 					: el(
 							'div',
 							{ className: 'previewshare-dataviews' },
-							el( DataViews, {
-								data: processed.data,
-								fields,
-								view,
-								onChangeView: setView,
-								paginationInfo: processed.paginationInfo,
-								defaultLayouts: { table: {} },
-								config: {
-									perPageSizes: [ 20, 50, 100 ],
-								},
-								actions,
-								isLoading: loadingTokens || loadingMoreTokens,
-								getItemId: ( item ) => item.id,
-								searchLabel: __(
-									'Search preview links',
-									'previewshare'
-								),
-								empty: el(
-									'p',
-									{
-										className: 'previewshare-empty-state',
+							el(
+								DataViews,
+								{
+									data: processed.data,
+									fields,
+									view,
+									onChangeView: setView,
+									paginationInfo: processed.paginationInfo,
+									defaultLayouts: { table: {} },
+									config: {
+										perPageSizes: [ 20, 50, 100 ],
 									},
-									__(
-										'No preview links match this view.',
+									actions,
+									isLoading:
+										loadingTokens || loadingMoreTokens,
+									getItemId: ( item ) => item.id,
+									searchLabel: __(
+										'Search preview links',
 										'previewshare'
-									)
-								),
-							} )
+									),
+									empty: el(
+										'p',
+										{
+											className:
+												'previewshare-empty-state',
+										},
+										__(
+											'No preview links match this view.',
+											'previewshare'
+										)
+									),
+								},
+								compactInventory
+									? el(
+											wp.element.Fragment,
+											null,
+											el(
+												'div',
+												{
+													className:
+														'dataviews__view-actions',
+												},
+												el( DataViews.Search, {
+													label: __(
+														'Search preview links',
+														'previewshare'
+													),
+												} )
+											),
+											el( DataViews.Filters, {
+												className:
+													'dataviews-filters__container',
+											} ),
+											renderLegacyLinkTable(
+												processed.data,
+												true
+											),
+											el( DataViews.Pagination )
+									  )
+									: undefined
+							)
 					  ),
 				hasMoreTokens
 					? el(
@@ -2324,18 +2609,17 @@ import {
 			const postTypeKeys = Object.keys( availablePostTypes );
 			const selectedPostTypes = settings.post_types || [];
 			const normalizedSearch = contentTypeSearch.trim().toLowerCase();
-			const visiblePostTypes = postTypeKeys.filter( ( postType ) => {
-				if ( ! normalizedSearch ) {
-					return true;
-				}
-
-				return (
+			const labels = postTypeKeys.map( ( key ) =>
+				getPostTypeLabel( key, availablePostTypes )
+			);
+			const visiblePostTypes = postTypeKeys.filter(
+				( postType ) =>
+					! normalizedSearch ||
 					postType.toLowerCase().includes( normalizedSearch ) ||
 					availablePostTypes[ postType ]
 						.toLowerCase()
 						.includes( normalizedSearch )
-				);
-			} );
+			);
 
 			return el(
 				'div',
@@ -2346,135 +2630,130 @@ import {
 				renderTabIntro(
 					__( 'Content types', 'previewshare' ),
 					__(
-						'Control where editors can create secure preview links.',
+						'Choose where editors can create preview links. Changes save automatically.',
 						'previewshare'
-					),
-					true
+					)
 				),
-				el( TextControl, {
-					className: 'previewshare-content-type-search',
-					label: __( 'Search content types', 'previewshare' ),
-					value: contentTypeSearch,
-					onChange: setContentTypeSearch,
-					placeholder: __( 'Search by name or key', 'previewshare' ),
-				} ),
 				el(
 					'div',
-					{ className: 'previewshare-content-type-list' },
-					visiblePostTypes.length
-						? visiblePostTypes.map( ( postType ) => {
-								const enabled =
-									latestSettingsRef.current.post_types.includes(
-										postType
+					{ className: 'previewshare-content-type-panel' },
+					postTypeKeys.length > 6
+						? el( SearchControl, {
+								className: 'previewshare-content-type-search',
+								label: __(
+									'Search content types',
+									'previewshare'
+								),
+								placeholder: __(
+									'Search content types',
+									'previewshare'
+								),
+								value: contentTypeSearch,
+								onChange: setContentTypeSearch,
+						  } )
+						: null,
+					el(
+						'div',
+						{
+							className: 'previewshare-content-type-list',
+							role: 'group',
+							'aria-label': __( 'Content types', 'previewshare' ),
+						},
+						visiblePostTypes.length
+							? visiblePostTypes.map( ( postType ) => {
+									const label = getPostTypeLabel(
+										postType,
+										availablePostTypes
 									);
-								const label = getPostTypeLabel(
-									postType,
-									availablePostTypes
-								);
-
-								return el(
-									'div',
-									{
+									const duplicateLabel =
+										labels.filter(
+											( name ) => name === label
+										).length > 1;
+									return el( CheckboxControl, {
+										key: postType,
 										className:
 											'previewshare-content-type-row',
-										key: postType,
-									},
-									el(
-										'div',
-										{
-											className:
-												'previewshare-content-type-icon',
-										},
-										el( Icon, {
-											icon: getPostTypeIcon( postType ),
-											size: 24,
-										} )
-									),
-									el(
-										'div',
-										{
-											className:
-												'previewshare-content-type-info',
-										},
-										el( 'strong', null, label ),
-										el( 'code', null, postType ),
-										el(
-											'small',
-											null,
-											postType === 'post' ||
-												postType === 'page'
-												? __(
-														'Built-in',
+										label: duplicateLabel
+											? sprintf(
+													/* translators: 1: Content type label. 2: Unique content type name. */
+													__(
+														'%1$s (%2$s)',
 														'previewshare'
-												  )
-												: __( 'Custom', 'previewshare' )
-										)
-									),
-									el( ToggleControl, {
-										className:
-											'previewshare-content-type-toggle',
-										label: sprintf(
-											/* translators: %s: Content type label. */
-											__( 'Enable %s', 'previewshare' ),
-											label
-										),
-										checked: enabled,
+													),
+													label,
+													postType
+											  )
+											: label,
+										checked:
+											selectedPostTypes.includes(
+												postType
+											),
 										onChange: ( checked ) => {
 											const currentPostTypes =
 												latestSettingsRef.current
 													.post_types;
-											const nextPostTypes = checked
-												? currentPostTypes.concat(
-														postType
-												  )
-												: currentPostTypes.filter(
-														( item ) =>
-															item !== postType
-												  );
 											updateSetting(
 												'post_types',
-												nextPostTypes
+												checked
+													? currentPostTypes.concat(
+															postType
+													  )
+													: currentPostTypes.filter(
+															( item ) =>
+																item !==
+																postType
+													  )
 											);
 										},
-									} )
-								);
-						  } )
-						: el(
-								'p',
-								{ className: 'previewshare-empty-state' },
-								__(
-									'No matching content types found.',
-									'previewshare'
-								)
-						  )
-				),
-				el(
-					'div',
-					{ className: 'previewshare-content-type-footer' },
-					el(
-						'span',
-						null,
-						sprintf(
-							/* translators: 1: Enabled count. 2: Total count. */
-							__(
-								'%1$d of %2$d content types enabled',
-								'previewshare'
-							),
-							selectedPostTypes.length,
-							postTypeKeys.length
-						)
+									} );
+							  } )
+							: el(
+									'p',
+									{ className: 'previewshare-empty-state' },
+									__(
+										'No matching content types found.',
+										'previewshare'
+									)
+							  )
 					),
-					selectedPostTypes.length === 0
-						? el(
-								'p',
-								{ className: 'previewshare-warning' },
+					el(
+						'div',
+						{ className: 'previewshare-content-type-footer' },
+						el(
+							'span',
+							null,
+							sprintf(
+								/* translators: 1: Enabled count. 2: Total count. */
 								__(
-									'PreviewShare is disabled until at least one content type is selected.',
+									'%1$d of %2$d content types enabled',
 									'previewshare'
-								)
-						  )
-						: null,
-					renderSaveActions()
+								),
+								selectedPostTypes.length,
+								postTypeKeys.length
+							)
+						),
+						renderSaveState(),
+						saveState === 'error'
+							? el(
+									Button,
+									{
+										variant: 'secondary',
+										onClick: saveAllSettings,
+									},
+									__( 'Retry save', 'previewshare' )
+							  )
+							: null,
+						selectedPostTypes.length === 0
+							? el(
+									'p',
+									{ className: 'previewshare-warning' },
+									__(
+										'PreviewShare is disabled until at least one content type is selected.',
+										'previewshare'
+									)
+							  )
+							: null
+					)
 				)
 			);
 		}
@@ -2483,10 +2762,41 @@ import {
 			const entries = [
 				{
 					version: '1.1.0',
-					title: __( 'A clearer preview workspace', 'previewshare' ),
+					summary: __(
+						'Settings and reviewer feedback',
+						'previewshare'
+					),
 					items: [
 						__(
 							'Redesigned the settings workspace across all five tabs.',
+							'previewshare'
+						),
+						__(
+							'Polished the admin header, plugin links, Changelog, content-type controls, and preview inventory.',
+							'previewshare'
+						),
+						__(
+							'Respected WordPress date and time formats, site timezone, and locale in link history.',
+							'previewshare'
+						),
+						__(
+							'Improved preview-link inventory filters, descriptions, dates, and content IDs.',
+							'previewshare'
+						),
+						__(
+							'Added row actions to revoke access or revoke and delete a preview-link entry, with confirmation before deletion.',
+							'previewshare'
+						),
+						__(
+							'Added retries for concurrent revocation updates and clearer errors when preview links could not all be revoked.',
+							'previewshare'
+						),
+						__(
+							'Simplified content type selection with autosaving checkboxes and kept the selected settings tab after refresh.',
+							'previewshare'
+						),
+						__(
+							'Made release notes easier to scan with version summaries, latest and installed-version labels, and expandable older entries.',
 							'previewshare'
 						),
 						__(
@@ -2498,17 +2808,22 @@ import {
 							'previewshare'
 						),
 						__(
-							'Added optional reviewer responses with approval tracking and 90-day retention.',
+							'Added optional reviewer responses with approval tracking, retries that preserve edits, multilingual feedback limits, and 90-day retention.',
+							'previewshare'
+						),
+						__(
+							'Improved preview-link security by keeping concurrently generated links visible and revocable and avoiding temporary storage of generated Classic Editor and post-list URLs.',
+							'previewshare'
+						),
+						__(
+							'Kept preview sharing controls available when Classic Editor is selected for an individual post.',
 							'previewshare'
 						),
 					],
 				},
 				{
 					version: '1.0.2',
-					title: __(
-						'WordPress editor compatibility',
-						'previewshare'
-					),
+					summary: __( 'WordPress compatibility', 'previewshare' ),
 					items: [
 						__(
 							'Validated preview-link editor and admin workflows with WordPress 7.1.',
@@ -2522,7 +2837,10 @@ import {
 				},
 				{
 					version: '1.0.1',
-					title: __( 'Maintenance and diagnostics', 'previewshare' ),
+					summary: __(
+						'Diagnostics and maintenance',
+						'previewshare'
+					),
 					items: [
 						__(
 							'Improved diagnostics, dependency audit coverage, and release automation.',
@@ -2536,10 +2854,7 @@ import {
 				},
 				{
 					version: '1.0.0',
-					title: __(
-						'Secure previews for unpublished content',
-						'previewshare'
-					),
+					summary: __( 'First release', 'previewshare' ),
 					items: [
 						__(
 							'Added secure preview links for draft, pending, and scheduled content.',
@@ -2556,6 +2871,10 @@ import {
 					],
 				},
 			];
+			const installedVersion = localized.version;
+			const hasInstalledEntry = entries.some(
+				( entry ) => entry.version === installedVersion
+			);
 
 			return el(
 				'div',
@@ -2563,45 +2882,86 @@ import {
 				renderTabIntro(
 					__( 'Changelog', 'previewshare' ),
 					__(
-						'Release notes for the PreviewShare settings experience.',
+						'Updates, improvements, and fixes in each version.',
 						'previewshare'
 					)
 				),
 				el(
 					'div',
 					{ className: 'previewshare-changelog' },
-					entries.map( ( entry ) =>
+					entries.map( ( entry, index ) =>
 						el(
-							'section',
+							'details',
 							{
 								className: 'previewshare-changelog-entry',
 								key: entry.version,
+								open:
+									entry.version === installedVersion ||
+									( ! hasInstalledEntry && index === 0 ),
 							},
 							el(
-								'div',
-								{ className: 'previewshare-changelog-heading' },
-								el( 'h3', null, 'v' + entry.version ),
+								'summary',
+								null,
 								el(
-									'p',
-									{
-										className:
-											'previewshare-changelog-summary',
-									},
-									entry.title
-								),
-								entry.version === localized.version
-									? el(
+									'h3',
+									null,
+									el(
+										'span',
+										{
+											className:
+												'previewshare-release-heading',
+										},
+										el(
 											'span',
 											{
 												className:
-													'previewshare-version-badge',
+													'previewshare-release-version',
 											},
-											__(
-												'Installed version',
-												'previewshare'
-											)
-									  )
-									: null
+											'v' + entry.version,
+											index === 0
+												? el(
+														'span',
+														{
+															className:
+																'previewshare-release-latest',
+														},
+														__(
+															'Latest',
+															'previewshare'
+														)
+												  )
+												: null,
+											entry.version === installedVersion
+												? el(
+														'span',
+														{
+															className:
+																'previewshare-release-installed',
+														},
+														__(
+															'Installed',
+															'previewshare'
+														)
+												  )
+												: null
+										),
+										el(
+											'span',
+											{
+												className:
+													'previewshare-release-summary',
+											},
+											entry.summary
+										)
+									),
+									el( Icon, {
+										icon: chevronDown,
+										size: 20,
+										className:
+											'previewshare-release-chevron',
+										'aria-hidden': true,
+									} )
+								)
 							),
 							el(
 								'ul',
@@ -2681,7 +3041,7 @@ import {
 			'div',
 			{ className: 'previewshare-settings' },
 			el(
-				'header',
+				'div',
 				{ className: 'previewshare-product-header' },
 				el(
 					'div',
@@ -2735,6 +3095,7 @@ import {
 				'nav',
 				{
 					className: 'previewshare-tabs',
+					ref: tabListRef,
 					role: 'tablist',
 					'aria-label': __( 'PreviewShare settings', 'previewshare' ),
 				},
@@ -2768,7 +3129,8 @@ import {
 						{ className: 'previewshare-loading' },
 						el( Spinner )
 				  )
-				: renderTabPanel()
+				: renderTabPanel(),
+			renderDeleteConfirmation()
 		);
 	}
 

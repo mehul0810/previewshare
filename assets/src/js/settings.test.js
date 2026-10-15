@@ -1,4 +1,5 @@
 import * as element from '@wordpress/element';
+import * as date from '@wordpress/date';
 
 // eslint-disable-next-line import/no-extraneous-dependencies
 const { Simulate } = require( 'react-dom/test-utils' );
@@ -7,40 +8,69 @@ const { act } = require( 'react' );
 // eslint-disable-next-line import/no-extraneous-dependencies
 const { createRoot } = require( 'react-dom/client' );
 
+jest.mock(
+	require
+		.resolve( '@wordpress/dataviews/package.json' )
+		.replace(
+			'package.json',
+			'build/components/dataform-controls/index.cjs'
+		),
+	() => ( { getControl: () => () => null } )
+);
+
 jest.mock( '@wordpress/dataviews/wp', () => {
 	const { createElement } = require( '@wordpress/element' );
-
-	return {
-		DataViews: ( props ) => {
-			const { data = [], fields = [], view = {} } = props;
-			globalThis.__previewshareDataViewsProps = props;
-			return createElement(
-				'div',
-				{
-					'data-testid': 'previewshare-dataviews',
-					'data-title-field': view.titleField,
-					'data-fields': ( view.fields || [] ).join( ',' ),
-				},
+	// Exercise the installed data pipeline without loading its UI entry point.
+	const { default: filterSortAndPaginate } = jest.requireActual(
+		require
+			.resolve( '@wordpress/dataviews/package.json' )
+			.replace(
+				'package.json',
+				'build/utils/filter-sort-and-paginate.cjs'
+			)
+	);
+	const DataViews = ( props ) => {
+		const { data = [], fields = [], view = {}, children } = props;
+		globalThis.__previewshareDataViewsProps = props;
+		return createElement(
+			'div',
+			{
+				'data-testid': 'previewshare-dataviews',
+				'data-title-field': view.titleField,
+				'data-fields': ( view.fields || [] ).join( ',' ),
+			},
+			children ||
 				data.map( ( item ) =>
 					createElement(
-						'span',
+						'div',
 						{ key: item.id },
 						item.id,
 						...fields
-							.filter( ( field ) => field.id === 'status' )
-							.map( ( field ) => field.render( { item } ) )
+							.filter(
+								( field ) =>
+									field.id === view.titleField ||
+									( view.fields || [] ).includes( field.id )
+							)
+							.map( ( field ) =>
+								createElement(
+									'span',
+									{ key: field.id },
+									field.render
+										? field.render( { item } )
+										: field.getValue( { item } )
+								)
+							)
 					)
 				)
-			);
-		},
-		filterSortAndPaginate: ( data ) => ( {
-			data,
-			paginationInfo: {
-				totalItems: data.length,
-				totalPages: 1,
-			},
-		} ),
+		);
 	};
+	DataViews.Search = () =>
+		createElement( 'div', { 'data-testid': 'native-search' } );
+	DataViews.Filters = () =>
+		createElement( 'div', { 'data-testid': 'native-filters' } );
+	DataViews.Pagination = () =>
+		createElement( 'div', { 'data-testid': 'native-pagination' } );
+	return { DataViews, filterSortAndPaginate };
 } );
 
 function response( data, ok = true ) {
@@ -151,11 +181,24 @@ function setupWordPressMocks() {
 					return String( args[ index ] );
 				} ),
 		},
+		date,
 		components: {
 			Button,
+			Modal: ( { title, children, onRequestClose } ) =>
+				createElement(
+					'div',
+					{ role: 'dialog', 'aria-label': title },
+					createElement(
+						'button',
+						{ onClick: onRequestClose },
+						'Close'
+					),
+					children
+				),
 			Icon: () => createElement( 'span' ),
 			Notice,
 			CheckboxControl,
+			SearchControl: TextControl,
 			Spinner: () => createElement( 'span' ),
 			TextControl,
 			ToggleControl,
@@ -188,6 +231,29 @@ function setupFetch( settingsOverride = null, initialItems = [] ) {
 
 	window.fetch = jest.fn( ( url, options = {} ) => {
 		if ( options.method === 'POST' ) {
+			if ( String( url ).endsWith( '/tokens/revoke' ) ) {
+				const { id } = JSON.parse( options.body );
+				const item = tokenItems.find( ( token ) => token.id === id );
+				if ( ! item ) {
+					return Promise.reject( new Error( 'missing link' ) );
+				}
+				item.status = 'revoked';
+				item.revoked = true;
+				return Promise.resolve( response( { revoked: true } ) );
+			}
+			if ( String( url ).endsWith( '/tokens/delete' ) ) {
+				const { id } = JSON.parse( options.body );
+				const index = tokenItems.findIndex(
+					( token ) => token.id === id
+				);
+				if ( index < 0 ) {
+					return Promise.reject( new Error( 'missing link' ) );
+				}
+				tokenItems.splice( index, 1 );
+				return Promise.resolve(
+					response( { deleted: true, revoked: true } )
+				);
+			}
 			if ( String( url ).endsWith( '/tokens/extend' ) ) {
 				const { id } = JSON.parse( options.body );
 				const item = tokenItems.find( ( token ) => token.id === id );
@@ -221,16 +287,17 @@ function setupFetch( settingsOverride = null, initialItems = [] ) {
 	return { posts, initialSettings };
 }
 
-async function mountSettingsApp( initialSettings ) {
+async function mountSettingsApp( initialSettings, dateSettings = {} ) {
 	document.body.innerHTML = '<div id="previewshare-settings-app"></div>';
-	window.previewshare_settings = {
+	Object.assign( window.previewshare_settings, {
 		version: '1.1.0',
 		plugin_icons_url:
 			'/wp-content/plugins/previewshare/assets/images/plugins/',
 		rest_url: '/wp-json/previewshare/v1',
 		nonce: 'test-nonce',
 		settings: initialSettings,
-	};
+		date_settings: dateSettings,
+	} );
 
 	await act( async () => {
 		document.dispatchEvent( new Event( 'DOMContentLoaded' ) );
@@ -264,6 +331,16 @@ beforeAll( () => {
 
 beforeEach( () => {
 	jest.useFakeTimers();
+	window.history.replaceState( null, '', '/' );
+	date.setSettings( {
+		...date.getSettings(),
+		formats: {
+			...date.getSettings().formats,
+			date: 'F j, Y',
+			time: 'g:i a',
+		},
+		timezone: { ...date.getSettings().timezone, string: 'UTC', offset: 0 },
+	} );
 } );
 
 afterEach( () => {
@@ -273,9 +350,299 @@ afterEach( () => {
 	document.body.innerHTML = '';
 	jest.useRealTimers();
 	delete window.matchMedia;
+	window.wp.element.useInsertionEffect = element.useInsertionEffect;
 } );
 
 describe( 'PreviewShare responsive inventory', () => {
+	it( 'combines and clears status, content type, and search in the older runtime fallback', async () => {
+		window.wp.element.useInsertionEffect = undefined;
+		const expiresAt = Math.floor( Date.now() / 1000 ) + 100000;
+		const { initialSettings } = setupFetch( null, [
+			{
+				id: 'active-post',
+				post_type: 'post',
+				post_title: 'Alpha post',
+				status: 'active',
+				expires_at: expiresAt,
+			},
+			{
+				id: 'active-page',
+				post_type: 'page',
+				post_title: 'Alpha page',
+				status: 'active',
+				expires_at: expiresAt,
+			},
+			{
+				id: 'expired-page',
+				post_type: 'page',
+				post_title: 'Old alpha page',
+				status: 'expired',
+				expires_at: expiresAt - 86400,
+			},
+			{
+				id: 'other-page',
+				post_type: 'page',
+				post_title: 'Beta page',
+				status: 'active',
+				expires_at: expiresAt,
+			},
+		] );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		expect(
+			document.querySelector( '.previewshare-dataviews' )
+		).toBeNull();
+		const rows = () =>
+			Array.from(
+				document.querySelectorAll(
+					'.previewshare-legacy-link-table tbody tr'
+				)
+			).map( ( row ) => row.textContent );
+		const filterInput = ( group, label ) => {
+			const fieldset = Array.from(
+				document.querySelectorAll(
+					'.previewshare-legacy-toolbar fieldset'
+				)
+			).find(
+				( item ) => item.querySelector( 'legend' ).textContent === group
+			);
+			return fieldset.querySelector(
+				'input[aria-label="' + label + '"]'
+			);
+		};
+		expect( rows() ).toHaveLength( 4 );
+		await act( async () => {
+			Simulate.change( filterInput( 'Status', 'Active' ), {
+				target: { checked: true },
+			} );
+			Simulate.change( filterInput( 'Content type', 'Page' ), {
+				target: { checked: true },
+			} );
+			Simulate.change( findInput( 'Search preview links' ), {
+				target: { value: 'alpha' },
+			} );
+			await flushPromises();
+		} );
+		expect( rows() ).toHaveLength( 1 );
+		expect( rows()[ 0 ] ).toContain( 'Alpha page' );
+		await act( async () => {
+			Simulate.change( filterInput( 'Content type', 'Page' ), {
+				target: { checked: false },
+			} );
+			await flushPromises();
+		} );
+		expect( rows() ).toHaveLength( 2 );
+		await act( async () => {
+			Simulate.change( filterInput( 'Status', 'Active' ), {
+				target: { checked: false },
+			} );
+			await flushPromises();
+		} );
+		expect( rows() ).toHaveLength( 3 );
+		await act( async () => {
+			Simulate.change( findInput( 'Search preview links' ), {
+				target: { value: '' },
+			} );
+			await flushPromises();
+		} );
+		expect( rows() ).toHaveLength( 4 );
+	} );
+
+	it.each( [ false, true ] )(
+		'combines native status and content-type filters in compact mode %s',
+		async ( compact ) => {
+			window.matchMedia = jest.fn( () => ( {
+				matches: compact,
+				addEventListener: jest.fn(),
+				removeEventListener: jest.fn(),
+			} ) );
+			const expiresAt = Math.floor( Date.now() / 1000 ) + 3600;
+			const { initialSettings } = setupFetch( null, [
+				{
+					id: 'post-link',
+					post_id: 42,
+					post_type: 'post',
+					post_title: 'Post review',
+					status: 'active',
+					expires_at: expiresAt,
+				},
+				{
+					id: 'page-link',
+					post_id: 43,
+					post_type: 'page',
+					post_title: 'Page review',
+					status: 'active',
+					expires_at: expiresAt,
+				},
+				{
+					id: 'expired-page',
+					post_id: 44,
+					post_type: 'page',
+					post_title: 'Old page review',
+					status: 'expired',
+					expires_at: expiresAt - 86400,
+				},
+			] );
+			await mountSettingsApp( initialSettings );
+			await act( async () => {
+				findButton( 'Preview links' ).click();
+				await flushPromises();
+			} );
+			const statusField = window.__previewshareDataViewsProps.fields.find(
+				( field ) => field.id === 'status'
+			);
+			expect( statusField.filterBy ).toEqual( {
+				operators: [ 'isAny' ],
+				isPrimary: true,
+			} );
+			expect(
+				statusField.elements.map( ( option ) => option.value )
+			).toEqual( [ 'active', 'expiring_soon', 'expired', 'revoked' ] );
+			await act( async () => {
+				window.__previewshareDataViewsProps.onChangeView( {
+					...window.__previewshareDataViewsProps.view,
+					filters: [
+						{
+							field: 'status',
+							operator: 'isAny',
+							value: [ 'expiring_soon' ],
+						},
+						{
+							field: 'post_type',
+							operator: 'isAny',
+							value: [ 'page' ],
+						},
+					],
+				} );
+				await flushPromises();
+			} );
+			expect(
+				window.__previewshareDataViewsProps.data.map(
+					( item ) => item.id
+				)
+			).toEqual( [ 'page-link' ] );
+			expect( document.body.textContent ).toContain( 'Page review' );
+			expect( document.body.textContent ).toContain( '#43' );
+			expect( document.body.textContent ).not.toContain( 'Post review' );
+			expect( document.body.textContent ).not.toContain(
+				'Old page review'
+			);
+			expect( document.body.textContent ).not.toContain( 'post - ID' );
+			expect(
+				document.querySelector( '.previewshare-link-quick-filters' )
+			).toBeNull();
+		}
+	);
+
+	it.each( [
+		[
+			false,
+			'd/m/Y',
+			'H:i',
+			'Asia/Kolkata',
+			'15/11/2023 03:43',
+			'15/11/2023 04:43',
+		],
+		[
+			true,
+			'd/m/Y',
+			'H:i',
+			'Asia/Kolkata',
+			'15/11/2023 03:43',
+			'15/11/2023 04:43',
+		],
+		[
+			false,
+			'Y-m-d',
+			'g:i a',
+			'America/New_York',
+			'2023-11-14 5:13 pm',
+			'2023-11-14 6:13 pm',
+		],
+		[
+			true,
+			'Y-m-d',
+			'g:i a',
+			'America/New_York',
+			'2023-11-14 5:13 pm',
+			'2023-11-14 6:13 pm',
+		],
+	] )(
+		'uses site date/time formats and timezone in compact mode %s (%s %s, %s)',
+		async (
+			compact,
+			dateFormat,
+			timeFormat,
+			timezone,
+			viewed,
+			expires
+		) => {
+			window.matchMedia = jest.fn( () => ( {
+				matches: compact,
+				addEventListener: jest.fn(),
+				removeEventListener: jest.fn(),
+			} ) );
+			date.setSettings( {
+				...date.getSettings(),
+				formats: {
+					...date.getSettings().formats,
+					date: dateFormat,
+					time: timeFormat,
+				},
+				timezone: { ...date.getSettings().timezone, string: timezone },
+			} );
+			const { initialSettings } = setupFetch( null, [
+				{
+					id: 'dated-link',
+					post_id: 42,
+					post_title: 'Review draft',
+					status: 'expired',
+					last_viewed_at: 1700000000,
+					expires_at: 1700003600,
+					created_at: 1700000000,
+				},
+			] );
+			await mountSettingsApp( initialSettings, {
+				date_format: dateFormat,
+				time_format: timeFormat,
+			} );
+			await act( async () => {
+				findButton( 'Preview links' ).click();
+				await flushPromises();
+			} );
+			expect( document.body.textContent ).toContain( viewed );
+			expect( document.body.textContent ).toContain( expires );
+			expect( document.body.textContent ).toContain( '#42' );
+			const created = window.__previewshareDataViewsProps.fields.find(
+				( field ) => field.id === 'created_at'
+			);
+			expect(
+				created.render( { item: { created_at: 1700000000 } } )
+			).toBe( viewed );
+		}
+	);
+
+	it( 'keeps Never for absent or invalid timestamps', async () => {
+		const { initialSettings } = setupFetch( null, [
+			{
+				id: 'undated-link',
+				post_id: 42,
+				status: 'active',
+				expires_at: null,
+				last_viewed_at: 'invalid',
+			},
+		] );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		expect( document.body.textContent.match( /Never/g ) ).toHaveLength( 2 );
+	} );
+
 	it( 'exposes every link detail when a modern screen becomes narrow', async () => {
 		let narrow = false;
 		let onViewportChange;
@@ -319,6 +686,12 @@ describe( 'PreviewShare responsive inventory', () => {
 		} );
 		expect(
 			document.querySelector( '.previewshare-dataviews' )
+		).not.toBeNull();
+		expect(
+			document.querySelector( '[data-testid="native-filters"]' )
+		).not.toBeNull();
+		expect(
+			document.querySelector( '.previewshare-legacy-toolbar' )
 		).toBeNull();
 		const row = document.querySelector(
 			'.previewshare-legacy-link-table tbody tr'
@@ -340,7 +713,7 @@ describe( 'PreviewShare responsive inventory', () => {
 		).toBe( '#42' );
 		expect( row.textContent ).toContain( 'Client review' );
 		expect( document.body.textContent ).toContain(
-			'1 link in this site inventory.'
+			'Manage preview links, monitor views and expiry, and revoke access when a review is complete.'
 		);
 		expect( findButton( 'Revoke link' ) ).toBeDefined();
 	} );
@@ -439,10 +812,14 @@ describe( 'PreviewShare responsive inventory', () => {
 				.querySelector( '.previewshare-legacy-link-table' )
 				.getAttribute( 'aria-label' )
 		).toBe( 'Preview link inventory, sorted by Content ascending' );
-		expect( findInput( 'Expired' ).checked ).toBe( true );
-		expect( findInput( 'Revoked' ).checked ).toBe( true );
+		expect(
+			window.__previewshareDataViewsProps.view.filters[ 0 ].value
+		).toEqual( [ 'expired', 'revoked' ] );
 		await act( async () => {
-			findButton( 'Next' ).click();
+			window.__previewshareDataViewsProps.onChangeView( {
+				...window.__previewshareDataViewsProps.view,
+				page: 2,
+			} );
 			await flushPromises();
 		} );
 		expect(
@@ -534,8 +911,9 @@ describe( 'PreviewShare responsive inventory', () => {
 		expect( rows ).toHaveLength( 1 );
 		expect( rows[ 0 ].textContent ).toContain( 'Active link' );
 		expect( rows[ 0 ].textContent ).not.toContain( 'Expiring link' );
-		expect( findInput( 'Active' ).checked ).toBe( true );
-		expect( findInput( 'Expiring soon' ).checked ).toBe( false );
+		expect(
+			window.__previewshareDataViewsProps.view.filters[ 0 ].value
+		).toEqual( [ 'active' ] );
 		await act( async () => {
 			narrow = false;
 			onViewportChange();
@@ -580,9 +958,10 @@ describe( 'PreviewShare responsive inventory', () => {
 			await flushPromises();
 		} );
 		await act( async () => {
-			findInput( 'Search preview links' ).value =
-				'token-id-search-must-not-match';
-			Simulate.change( findInput( 'Search preview links' ) );
+			window.__previewshareDataViewsProps.onChangeView( {
+				...window.__previewshareDataViewsProps.view,
+				search: 'token-id-search-must-not-match',
+			} );
 			await flushPromises();
 		} );
 		expect(
@@ -591,8 +970,10 @@ describe( 'PreviewShare responsive inventory', () => {
 			)
 		).toHaveLength( 0 );
 		await act( async () => {
-			findInput( 'Search preview links' ).value = 'soren';
-			Simulate.change( findInput( 'Search preview links' ) );
+			window.__previewshareDataViewsProps.onChangeView( {
+				...window.__previewshareDataViewsProps.view,
+				search: 'soren',
+			} );
 			await flushPromises();
 		} );
 		expect(
@@ -610,8 +991,368 @@ describe( 'PreviewShare responsive inventory', () => {
 	} );
 } );
 
+describe( 'PreviewShare inventory row actions', () => {
+	const links = () => [
+		{
+			id: 'selected-link',
+			post_id: 42,
+			post_title: 'Review draft',
+			label: 'Client review',
+			status: 'expired',
+			expires_at: 1700000000,
+		},
+		{
+			id: 'sibling-link',
+			post_id: 42,
+			post_title: 'Review draft',
+			label: 'Legal approval',
+			status: 'active',
+			expires_at: null,
+		},
+	];
+	const dialogButton = ( label ) =>
+		Array.from(
+			document.querySelectorAll( '[role="dialog"] button' )
+		).find( ( button ) => button.textContent === label );
+	async function openInventory( compact ) {
+		window.matchMedia = jest.fn( () => ( {
+			matches: compact,
+			addEventListener: jest.fn(),
+			removeEventListener: jest.fn(),
+		} ) );
+		const { initialSettings } = setupFetch( null, links() );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+	}
+	async function invokeAction( actionId, compact ) {
+		await act( async () => {
+			if ( compact ) {
+				findButton(
+					actionId === 'revoke' ? 'Revoke link' : 'Delete link'
+				).click();
+			} else {
+				window.__previewshareDataViewsProps.actions
+					.find( ( action ) => action.id === actionId )
+					.callback( [ links()[ 0 ] ] );
+			}
+			await flushPromises();
+		} );
+	}
+	it.each( [ false, true ] )(
+		'revokes the selected expired link and retains its entry in compact mode %s',
+		async ( compact ) => {
+			await openInventory( compact );
+			const revoke = window.__previewshareDataViewsProps.actions.find(
+				( action ) => action.id === 'revoke'
+			);
+			expect( revoke.isEligible( links()[ 0 ] ) ).toBe( true );
+			expect( revoke.isEligible( { status: 'revoked' } ) ).toBe( false );
+			await invokeAction( 'revoke', compact );
+			const data = window.__previewshareDataViewsProps.data;
+			expect( data ).toHaveLength( 2 );
+			expect(
+				data.find( ( item ) => item.id === 'selected-link' ).status
+			).toBe( 'revoked' );
+			expect(
+				data.find( ( item ) => item.id === 'sibling-link' ).status
+			).toBe( 'active' );
+			const request = window.fetch.mock.calls.find( ( [ url ] ) =>
+				String( url ).endsWith( '/tokens/revoke' )
+			);
+			expect( JSON.parse( request[ 1 ].body ) ).toEqual( {
+				id: 'selected-link',
+			} );
+			expect( request[ 1 ].headers[ 'X-WP-Nonce' ] ).toBe( 'test-nonce' );
+			expect( document.body.textContent ).toContain(
+				'Preview link revoked.'
+			);
+		}
+	);
+	it.each( [ false, true ] )(
+		'requires confirmation and deletes only the chosen entry in compact mode %s',
+		async ( compact ) => {
+			await openInventory( compact );
+			await invokeAction( 'delete', compact );
+			expect(
+				document.querySelector( '[role="dialog"]' ).textContent
+			).toContain( 'permanently remove its entry' );
+			expect(
+				window.fetch.mock.calls.filter(
+					( [ , options ] ) => options.method === 'POST'
+				)
+			).toHaveLength( 0 );
+			await act( async () => {
+				dialogButton( 'Cancel' ).click();
+				await flushPromises();
+			} );
+			expect( document.querySelector( '[role="dialog"]' ) ).toBeNull();
+			expect( window.__previewshareDataViewsProps.data ).toHaveLength(
+				2
+			);
+			await invokeAction( 'delete', compact );
+			await act( async () => {
+				dialogButton( 'Delete link' ).click();
+				await flushPromises();
+			} );
+			expect( document.querySelector( '[role="dialog"]' ) ).toBeNull();
+			expect(
+				window.__previewshareDataViewsProps.data.map(
+					( item ) => item.id
+				)
+			).toEqual( [ 'sibling-link' ] );
+			expect( window.__previewshareDataViewsProps.view.page ).toBe( 1 );
+			const request = window.fetch.mock.calls.find( ( [ url ] ) =>
+				String( url ).endsWith( '/tokens/delete' )
+			);
+			expect( JSON.parse( request[ 1 ].body ) ).toEqual( {
+				id: 'selected-link',
+			} );
+			expect( request[ 1 ].headers[ 'X-WP-Nonce' ] ).toBe( 'test-nonce' );
+			expect( document.body.textContent ).toContain(
+				'Preview link revoked and deleted.'
+			);
+		}
+	);
+	it.each( [ 'revoke', 'delete' ] )(
+		'does not claim success or remove the entry after a false %s response',
+		async ( actionId ) => {
+			await openInventory( false );
+			const defaultFetch = window.fetch;
+			window.fetch = jest.fn( ( url, options = {} ) =>
+				String( url ).endsWith( '/tokens/' + actionId )
+					? Promise.resolve(
+							response( { revoked: false, deleted: false } )
+					  )
+					: defaultFetch( url, options )
+			);
+			await invokeAction( actionId, false );
+			if ( actionId === 'delete' ) {
+				await act( async () => {
+					dialogButton( 'Delete link' ).click();
+					await flushPromises();
+				} );
+			}
+			const errorRegion =
+				actionId === 'delete'
+					? document.querySelector( '[role="dialog"]' )
+					: document.body;
+			expect( errorRegion.textContent ).toContain(
+				actionId === 'delete'
+					? 'Preview link could not be deleted. Please try again.'
+					: 'Preview link could not be revoked.'
+			);
+			expect( window.__previewshareDataViewsProps.data ).toHaveLength(
+				2
+			);
+			expect(
+				window.__previewshareDataViewsProps.data.find(
+					( item ) => item.id === 'selected-link'
+				).status
+			).toBe( 'expired' );
+			expect( document.body.textContent ).not.toContain(
+				'Preview link revoked.'
+			);
+			expect( document.body.textContent ).not.toContain(
+				'Preview link revoked and deleted.'
+			);
+		}
+	);
+	it( 'prevents duplicate deletion and modal dismissal while the request is pending', async () => {
+		await openInventory( false );
+		const defaultFetch = window.fetch;
+		const request = deferred();
+		window.fetch = jest.fn( ( url, options = {} ) =>
+			String( url ).endsWith( '/tokens/delete' )
+				? request.promise
+				: defaultFetch( url, options )
+		);
+		await invokeAction( 'delete', false );
+		await act( async () => {
+			dialogButton( 'Delete link' ).click();
+			await flushPromises();
+		} );
+		expect( dialogButton( 'Delete link' ).disabled ).toBe( true );
+		expect( dialogButton( 'Cancel' ).disabled ).toBe( true );
+		await act( async () => {
+			dialogButton( 'Delete link' ).click();
+			dialogButton( 'Close' ).click();
+			await flushPromises();
+		} );
+		expect(
+			window.fetch.mock.calls.filter( ( [ url ] ) =>
+				String( url ).endsWith( '/tokens/delete' )
+			)
+		).toHaveLength( 1 );
+		expect( document.querySelector( '[role="dialog"]' ) ).not.toBeNull();
+		await act( async () => {
+			request.resolve( response( {}, false ) );
+			await flushPromises();
+		} );
+		expect( dialogButton( 'Delete link' ).disabled ).toBe( false );
+		expect(
+			document.querySelector( '[role="dialog"]' ).textContent
+		).toContain( 'could not be deleted' );
+	} );
+} );
+
+describe( 'PreviewShare tab navigation', () => {
+	it.each( [
+		[ 'Overview', 'overview' ],
+		[ 'Preview links', 'previews' ],
+		[ 'Content types', 'content-types' ],
+		[ 'Changelog', 'changelog' ],
+		[ 'More plugins', 'more-plugins' ],
+	] )(
+		'restores %s after remounting at the same URL',
+		async ( label, tab ) => {
+			window.history.replaceState(
+				{ retained: true },
+				'',
+				'/wp-admin/options-general.php?page=previewshare_settings&other=value#anchor'
+			);
+			const { initialSettings } = setupFetch();
+			await mountSettingsApp( initialSettings );
+			await act( async () => {
+				findButton( label ).click();
+				await flushPromises();
+			} );
+			const url = new URL( window.location.href );
+			expect( url.searchParams.get( 'tab' ) ).toBe( tab );
+			expect( url.searchParams.get( 'page' ) ).toBe(
+				'previewshare_settings'
+			);
+			expect( url.searchParams.get( 'other' ) ).toBe( 'value' );
+			expect( url.hash ).toBe( '#anchor' );
+			expect( window.history.state ).toEqual( { retained: true } );
+			await act( async () => window.__previewshareTestUnmount() );
+			await mountSettingsApp( initialSettings );
+			expect(
+				document.querySelector( '[role="tab"][aria-selected="true"]' )
+					.textContent
+			).toBe( label );
+		}
+	);
+
+	it( 'falls back to Overview for an unknown tab', async () => {
+		window.history.replaceState( null, '', '/?tab=unknown' );
+		const { initialSettings } = setupFetch();
+		await mountSettingsApp( initialSettings );
+		expect(
+			document.querySelector( '[role="tab"][aria-selected="true"]' )
+				.textContent
+		).toBe( 'Overview' );
+		expect(
+			new URL( window.location.href ).searchParams.get( 'tab' )
+		).toBe( 'overview' );
+	} );
+
+	it( 'keeps keyboard and browser-history navigation synchronized with the URL', async () => {
+		const { initialSettings } = setupFetch();
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			Simulate.keyDown( findButton( 'Overview' ), { key: 'ArrowRight' } );
+			await flushPromises();
+		} );
+		expect(
+			new URL( window.location.href ).searchParams.get( 'tab' )
+		).toBe( 'previews' );
+		await act( async () => {
+			window.history.replaceState( null, '', '/?tab=content-types' );
+			window.dispatchEvent( new window.PopStateEvent( 'popstate' ) );
+			await flushPromises();
+		} );
+		expect(
+			document.querySelector( '[role="tab"][aria-selected="true"]' )
+				.textContent
+		).toBe( 'Content types' );
+	} );
+} );
+
+describe( 'PreviewShare content type checklist', () => {
+	it( 'autosaves checkbox changes and provides a retry after failure', async () => {
+		const { initialSettings, posts } = setupFetch();
+		await mountSettingsApp( initialSettings );
+		await act( async () => findButton( 'Content types' ).click() );
+		expect( findInput( 'Search content types' ) ).toBeNull();
+		expect( findButton( 'Save changes' ) ).toBeUndefined();
+		await act( async () => {
+			Simulate.change( findInput( 'Page' ), {
+				target: { checked: true },
+			} );
+			jest.advanceTimersByTime( 450 );
+			await flushPromises();
+		} );
+		expect( posts[ 0 ].body.post_types ).toEqual( [ 'post', 'page' ] );
+		await act( async () => {
+			posts[ 0 ].request.resolve( response( {}, false ) );
+			await flushPromises();
+		} );
+		expect( findInput( 'Page' ).checked ).toBe( true );
+		expect( findButton( 'Retry save' ) ).toBeDefined();
+		await act( async () => {
+			findButton( 'Retry save' ).click();
+			await flushPromises();
+		} );
+		expect( posts[ 1 ].body.post_types ).toEqual( [ 'post', 'page' ] );
+		await act( async () => {
+			posts[ 1 ].request.resolve(
+				response( {
+					...initialSettings,
+					post_types: [ 'post', 'page' ],
+				} )
+			);
+			await flushPromises();
+		} );
+		expect( findButton( 'Retry save' ) ).toBeUndefined();
+		expect(
+			document.querySelector( '.previewshare-save-state' ).textContent
+		).toContain( 'Saved' );
+	} );
+
+	it( 'disambiguates duplicate labels and searches longer lists without changing selections', async () => {
+		const { initialSettings } = setupFetch();
+		initialSettings.available_post_types = {
+			post: 'Post',
+			page: 'Page',
+			first_case: 'Case Study',
+			second_case: 'Case Study',
+			product: 'Product',
+			service: 'Service',
+			note: 'Note',
+		};
+		await mountSettingsApp( initialSettings );
+		await act( async () => findButton( 'Content types' ).click() );
+		expect( findInput( 'Case Study (first_case)' ) ).not.toBeNull();
+		expect( findInput( 'Case Study (second_case)' ) ).not.toBeNull();
+		await act( async () => {
+			Simulate.change( findInput( 'Search content types' ), {
+				target: { value: 'second_case' },
+			} );
+		} );
+		expect( findInput( 'Case Study (first_case)' ) ).toBeNull();
+		expect( findInput( 'Case Study (second_case)' ) ).not.toBeNull();
+		await act( async () => {
+			Simulate.change( findInput( 'Search content types' ), {
+				target: { value: 'nothing matches' },
+			} );
+		} );
+		expect( document.body.textContent ).toContain(
+			'No matching content types found.'
+		);
+		await act( async () => {
+			Simulate.change( findInput( 'Search content types' ), {
+				target: { value: '' },
+			} );
+		} );
+		expect( findInput( 'Post' ).checked ).toBe( true );
+	} );
+} );
+
 describe( 'PreviewShare settings autosave', () => {
-	it( 'shows restore defaults only on tabs that contain settings', async () => {
+	it( 'keeps the global restore action on Overview', async () => {
 		const { initialSettings } = setupFetch();
 		await mountSettingsApp( initialSettings );
 
@@ -635,7 +1376,7 @@ describe( 'PreviewShare settings autosave', () => {
 			findButton( 'Content types' ).click();
 			await flushPromises();
 		} );
-		expect( findButton( 'Restore defaults' ) ).toBeDefined();
+		expect( findButton( 'Restore defaults' ) ).toBeUndefined();
 
 		await act( async () => {
 			findButton( 'Changelog' ).click();
@@ -1129,14 +1870,20 @@ describe( 'PreviewShare expiring-link management', () => {
 			'.previewshare-legacy-link-table button[aria-label^="Extend"]';
 		expectExtendNames( compactSelector );
 		await act( async () => {
-			findInput( 'Search preview links' ).value = 'Other draft';
-			Simulate.change( findInput( 'Search preview links' ) );
+			window.__previewshareDataViewsProps.onChangeView( {
+				...window.__previewshareDataViewsProps.view,
+				search: 'Other draft',
+				page: 1,
+			} );
 			await flushPromises();
 		} );
 		expectExtendNames( compactSelector, [ expectedNames[ 2 ] ] );
 		await act( async () => {
-			findInput( 'Search preview links' ).value = '';
-			Simulate.change( findInput( 'Search preview links' ) );
+			window.__previewshareDataViewsProps.onChangeView( {
+				...window.__previewshareDataViewsProps.view,
+				search: '',
+				page: 1,
+			} );
 			await flushPromises();
 		} );
 		await act( async () => {
@@ -1148,7 +1895,10 @@ describe( 'PreviewShare expiring-link management', () => {
 		} );
 		expectExtendNames( compactSelector, [ expectedNames[ 0 ] ] );
 		await act( async () => {
-			findButton( 'Next' ).click();
+			window.__previewshareDataViewsProps.onChangeView( {
+				...window.__previewshareDataViewsProps.view,
+				page: 2,
+			} );
 			await flushPromises();
 		} );
 		expectExtendNames( compactSelector, [ expectedNames[ 1 ] ] );
@@ -1196,7 +1946,9 @@ describe( 'PreviewShare expiring-link management', () => {
 		expect(
 			document.querySelector( '.previewshare-status.is-expiring_soon' )
 		).toBeNull();
-		expect( document.body.textContent ).toContain( 'Expiring soon (0)' );
+		expect(
+			document.querySelector( '.previewshare-link-quick-filters' )
+		).toBeNull();
 	} );
 
 	it( 'includes the 24-hour boundary and excludes inactive or later expiries', async () => {
@@ -1217,9 +1969,21 @@ describe( 'PreviewShare expiring-link management', () => {
 			await flushPromises();
 		} );
 
-		expect( findButton( 'Expiring soon (1)' ) ).toBeDefined();
+		const statusField = window.__previewshareDataViewsProps.fields.find(
+			( field ) => field.id === 'status'
+		);
+		expect( statusField.filterBy.isPrimary ).toBe( true );
 		await act( async () => {
-			findButton( 'Expiring soon (1)' ).click();
+			window.__previewshareDataViewsProps.onChangeView( {
+				...window.__previewshareDataViewsProps.view,
+				filters: [
+					{
+						field: 'status',
+						operator: 'isAny',
+						value: [ 'expiring_soon' ],
+					},
+				],
+			} );
 			await flushPromises();
 		} );
 		expect(

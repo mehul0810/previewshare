@@ -44,6 +44,7 @@
 .stylelintignore
 AGENTS.md
 /DESIGN.md
+/CONTRIBUTORS.md
 
 sample-data/wordpress.sql
 sample-data/sample-data.numbers
@@ -85,4 +86,4 @@ vendor/**/phpunit.xml*
 
 /.playwright-cli
 
-/docs/qa
+/docs

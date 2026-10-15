@@ -66,7 +66,7 @@ class Actions {
 		add_action( 'init', [ $this, 'add_rewrite_rules' ] );
 		add_action( 'init', [ $this, 'register_meta_fields' ] );
 		add_action( 'init', [ $this, 'maybe_flush_rewrite_rules' ] );
-		add_action( 'add_meta_boxes', [ $this, 'register_classic_meta_boxes' ] );
+		add_action( 'add_meta_boxes', [ $this, 'register_classic_meta_boxes' ], 10, 2 );
 		add_action( 'admin_post_previewshare_generate_link', [ $this, 'handle_admin_generate_link' ] );
 		add_action( 'admin_post_previewshare_revoke_links', [ $this, 'handle_admin_revoke_links' ] );
 		add_action( 'admin_notices', [ $this, 'render_admin_notice' ] );
@@ -560,11 +560,53 @@ class Actions {
 	/**
 	 * Register Classic Editor meta boxes.
 	 *
+	 * @param string        $post_type Current post type from the Core hook.
+	 * @param \WP_Post|null $post      Current post from the Core hook.
 	 * @return void
 	 */
-	public function register_classic_meta_boxes(): void {
-		foreach ( \previewshare_get_supported_post_types() as $post_type ) {
-			if ( function_exists( 'use_block_editor_for_post_type' ) && use_block_editor_for_post_type( $post_type ) ) {
+	public function register_classic_meta_boxes( $post_type = '', $post = null ): void {
+		// Core supplies the post while firing `add_meta_boxes`. The per-post
+		// editor filter is needed because plugins such as Classic Editor can
+		// choose the editor for an individual post type instance.
+		if ( ! $post instanceof \WP_Post && function_exists( 'get_post' ) ) {
+			$post = get_post();
+		}
+
+		if ( $post instanceof \WP_Post ) {
+			$post_type = (string) $post->post_type;
+		}
+
+		$screen = null;
+		if ( ! $post instanceof \WP_Post && function_exists( 'get_current_screen' ) ) {
+			$screen = get_current_screen();
+			if ( $screen && ! empty( $screen->post_type ) ) {
+				$post_type = (string) $screen->post_type;
+			}
+		}
+
+		$supported_post_types = \previewshare_get_supported_post_types();
+		if ( '' !== $post_type && ! in_array( $post_type, $supported_post_types, true ) ) {
+			return;
+		}
+
+		$has_current_editor = $post instanceof \WP_Post && function_exists( 'use_block_editor_for_post' );
+		if ( $has_current_editor ) {
+			if ( use_block_editor_for_post( $post ) ) {
+				return;
+			}
+		} elseif ( $screen && method_exists( $screen, 'is_block_editor' ) ) {
+			$has_current_editor = true;
+			if ( $screen->is_block_editor() ) {
+				return;
+			}
+		}
+
+		// With the Core hook arguments, register only for the editor currently
+		// being prepared. Keep the no-argument callback behavior for callers that
+		// invoke this public method directly or on older hook implementations.
+		$post_types = '' !== $post_type ? [ $post_type ] : $supported_post_types;
+		foreach ( $post_types as $post_type ) {
+			if ( ! $has_current_editor && function_exists( 'use_block_editor_for_post_type' ) && use_block_editor_for_post_type( $post_type ) ) {
 				continue;
 			}
 
@@ -646,24 +688,44 @@ class Actions {
 		);
 
 		if ( ! ( $result instanceof \WP_Error ) ) {
-			set_transient(
-				'previewshare_admin_notice_' . get_current_user_id(),
-				[
-					'type' => 'success',
-					'url'  => $result['url'],
-				],
-				10 * MINUTE_IN_SECONDS
-			);
-		} else {
-			set_transient(
-				'previewshare_admin_notice_' . get_current_user_id(),
-				[
-					'type'    => 'error',
-					'message' => __( 'Preview link could not be generated.', 'previewshare' ),
-				],
-				10 * MINUTE_IN_SECONDS
-			);
+			nocache_headers();
+			header( 'Cache-Control: private, no-store, max-age=0', true );
+			// Older Core calls nocache_headers() again from wp_die() without private/no-store.
+			$nocache_headers_filter = static function ( array $headers ): array {
+				$cache_control = isset( $headers['Cache-Control'] ) ? (string) $headers['Cache-Control'] : '';
+
+				foreach ( [ 'no-store', 'private' ] as $directive ) {
+					if ( ! preg_match( '/(?:^|,)\s*' . preg_quote( $directive, '/' ) . '\s*(?:,|$)/i', $cache_control ) ) {
+						$cache_control .= ( '' !== $cache_control ? ', ' : '' ) . $directive;
+					}
+				}
+
+				$headers['Cache-Control'] = $cache_control;
+				return $headers;
+			};
+			add_filter( 'nocache_headers', $nocache_headers_filter, 10, 1 );
+
+			$message  = '<p>' . esc_html__( 'Copy this preview link before leaving this page.', 'previewshare' ) . '</p>';
+			$message .= '<p><label for="previewshare-generated-url">' . esc_html__( 'Preview link', 'previewshare' ) . '</label><br />';
+			$message .= '<input id="previewshare-generated-url" type="url" readonly class="large-text code" value="' . esc_attr( $result['url'] ) . '" onclick="this.select();" /></p>';
+			$message .= '<p><a href="' . esc_url( $this->get_admin_redirect_url( $post_id ) ) . '">' . esc_html__( 'Back to previous page', 'previewshare' ) . '</a></p>';
+
+			try {
+				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Every dynamic value in $message is escaped for its HTML context above.
+				wp_die( $message, esc_html__( 'Preview link generated', 'previewshare' ), [ 'response' => 200 ] );
+			} finally {
+				remove_filter( 'nocache_headers', $nocache_headers_filter, 10 );
+			}
 		}
+
+		set_transient(
+			'previewshare_admin_notice_' . get_current_user_id(),
+			[
+				'type'    => 'error',
+				'message' => __( 'Preview link could not be generated.', 'previewshare' ),
+			],
+			10 * MINUTE_IN_SECONDS
+		);
 
 		wp_safe_redirect( $this->get_admin_redirect_url( $post_id ) );
 		exit;
@@ -680,11 +742,19 @@ class Actions {
 		$this->verify_admin_action( 'previewshare_revoke_links', $post_id );
 
 		$revoked = $this->storage->revoke_token_for_post( $post_id );
+		$links   = $revoked ? [] : $this->storage->get_links_for_post( $post_id );
+		$active  = false;
+		foreach ( $links as $link ) {
+			if ( empty( $link['revoked'] ) && ( null === $link['expires_at'] || (int) $link['expires_at'] > time() ) ) {
+				$active = true;
+				break;
+			}
+		}
 		set_transient(
 			'previewshare_admin_notice_' . get_current_user_id(),
 			[
-				'type'    => $revoked ? 'success' : 'info',
-				'message' => $revoked ? __( 'Preview links revoked.', 'previewshare' ) : __( 'No active preview links were found.', 'previewshare' ),
+				'type'    => $revoked ? 'success' : ( $active ? 'error' : 'info' ),
+				'message' => $revoked ? __( 'Preview links revoked.', 'previewshare' ) : ( $active ? __( 'Preview links could not be revoked.', 'previewshare' ) : __( 'No active preview links were found.', 'previewshare' ) ),
 			],
 			10 * MINUTE_IN_SECONDS
 		);
@@ -708,18 +778,15 @@ class Actions {
 
 		delete_transient( $key );
 
+		if ( empty( $notice['message'] ) ) {
+			return;
+		}
+
 		$type  = isset( $notice['type'] ) ? sanitize_key( $notice['type'] ) : 'info';
 		$class = in_array( $type, [ 'success', 'error', 'warning', 'info' ], true ) ? $type : 'info';
 
 		echo '<div class="notice notice-' . esc_attr( $class ) . ' is-dismissible">';
-
-		if ( ! empty( $notice['url'] ) ) {
-			echo '<p><strong>' . esc_html__( 'Preview link generated.', 'previewshare' ) . '</strong></p>';
-			echo '<p><input type="url" readonly class="large-text code" value="' . esc_attr( $notice['url'] ) . '" onclick="this.select();" /></p>';
-		} elseif ( ! empty( $notice['message'] ) ) {
-			echo '<p>' . esc_html( $notice['message'] ) . '</p>';
-		}
-
+		echo '<p>' . esc_html( $notice['message'] ) . '</p>';
 		echo '</div>';
 	}
 
