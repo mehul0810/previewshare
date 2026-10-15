@@ -68,9 +68,11 @@ function previewshare_get_effective_ttl_hours( int $post_id, ?int $ttl_hours = n
  * @param int      $post_id Post ID.
  * @param int|null $ttl_hours Optional requested TTL.
  * @param string   $label Optional link label.
+ * @param bool     $responses_enabled Whether the link accepts reviewer responses.
+ * @param bool     $identity_required Whether reviewer name and email are required.
  * @return array{url:string,token:string,ttl_hours:int}|\WP_Error Preview link data or error.
  */
-function previewshare_generate_preview_link( int $post_id, ?int $ttl_hours = null, string $label = '' ) {
+function previewshare_generate_preview_link( int $post_id, ?int $ttl_hours = null, string $label = '', bool $responses_enabled = false, bool $identity_required = false ) {
 	$token_service = Container::token_service();
 	$storage       = Container::storage();
 
@@ -108,7 +110,7 @@ function previewshare_generate_preview_link( int $post_id, ?int $ttl_hours = nul
 		return new \WP_Error( 'token_generation_failed', 'Preview token could not be generated.', [ 'status' => 500 ] );
 	}
 
-	if ( ! $storage->store_token( $post_id, $token, $ttl, $label ) ) {
+	if ( ! $storage->store_token( $post_id, $token, $ttl, $label, $responses_enabled, $identity_required ) ) {
 		return new \WP_Error( 'token_storage_failed', 'Preview token could not be stored.', [ 'status' => 500 ] );
 	}
 
@@ -378,4 +380,33 @@ function previewshare_get_asset_metadata( string $relative_path, array $extra_de
 		'dependencies' => $dependencies,
 		'version'      => isset( $asset['version'] ) && is_string( $asset['version'] ) ? $asset['version'] : $version,
 	];
+}
+
+/**
+ * Get site date display settings without inheriting an admin user's locale.
+ *
+ * @return array<string,mixed> Formats and translated calendar names for admin UI.
+ */
+function previewshare_get_date_display_settings(): array {
+	global $wp_locale;
+
+	$switched = switch_to_locale( get_locale() );
+	$settings = [
+		'date_format' => get_option( 'date_format' ),
+		'time_format' => get_option( 'time_format' ),
+		'date_l10n'   => [
+			'locale'        => get_locale(),
+			'months'        => array_values( $wp_locale->month ),
+			'monthsShort'   => array_values( $wp_locale->month_abbrev ),
+			'weekdays'      => array_values( $wp_locale->weekday ),
+			'weekdaysShort' => array_values( $wp_locale->weekday_abbrev ),
+			'meridiem'      => (object) $wp_locale->meridiem,
+		],
+	];
+
+	if ( $switched ) {
+		restore_previous_locale();
+	}
+
+	return $settings;
 }

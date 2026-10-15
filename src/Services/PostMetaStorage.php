@@ -18,9 +18,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Tokens are stored as HMAC hashes. Each post can have multiple preview links,
  * while legacy single-token meta remains readable for existing installs.
  *
- * @phpstan-type LinkRecord array{hash:string,label:string,created_at:int,created_by:int,expires_at:int|null,revoked:int,last_viewed_at:int|null,view_count:int}
- * @phpstan-type LinkResponse array{id:string,token_hash:string,label:string,created_at:int,created_by:int,expires_at:int|null,revoked:bool,expired:bool,status:string,last_viewed_at:int|null,view_count:int}
- * @phpstan-type LinkListItem array{id:string,token_hash:string,label:string,created_at:int,created_by:int,expires_at:int|null,revoked:bool,expired:bool,status:string,last_viewed_at:int|null,view_count:int,post_id:int}
+ * @phpstan-type LinkRecord array{hash:string,label:string,created_at:int,created_by:int,expires_at:int|null,revoked:int,last_viewed_at:int|null,view_count:int,responses_enabled:bool,identity_required:bool}
+ * @phpstan-type LinkResponse array{id:string,token_hash:string,label:string,created_at:int,created_by:int,expires_at:int|null,revoked:bool,expired:bool,status:string,last_viewed_at:int|null,view_count:int,responses_enabled:bool,identity_required:bool}
+ * @phpstan-type LinkListItem array{id:string,token_hash:string,label:string,created_at:int,created_by:int,expires_at:int|null,revoked:bool,expired:bool,status:string,last_viewed_at:int|null,view_count:int,responses_enabled:bool,identity_required:bool,post_id:int}
  */
 class PostMetaStorage {
 
@@ -53,12 +53,17 @@ class PostMetaStorage {
 	 * @param string $token Raw token.
 	 * @param int    $ttl_hours Hours until expiration. 0 for no expiry.
 	 * @param string $label Optional link label.
+	 * @param bool   $responses_enabled Whether reviewers may respond.
+	 * @param bool   $identity_required Whether response identity is required.
 	 * @return bool
 	 */
-	public function store_token( int $post_id, string $token, int $ttl_hours = 6, string $label = '' ): bool {
-		$hash                  = $this->token_service->hash( $token );
-		$now                   = time();
-		$expires               = $ttl_hours > 0 ? ( $now + ( $ttl_hours * HOUR_IN_SECONDS ) ) : null;
+	public function store_token( int $post_id, string $token, int $ttl_hours = 6, string $label = '', bool $responses_enabled = false, bool $identity_required = false ): bool {
+		$hash    = $this->token_service->hash( $token );
+		$now     = time();
+		$expires = $ttl_hours > 0 ? ( $now + ( $ttl_hours * HOUR_IN_SECONDS ) ) : null;
+		// The aggregate is a compatibility projection. Authoritative detail rows
+		// keep every sibling visible even when concurrent initialization replaces it.
+		$stored_links          = get_post_meta( $post_id, self::LINKS_META_KEY, true );
 		$links                 = $this->get_links_for_post( $post_id );
 		$current_user          = get_current_user_id();
 		$previous_current_hash = get_post_meta( $post_id, self::CURRENT_HASH_META_KEY, true );
@@ -73,11 +78,15 @@ class PostMetaStorage {
 				'revoked'        => 0,
 				'last_viewed_at' => null,
 				'view_count'     => 0,
+				'responses_enabled' => $responses_enabled,
+				'identity_required' => $responses_enabled && $identity_required,
 			],
 			$hash
 		);
 
-		$result = update_post_meta( $post_id, self::LINKS_META_KEY, $links );
+		$result = is_array( $stored_links )
+			? update_post_meta( $post_id, self::LINKS_META_KEY, $links, $stored_links )
+			: update_post_meta( $post_id, self::LINKS_META_KEY, $links );
 
 		if ( false === $result ) {
 			return false;
@@ -88,15 +97,17 @@ class PostMetaStorage {
 			|| ! $this->update_required_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $links[ $hash ] )
 			|| ! $this->update_required_post_meta( $post_id, self::REVERSE_META_PREFIX . $hash, 1 )
 		) {
-			unset( $links[ $hash ] );
-			update_post_meta( $post_id, self::LINKS_META_KEY, $links );
+			$this->mutate_links_meta( $post_id, $hash, false );
 			delete_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash );
 			delete_post_meta( $post_id, self::REVERSE_META_PREFIX . $hash );
 
-			if ( is_string( $previous_current_hash ) && '' !== $previous_current_hash ) {
-				update_post_meta( $post_id, self::CURRENT_HASH_META_KEY, $previous_current_hash );
-			} else {
-				delete_post_meta( $post_id, self::CURRENT_HASH_META_KEY );
+			$current_hash = get_post_meta( $post_id, self::CURRENT_HASH_META_KEY, true );
+			if ( $current_hash === $hash ) {
+				if ( is_string( $previous_current_hash ) && '' !== $previous_current_hash ) {
+					update_post_meta( $post_id, self::CURRENT_HASH_META_KEY, $previous_current_hash, $hash );
+				} else {
+					delete_post_meta( $post_id, self::CURRENT_HASH_META_KEY, $hash );
+				}
 			}
 
 			return false;
@@ -137,7 +148,8 @@ class PostMetaStorage {
 			return null;
 		}
 
-		$link = $this->get_link_record( $post_id, $hash );
+		$stored_link = get_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, true );
+		$link        = is_array( $stored_link ) ? $this->normalize_link_record( $stored_link, $hash ) : null;
 
 		if ( ! $this->is_link_active( $link ) ) {
 			$this->delete_cache( $hash );
@@ -148,6 +160,100 @@ class PostMetaStorage {
 			'post_id' => $post_id,
 			'hash'    => $hash,
 			'link'    => $link,
+		];
+	}
+
+	/**
+	 * Resolve a link by its stored identifier, including revoked links.
+	 *
+	 * Callers must check the current user's post capability before returning
+	 * this context or its response history.
+	 *
+	 * @param string $id Link identifier.
+	 * @return array{post_id:int,hash:string,link:LinkRecord}|null
+	 */
+	public function get_link_context_by_id( string $id ): ?array {
+		$hash = strtolower( $id );
+		if ( ! preg_match( '/^[a-f0-9]{64}$/', $hash ) ) {
+			return null;
+		}
+
+		$post_id = $this->get_post_id_by_detail_hash( $hash );
+		$link    = $post_id ? $this->get_link_record( $post_id, $hash ) : null;
+		if ( ! $link ) {
+			return null;
+		}
+
+		return [
+			'post_id' => $post_id,
+			'hash'    => $hash,
+			'link'    => $link,
+		];
+	}
+
+	/**
+	 * Inspect a token for diagnostics without exposing token material.
+	 *
+	 * @param string $token Raw token.
+	 * @return array{reason_code:string,post_id:int|null,status:string|null}
+	 */
+	public function get_token_diagnostic( string $token ): array {
+		if ( '' === trim( $token ) ) {
+			return [
+				'reason_code' => 'missing_token',
+				'post_id'     => null,
+				'status'      => null,
+			];
+		}
+
+		$hash    = $this->token_service->hash( $token );
+		$post_id = $this->get_post_id_by_hash( $hash );
+
+		if ( ! $post_id ) {
+			return [
+				'reason_code' => 'token_not_found',
+				'post_id'     => null,
+				'status'      => null,
+			];
+		}
+
+		$stored_link = get_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, true );
+		$link        = is_array( $stored_link ) ? $this->normalize_link_record( $stored_link, $hash ) : null;
+
+		if ( ! $link ) {
+			$this->delete_cache( $hash );
+
+			return [
+				'reason_code' => 'token_not_found',
+				'post_id'     => $post_id,
+				'status'      => null,
+			];
+		}
+
+		if ( ! empty( $link['revoked'] ) ) {
+			$this->delete_cache( $hash );
+
+			return [
+				'reason_code' => 'token_revoked',
+				'post_id'     => $post_id,
+				'status'      => 'revoked',
+			];
+		}
+
+		if ( $this->is_link_expired( $link ) ) {
+			$this->delete_cache( $hash );
+
+			return [
+				'reason_code' => 'token_expired',
+				'post_id'     => $post_id,
+				'status'      => 'expired',
+			];
+		}
+
+		return [
+			'reason_code' => 'active',
+			'post_id'     => $post_id,
+			'status'      => 'active',
 		];
 	}
 
@@ -165,7 +271,13 @@ class PostMetaStorage {
 			return false;
 		}
 
-		$link = $this->get_link_record( $post_id, $hash );
+		// Update only an extant detail row. Never recreate a link after deletion,
+		// and use this exact snapshot as the compare-and-swap precondition.
+		$stored_link = get_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, true );
+		if ( ! is_array( $stored_link ) ) {
+			return false;
+		}
+		$link = $this->normalize_link_record( $stored_link, $hash );
 
 		if ( ! $this->is_link_active( $link ) ) {
 			return false;
@@ -174,7 +286,7 @@ class PostMetaStorage {
 		$link['last_viewed_at'] = time();
 		$link['view_count']     = (int) $link['view_count'] + 1;
 
-		return $this->update_required_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $link );
+		return $this->compare_and_swap_existing_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $stored_link, $link );
 	}
 
 	/**
@@ -189,8 +301,6 @@ class PostMetaStorage {
 		if ( empty( $links ) ) {
 			return null;
 		}
-
-		$links = $this->hydrate_link_detail_records( $post_id, $links );
 
 		uasort(
 			$links,
@@ -243,6 +353,70 @@ class PostMetaStorage {
 	}
 
 	/**
+	 * Return one status-filtered page and its exact total using the serialized record fields.
+	 *
+	 * @param string $status Link status.
+	 * @param int    $per_page Number of rows per page.
+	 * @param int    $page Page number.
+	 * @return array{items:list<LinkListItem>,total:int}
+	 */
+	public function list_tokens_by_status( string $status, int $per_page = 50, int $page = 1 ): array {
+		global $wpdb;
+
+		$per_page          = max( 1, min( 100, $per_page ) );
+		$offset            = ( max( 1, $page ) - 1 ) * $per_page;
+		$like              = $wpdb->esc_like( self::DETAIL_META_PREFIX ) . '%';
+		$created_by_marker = 's:10:"created_by";';
+		$revoked_marker    = 's:7:"revoked";';
+		$expires_marker    = 's:10:"expires_at";';
+		$created_by_offset = "INSTR(REVERSE(pm.meta_value), REVERSE('$created_by_marker'))";
+		$revoked_offset    = "INSTR(REVERSE(pm.meta_value), REVERSE('$revoked_marker'))";
+		$expires_offset    = "INSTR(REVERSE(pm.meta_value), REVERSE('$expires_marker'))";
+		$revoked_tail      = "SUBSTR(pm.meta_value, 1 - $revoked_offset)";
+		$expires_tail      = "SUBSTR(pm.meta_value, 1 - $expires_offset)";
+		$revoked           = "SUBSTR($revoked_tail, 1, INSTR($revoked_tail, ';') - 1)";
+		$expires           = "SUBSTR($expires_tail, 1, INSTR($expires_tail, ';') - 1)";
+		$revoked_present   = "$revoked_offset > 0 AND $revoked_offset < $created_by_offset";
+		$expires_present   = "$expires_offset > 0 AND $expires_offset < $created_by_offset";
+		$now               = time();
+
+		if ( 'revoked' === $status ) {
+			$status_where = "$revoked_present AND CAST(SUBSTRING($revoked, 3) AS UNSIGNED) > 0";
+			$status_args  = [];
+		} elseif ( 'expired' === $status ) {
+			$status_where = "NOT ($revoked_present AND CAST(SUBSTRING($revoked, 3) AS UNSIGNED) > 0) AND $expires_present AND 'N' <> $expires AND CAST(SUBSTRING($expires, 3) AS UNSIGNED) <= %d";
+			$status_args  = [ $now ];
+		} else {
+			$status_where = "NOT ($revoked_present AND CAST(SUBSTRING($revoked, 3) AS UNSIGNED) > 0) AND (NOT $expires_present OR 'N' = $expires OR CAST(SUBSTRING($expires, 3) AS UNSIGNED) > %d)";
+			$status_args  = [ $now ];
+		}
+
+		$base = "FROM {$wpdb->postmeta} pm
+			INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+			WHERE pm.meta_key LIKE %s
+				AND p.post_type <> %s
+				AND ($status_where)";
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- The fixed status clause is generated above; values are passed as placeholders.
+		$count_sql = $wpdb->prepare( "SELECT COUNT(*) $base", ...array_merge( [ $like, 'revision' ], $status_args ) );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter -- SQL fragments are fixed local expressions and all variable values are passed through $wpdb->prepare; exact status count returns one scalar.
+		$total = max( 0, (int) $wpdb->get_var( $count_sql ) );
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- The fixed status clause is generated above; values are passed as placeholders.
+		$list_sql = $wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $base contains fixed SQL expressions; all values are placeholders.
+			"SELECT pm.post_id, pm.meta_key, pm.meta_value $base ORDER BY pm.meta_id DESC LIMIT %d OFFSET %d",
+			...array_merge( [ $like, 'revision' ], $status_args, [ $per_page, $offset ] )
+		);
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter -- SQL fragments are fixed local expressions and all variable values are passed through $wpdb->prepare; the page is bounded.
+		$rows = $wpdb->get_results( $list_sql, ARRAY_A );
+
+		return [
+			'items' => is_array( $rows ) ? $this->format_link_rows( $rows ) : [],
+			'total' => $total,
+		];
+	}
+
+	/**
 	 * Flush object cache entries for tokens that belong to a post.
 	 *
 	 * @param int $post_id Post ID.
@@ -273,8 +447,12 @@ class PostMetaStorage {
 	 * @return bool
 	 */
 	public function revoke_token_by_id( string $id ): bool {
-		$hash    = sanitize_key( $id );
-		$post_id = $this->get_post_id_by_hash( $hash );
+		if ( 1 !== preg_match( '/\\A[a-fA-F0-9]{64}\\z/', $id ) ) {
+			return false;
+		}
+
+		$hash    = strtolower( $id );
+		$post_id = $this->get_post_id_by_detail_hash( $hash );
 
 		if ( ! $post_id ) {
 			return false;
@@ -284,59 +462,224 @@ class PostMetaStorage {
 	}
 
 	/**
-	 * Revoke all current links for a post.
+	 * Revoke a link and remove its inventory and lookup metadata.
+	 *
+	 * Revocation is persisted before cleanup. If cleanup is interrupted, the
+	 * detail record remains revoked and takes precedence over aggregate data.
+	 *
+	 * @param string $id Link ID/hash.
+	 * @return true|\WP_Error
+	 */
+	public function delete_token_by_id( string $id ) {
+		if ( 1 !== preg_match( '/\\A[a-fA-F0-9]{64}\\z/', $id ) ) {
+			return new \WP_Error( 'invalid_id', 'Invalid preview link.', [ 'status' => 400 ] );
+		}
+
+		$hash    = strtolower( $id );
+		$post_id = $this->get_post_id_by_detail_hash( $hash );
+		$link    = $post_id ? $this->get_link_record( $post_id, $hash ) : null;
+		if ( ! $post_id || ! $link ) {
+			return new \WP_Error( 'link_not_found', 'Preview link not found.', [ 'status' => 404 ] );
+		}
+
+		if ( ! $this->revoke_token_hash_for_post( $post_id, $hash ) ) {
+			return new \WP_Error( 'link_revoke_failed', 'Preview access could not be revoked.', [ 'status' => 500 ] );
+		}
+
+		if ( ! $this->mutate_links_meta( $post_id, $hash, false ) ) {
+			return new \WP_Error( 'link_delete_failed', 'Preview link could not be removed from inventory.', [ 'status' => 500 ] );
+		}
+
+		// Keep the revoked detail record until every resolver index is removed.
+		$current_hash = get_post_meta( $post_id, self::CURRENT_HASH_META_KEY, true );
+		if ( is_string( $current_hash ) && strtolower( $current_hash ) === $hash && ! $this->delete_post_meta_value( $post_id, self::CURRENT_HASH_META_KEY, $current_hash ) ) {
+			return new \WP_Error( 'link_delete_failed', 'Preview link could not be removed from inventory.', [ 'status' => 500 ] );
+		}
+		if ( ! $this->delete_post_meta_value( $post_id, self::REVERSE_META_PREFIX . $hash ) ) {
+			return new \WP_Error( 'link_delete_failed', 'Preview link could not be removed from inventory.', [ 'status' => 500 ] );
+		}
+
+		if ( ! $this->delete_post_meta_value( $post_id, self::DETAIL_META_PREFIX . $hash ) ) {
+			return new \WP_Error( 'link_delete_failed', 'Preview link could not be removed from inventory.', [ 'status' => 500 ] );
+		}
+
+		$this->delete_cache( $hash );
+		return true;
+	}
+
+	/**
+	 * Get an opaque preview link context by its inventory identifier.
+	 *
+	 * This returns no raw token material and is intended for authenticated
+	 * management operations that already know the stored identifier.
+	 *
+	 * @param string $id Link ID/hash.
+	 * @return array{id:string,post_id:int,label:string,expires_at:int|null,status:string}|null Link context, or null when not found.
+	 */
+	public function get_token_context_by_id( string $id ): ?array {
+		if ( 1 !== preg_match( '/\\A[a-f0-9]{64}\\z/', $id ) ) {
+			return null;
+		}
+
+		$hash = $id;
+
+		$post_id = $this->get_post_id_by_detail_hash( $hash );
+
+		if ( ! $post_id ) {
+			return null;
+		}
+
+		$stored_link = get_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, true );
+		$link        = is_array( $stored_link ) ? $this->normalize_link_record( $stored_link, $hash ) : null;
+
+		if ( ! $link ) {
+			return null;
+		}
+
+		return [
+			'id'         => $hash,
+			'post_id'    => $post_id,
+			'label'      => $link['label'],
+			'expires_at' => $link['expires_at'],
+			'status'     => $this->get_link_status( $link ),
+		];
+	}
+
+	/**
+	 * Extend an active expiring link by 24 hours.
+	 *
+	 * @param string $id Link ID/hash.
+	 * @return array{expires_at:int}|\WP_Error
+	 */
+	public function extend_token_by_id( string $id ) {
+		$hash = sanitize_key( $id );
+		if ( '' === $hash ) {
+			return new \WP_Error( 'invalid_id', 'Invalid preview link.', [ 'status' => 400 ] );
+		}
+
+		$post_id = $this->get_post_id_by_hash( $hash );
+		if ( ! $post_id ) {
+			return new \WP_Error( 'link_not_found', 'Preview link not found.', [ 'status' => 404 ] );
+		}
+
+		$stored_link = get_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, true );
+		$link        = is_array( $stored_link ) ? $this->normalize_link_record( $stored_link, $hash ) : null;
+		if (
+			! $link
+			|| ! $this->is_link_active( $link )
+			|| null === $link['expires_at']
+			|| (int) $link['expires_at'] > time() + DAY_IN_SECONDS
+		) {
+			return new \WP_Error( 'link_not_extendable', 'Only active links expiring within 24 hours can be extended.', [ 'status' => 409 ] );
+		}
+
+		$updated_link = array_merge(
+			$link,
+			[ 'expires_at' => (int) $link['expires_at'] + DAY_IN_SECONDS ]
+		);
+		if ( ! $this->compare_and_swap_existing_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $stored_link, $updated_link ) ) {
+			return new \WP_Error( 'link_update_failed', 'Preview link could not be extended.', [ 'status' => 500 ] );
+		}
+		$this->update_existing_aggregate_link( $post_id, $hash, $updated_link );
+
+		$this->delete_cache( $hash );
+
+		return [ 'expires_at' => (int) $updated_link['expires_at'] ];
+	}
+
+	/**
+	 * Set the response policy for one link without changing its URL or history.
+	 *
+	 * @param string $id Link identifier.
+	 * @param bool   $enabled Whether responses are enabled.
+	 * @param bool   $identity_required Whether both name and email are required.
+	 * @return bool
+	 */
+	public function set_review_policy_by_id( string $id, bool $enabled, bool $identity_required ): bool {
+		$context = $this->get_link_context_by_id( $id );
+		if ( ! $context ) {
+			return false;
+		}
+
+		$post_id       = $context['post_id'];
+		$hash          = $context['hash'];
+		$stored_detail = get_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, true );
+		if ( ! is_array( $stored_detail ) ) {
+			return false;
+		}
+		$updated                      = $this->normalize_link_record( $stored_detail, $hash );
+		$updated['responses_enabled'] = $enabled;
+		$updated['identity_required'] = $enabled && $identity_required;
+		$detail                       = $updated;
+
+		if ( ! $this->compare_and_swap_existing_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $stored_detail, $detail ) ) {
+			return false;
+		}
+		$this->update_existing_aggregate_link( $post_id, $hash, $detail );
+
+		$this->delete_cache( $hash );
+		return true;
+	}
+
+	/**
+	 * Revoke every authoritative link in the initial post snapshot.
+	 *
+	 * A new detail row inserted after that snapshot is a later generation and
+	 * may survive. Existing detail rows are never restored from the aggregate.
 	 *
 	 * @param int $post_id Post ID.
 	 * @return bool True when a token was revoked.
 	 */
 	public function revoke_token_for_post( int $post_id ): bool {
 		$links = $this->get_links_for_post( $post_id );
-
 		if ( empty( $links ) ) {
 			update_post_meta( $post_id, '_previewshare_enabled', false );
 			return false;
 		}
 
-		$changed = false;
-
-		foreach ( $links as $hash => $link ) {
-			if ( empty( $link['revoked'] ) ) {
-				$links[ $hash ]['revoked'] = 1;
-				$changed                   = true;
+		foreach ( array_keys( $links ) as $hash ) {
+			if ( ! $this->revoke_token_hash_for_post( $post_id, $hash ) && is_array( get_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, true ) ) ) {
+				return false;
 			}
-
-			$this->delete_cache( $hash );
-			update_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $links[ $hash ] );
 		}
 
-		update_post_meta( $post_id, self::LINKS_META_KEY, $links );
-		update_post_meta( $post_id, '_previewshare_enabled', false );
+		// Confirm the entire original snapshot is revoked or has since been
+		// deleted. A partial success must never be reported as completion.
+		foreach ( array_keys( $links ) as $hash ) {
+			$stored_link = get_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, true );
+			if ( is_array( $stored_link ) && empty( $this->normalize_link_record( $stored_link, $hash )['revoked'] ) ) {
+				return false;
+			}
+		}
 
-		return $changed;
+		return true;
 	}
 
 	/**
-	 * Return all link records for a post.
+	 * Return the authoritative link snapshot for a post.
+	 *
+	 * The aggregate is only a compatibility projection: initial concurrent
+	 * writes can replace it because WordPress has no unique post-meta key and
+	 * an empty previous value does not constrain update_post_meta(). Enumerate
+	 * detail rows instead, including legacy and previously unlisted links.
 	 *
 	 * @param int $post_id Post ID.
 	 * @return array<string,LinkRecord>
 	 */
 	public function get_links_for_post( int $post_id ): array {
-		$links = get_post_meta( $post_id, self::LINKS_META_KEY, true );
+		// A request-local meta cache may predate another request's generation.
+		wp_cache_delete( $post_id, 'post_meta' );
+		$metadata = get_post_meta( $post_id, '', false );
+		$links    = [];
 
-		if ( ! is_array( $links ) ) {
-			$links = [];
-		}
-
-		$links = $this->normalize_links( $links );
-
-		if ( empty( $links ) ) {
-			$legacy = $this->get_legacy_link_for_post( $post_id );
-
-			if ( $legacy ) {
-				$links[ $legacy['hash'] ] = $legacy;
-				update_post_meta( $post_id, self::LINKS_META_KEY, $links );
-				update_post_meta( $post_id, self::REVERSE_META_PREFIX . $legacy['hash'], 1 );
+		foreach ( is_array( $metadata ) ? $metadata : [] as $key => $values ) {
+			if ( 0 !== strpos( (string) $key, self::DETAIL_META_PREFIX ) || ! is_array( $values ) ) {
+				continue;
+			}
+			$hash   = substr( (string) $key, strlen( self::DETAIL_META_PREFIX ) );
+			$detail = maybe_unserialize( $values[0] ?? null );
+			if ( '' !== $hash && is_array( $detail ) ) {
+				$links[ $hash ] = $this->normalize_link_record( $detail, $hash );
 			}
 		}
 
@@ -351,21 +694,162 @@ class PostMetaStorage {
 	 * @return bool
 	 */
 	private function revoke_token_hash_for_post( int $post_id, string $hash ): bool {
-		$links = $this->get_links_for_post( $post_id );
+		$revoked = false;
+		for ( $attempt = 0; $attempt < 3; $attempt++ ) {
+			$stored_link = get_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, true );
+			if ( ! is_array( $stored_link ) ) {
+				// The row was deleted after the inventory snapshot. It must not be
+				// recreated by a revoke retry; bulk revoke verifies absence separately.
+				return false;
+			}
+			$link = $this->normalize_link_record( $stored_link, $hash );
+			if ( ! empty( $link['revoked'] ) ) {
+				$revoked = true;
+				break;
+			}
 
-		if ( empty( $links[ $hash ] ) ) {
+			$link['revoked'] = 1;
+			if ( $this->compare_and_swap_existing_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $stored_link, $link ) ) {
+				$revoked = true;
+				break;
+			}
+		}
+		if ( ! $revoked ) {
+			$this->delete_cache( $hash );
 			return false;
 		}
 
-		$links[ $hash ]['revoked'] = 1;
-		update_post_meta( $post_id, self::LINKS_META_KEY, $links );
-		update_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $links[ $hash ] );
+		$aggregate_ok = $this->mutate_links_meta( $post_id, $hash, true, $link );
 		$this->delete_cache( $hash );
 
+		$links = $this->get_links_for_post( $post_id );
 		if ( ! $this->has_active_link( $links ) ) {
 			update_post_meta( $post_id, '_previewshare_enabled', false );
 		}
 
+		$stored_detail = $this->get_link_detail_record( $post_id, $hash );
+		return $aggregate_ok || ( $stored_detail && ! empty( $stored_detail['revoked'] ) );
+	}
+
+	/**
+	 * Update the aggregate link map with a compare-and-swap write.
+	 *
+	 * @param int                      $post_id Post ID.
+	 * @param string                   $hash Link hash.
+	 * @param bool                     $revoke Whether to retain and mark the entry revoked.
+	 * @param array<string,mixed>|null $revoked_link Revoked detail record for a revoke.
+	 * @return bool
+	 */
+	private function mutate_links_meta( int $post_id, string $hash, bool $revoke, ?array $revoked_link = null ): bool {
+		for ( $attempt = 0; $attempt < 3; $attempt++ ) {
+			$previous = get_post_meta( $post_id, self::LINKS_META_KEY, true );
+			if ( ! is_array( $previous ) ) {
+				$previous = [];
+			}
+			$current = $previous;
+
+			if ( $revoke ) {
+				if ( ! isset( $current[ $hash ] ) ) {
+					// The detail record already provides the fail-closed access state.
+					return true;
+				}
+				$current[ $hash ] = $revoked_link;
+				$updated          = $current;
+			} else {
+				if ( ! array_key_exists( $hash, $current ) ) {
+					return true;
+				}
+				unset( $current[ $hash ] );
+				$updated = $current;
+			}
+
+			$result = update_post_meta( $post_id, self::LINKS_META_KEY, $updated, $previous );
+			if ( false !== $result || $this->post_meta_value_matches( get_post_meta( $post_id, self::LINKS_META_KEY, true ), $updated ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Delete metadata and verify it is gone when WordPress reports no change.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $key Meta key.
+	 * @param mixed  $previous Optional exact previous value for conditional deletion.
+	 * @return bool
+	 */
+	private function delete_post_meta_value( int $post_id, string $key, $previous = null ): bool {
+		$result  = func_num_args() >= 3
+			? delete_post_meta( $post_id, $key, $previous )
+			: delete_post_meta( $post_id, $key );
+		$current = get_post_meta( $post_id, $key, true );
+		return (bool) $result || '' === $current || ( func_num_args() >= 3 && $current !== $previous );
+	}
+
+	/**
+	 * Synchronize an existing aggregate entry without creating one after deletion.
+	 *
+	 * @param int                 $post_id Post ID.
+	 * @param string              $hash Link hash.
+	 * @param array<string,mixed> $link Updated record.
+	 * @return bool
+	 */
+	private function update_existing_aggregate_link( int $post_id, string $hash, array $link ): bool {
+		for ( $attempt = 0; $attempt < 3; $attempt++ ) {
+			$previous = get_post_meta( $post_id, self::LINKS_META_KEY, true );
+			if ( ! is_array( $previous ) || ! array_key_exists( $hash, $previous ) ) {
+				return true;
+			}
+			$updated          = $previous;
+			$updated[ $hash ] = $link;
+			$result           = update_post_meta( $post_id, self::LINKS_META_KEY, $updated, $previous );
+			if ( false !== $result || $this->post_meta_value_matches( get_post_meta( $post_id, self::LINKS_META_KEY, true ), $updated ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Replace an existing metadata row only if its previous value still matches.
+	 * This intentionally avoids update_post_meta(), which inserts a missing row.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $key Meta key.
+	 * @param mixed  $previous Existing value.
+	 * @param mixed  $value Replacement value.
+	 * @return bool
+	 */
+	private function compare_and_swap_existing_meta( int $post_id, string $key, $previous, $value ): bool {
+		global $wpdb;
+		if ( ! is_object( $wpdb ) || ! isset( $wpdb->postmeta ) || ! method_exists( $wpdb, 'prepare' ) || ! method_exists( $wpdb, 'query' ) ) {
+			return false;
+		}
+
+		$sql = $wpdb->prepare(
+			"UPDATE {$wpdb->postmeta} SET meta_value = %s WHERE post_id = %d AND meta_key = %s AND meta_value = %s",
+			maybe_serialize( $value ),
+			$post_id,
+			$key,
+			maybe_serialize( $previous )
+		);
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.NotPrepared -- Compare-and-swap must update only an extant row; every value is prepared above.
+		$updated = $wpdb->query( $sql );
+		if ( false === $updated ) {
+			return false;
+		}
+		if ( 0 === $updated ) {
+			wp_cache_delete( $post_id, 'post_meta' );
+			$current = get_post_meta( $post_id, $key, true );
+			if ( ! $this->post_meta_value_matches( $current, $value ) ) {
+				return false;
+			}
+		}
+
+		wp_cache_delete( $post_id, 'post_meta' );
 		return true;
 	}
 
@@ -410,6 +894,30 @@ class PostMetaStorage {
 	}
 
 	/**
+	 * Resolve a post ID by detail key across the admin inventory's post domain.
+	 * This lookup is separate from raw-token resolution.
+	 *
+	 * @param string $hash Token hash.
+	 * @return int
+	 */
+	private function get_post_id_by_detail_hash( string $hash ): int {
+		global $wpdb;
+		if ( is_object( $wpdb ) && isset( $wpdb->postmeta, $wpdb->posts ) && method_exists( $wpdb, 'prepare' ) && method_exists( $wpdb, 'get_var' ) ) {
+			$sql = $wpdb->prepare(
+				"SELECT pm.post_id FROM {$wpdb->postmeta} pm
+				INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+				WHERE pm.meta_key = %s AND p.post_type <> %s
+				LIMIT 1",
+				self::DETAIL_META_PREFIX . $hash,
+				'revision'
+			);
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared -- Exact-key recovery is bounded to one identifier and matches the admin inventory domain.
+			return max( 0, (int) $wpdb->get_var( $sql ) );
+		}
+		return 0;
+	}
+
+	/**
 	 * Get a link record by post/hash.
 	 *
 	 * @param int    $post_id Post ID.
@@ -417,19 +925,9 @@ class PostMetaStorage {
 	 * @return LinkRecord|null
 	 */
 	private function get_link_record( int $post_id, string $hash ): ?array {
-		$detail = $this->get_link_detail_record( $post_id, $hash );
-
-		if ( $detail ) {
-			return $detail;
-		}
-
-		$links = $this->get_links_for_post( $post_id );
-
-		if ( ! empty( $links[ $hash ] ) ) {
-			return $links[ $hash ];
-		}
-
-		return null;
+		// Detail metadata is authoritative. An aggregate snapshot can be stale
+		// after deletion and must never restore public preview access.
+		return $this->get_link_detail_record( $post_id, $hash );
 	}
 
 	/**
@@ -447,73 +945,6 @@ class PostMetaStorage {
 		}
 
 		return $this->normalize_link_record( $detail, $hash );
-	}
-
-	/**
-	 * Merge current detail rows into a link collection.
-	 *
-	 * @param int                      $post_id Post ID.
-	 * @param array<string,LinkRecord> $links Link collection.
-	 * @return array<string,LinkRecord>
-	 */
-	private function hydrate_link_detail_records( int $post_id, array $links ): array {
-		foreach ( array_keys( $links ) as $hash ) {
-			$detail = $this->get_link_detail_record( $post_id, $hash );
-
-			if ( $detail ) {
-				$links[ $hash ] = $detail;
-			}
-		}
-
-		return $links;
-	}
-
-	/**
-	 * Get a legacy single-token record.
-	 *
-	 * @param int $post_id Post ID.
-	 * @return LinkRecord|null
-	 */
-	private function get_legacy_link_for_post( int $post_id ): ?array {
-		$hash = get_post_meta( $post_id, self::CURRENT_HASH_META_KEY, true );
-
-		if ( ! is_string( $hash ) || '' === $hash ) {
-			return null;
-		}
-
-		$detail = get_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, true );
-
-		if ( ! is_array( $detail ) ) {
-			return null;
-		}
-
-		return $this->normalize_link_record( $detail, $hash );
-	}
-
-	/**
-	 * Normalize a link collection.
-	 *
-	 * @param array<mixed> $links Raw links.
-	 * @return array<string,LinkRecord>
-	 */
-	private function normalize_links( array $links ): array {
-		$normalized = [];
-
-		foreach ( $links as $hash => $link ) {
-			if ( ! is_array( $link ) ) {
-				continue;
-			}
-
-			$hash = is_string( $hash ) ? $hash : ( $link['hash'] ?? '' );
-
-			if ( ! is_string( $hash ) || '' === $hash ) {
-				continue;
-			}
-
-			$normalized[ $hash ] = $this->normalize_link_record( $link, $hash );
-		}
-
-		return $normalized;
 	}
 
 	/**
@@ -566,6 +997,8 @@ class PostMetaStorage {
 			'revoked'        => ! empty( $link['revoked'] ) ? 1 : 0,
 			'last_viewed_at' => array_key_exists( 'last_viewed_at', $link ) && null !== $link['last_viewed_at'] ? (int) $link['last_viewed_at'] : null,
 			'view_count'     => isset( $link['view_count'] ) ? max( 0, (int) $link['view_count'] ) : 0,
+			'responses_enabled' => ! empty( $link['responses_enabled'] ),
+			'identity_required' => ! empty( $link['responses_enabled'] ) && ! empty( $link['identity_required'] ),
 		];
 	}
 
@@ -589,6 +1022,8 @@ class PostMetaStorage {
 			'status'         => $this->get_link_status( $link ),
 			'last_viewed_at' => $link['last_viewed_at'],
 			'view_count'     => (int) $link['view_count'],
+			'responses_enabled' => $link['responses_enabled'],
+			'identity_required' => $link['identity_required'],
 		];
 	}
 
@@ -664,7 +1099,7 @@ class PostMetaStorage {
 		foreach ( $rows as $row ) {
 			$meta_key = isset( $row['meta_key'] ) ? (string) $row['meta_key'] : '';
 
-			if ( ! str_starts_with( $meta_key, self::DETAIL_META_PREFIX ) ) {
+			if ( 0 !== strpos( $meta_key, self::DETAIL_META_PREFIX ) ) {
 				continue;
 			}
 
@@ -688,6 +1123,8 @@ class PostMetaStorage {
 				'status'         => $item['status'],
 				'last_viewed_at' => $item['last_viewed_at'],
 				'view_count'     => $item['view_count'],
+				'responses_enabled' => $item['responses_enabled'],
+				'identity_required' => $item['identity_required'],
 				'post_id'        => isset( $row['post_id'] ) ? (int) $row['post_id'] : 0,
 			];
 		}

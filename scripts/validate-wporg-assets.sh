@@ -82,6 +82,30 @@ if ! grep -Eq '^== Screenshots ==$' "${README_FILE}"; then
 	exit 1
 fi
 
+readme_tags_line="$(grep -E '^Tags:' "${README_FILE}" || true)"
+
+if [[ -z "${readme_tags_line}" ]]; then
+	echo "readme.txt is missing a Tags header." >&2
+	exit 1
+fi
+
+readme_tag_count="$(
+	php -r '
+		$line = $argv[1];
+		$tags = trim( substr( $line, strlen( "Tags:" ) ) );
+		if ( "" === $tags ) {
+			echo 0;
+			exit;
+		}
+		echo count( array_filter( array_map( "trim", explode( ",", $tags ) ) ) );
+	' "${readme_tags_line}"
+)"
+
+if (( readme_tag_count > 5 )); then
+	echo "readme.txt has ${readme_tag_count} tags; keep WordPress.org tags to 5 or fewer." >&2
+	exit 1
+fi
+
 screenshot_file_count="$(find "${ASSETS_DIR}" -maxdepth 1 -type f -name 'screenshot-[0-9]*.png' | wc -l | tr -d ' ')"
 screenshot_caption_count="$(
 	awk '

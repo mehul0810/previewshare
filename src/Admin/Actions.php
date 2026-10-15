@@ -25,6 +25,15 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Actions {
 
+	private const FAILURE_MISSING_TOKEN      = 'missing_token';
+	private const FAILURE_TOKEN_NOT_FOUND    = 'token_not_found';
+	private const FAILURE_TOKEN_REVOKED      = 'token_revoked';
+	private const FAILURE_TOKEN_EXPIRED      = 'token_expired';
+	private const FAILURE_LINK_DISABLED      = 'link_disabled';
+	private const FAILURE_MISSING_POST       = 'missing_post';
+	private const FAILURE_UNSUPPORTED_POST   = 'unsupported_post_type';
+	private const FAILURE_UNSUPPORTED_STATUS = 'unsupported_post_status';
+
 	/**
 	 * Constructor.
 	 *
@@ -57,7 +66,7 @@ class Actions {
 		add_action( 'init', [ $this, 'add_rewrite_rules' ] );
 		add_action( 'init', [ $this, 'register_meta_fields' ] );
 		add_action( 'init', [ $this, 'maybe_flush_rewrite_rules' ] );
-		add_action( 'add_meta_boxes', [ $this, 'register_classic_meta_boxes' ] );
+		add_action( 'add_meta_boxes', [ $this, 'register_classic_meta_boxes' ], 10, 2 );
 		add_action( 'admin_post_previewshare_generate_link', [ $this, 'handle_admin_generate_link' ] );
 		add_action( 'admin_post_previewshare_revoke_links', [ $this, 'handle_admin_revoke_links' ] );
 		add_action( 'admin_notices', [ $this, 'render_admin_notice' ] );
@@ -65,6 +74,7 @@ class Actions {
 		// Use pre_get_posts to safely alter the main query for preview URLs.
 		add_action( 'pre_get_posts', [ $this, 'maybe_handle_preview_request' ], 1 );
 		add_action( 'send_headers', [ $this, 'send_preview_robots_header' ] );
+		add_action( 'send_headers', [ $this, 'send_preview_cache_headers' ] );
 		add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_preview_bar_styles' ] );
 		add_action( 'wp_body_open', [ $this, 'render_preview_bar' ], 0 );
 		add_action( 'wp_footer', [ $this, 'render_preview_bar' ], 0 );
@@ -85,15 +95,16 @@ class Actions {
 			return;
 		}
 
-		$asset = \previewshare_get_asset_metadata(
+		$asset        = \previewshare_get_asset_metadata(
 			'assets/dist/js/previewshare-admin.min.asset.php',
 			[ 'wp-api-fetch', 'wp-edit-post' ]
 		);
+		$dependencies = array_values( array_unique( array_merge( $asset['dependencies'], [ 'wp-edit-post' ] ) ) );
 
 		wp_enqueue_script(
 			'previewshare-editor',
 			PREVIEWSHARE_PLUGIN_URL . 'assets/dist/js/previewshare-admin.min.js',
-			$asset['dependencies'],
+			$dependencies,
 			$asset['version'],
 			true
 		);
@@ -114,6 +125,7 @@ class Actions {
 				'generate_url' => rest_url( 'previewshare/v1/generate-url' ),
 				'home_url' => home_url(),
 				'post_types' => \previewshare_get_supported_post_types(),
+				'date_settings' => \previewshare_get_date_display_settings(),
 				'nonce'   => wp_create_nonce( 'wp_rest' ),
 			]
 		);
@@ -316,34 +328,44 @@ class Actions {
 			return;
 		}
 
-		$token = get_query_var( 'previewshare_token' );
-		if ( ! $token ) {
+		$token = (string) get_query_var( 'previewshare_token' );
+		if ( '' === $token ) {
 			return;
 		}
 
+		$this->send_preview_cache_headers();
 		$this->send_preview_robots_header();
 
-		$post_id = $this->storage->get_post_id_by_token( $token );
+		$diagnostic = $this->storage->get_token_diagnostic( $token );
+		$post_id    = isset( $diagnostic['post_id'] ) ? (int) $diagnostic['post_id'] : 0;
+
+		if ( self::FAILURE_MISSING_TOKEN === $diagnostic['reason_code'] || self::FAILURE_TOKEN_NOT_FOUND === $diagnostic['reason_code'] ) {
+			$this->fail_preview_request( (string) $diagnostic['reason_code'], $post_id );
+		}
+
+		if ( self::FAILURE_TOKEN_REVOKED === $diagnostic['reason_code'] || self::FAILURE_TOKEN_EXPIRED === $diagnostic['reason_code'] ) {
+			$this->fail_preview_request( (string) $diagnostic['reason_code'], $post_id );
+		}
+
 		if ( ! $post_id ) {
-			wp_die( esc_html__( 'Preview link is invalid or has expired.', 'previewshare' ), '', [ 'response' => 410 ] );
+			$this->fail_preview_request( self::FAILURE_TOKEN_NOT_FOUND );
 		}
 
 		if ( ! get_post_meta( $post_id, '_previewshare_enabled', true ) ) {
-			wp_die( esc_html__( 'Preview link is disabled.', 'previewshare' ), '', [ 'response' => 410 ] );
-		}
-
-		$meta = $this->storage->get_token_meta( $post_id );
-		if ( empty( $meta ) || ! empty( $meta['revoked'] ) || ! empty( $meta['expired'] ) ) {
-			wp_die( esc_html__( 'Preview link is invalid or has expired.', 'previewshare' ), '', [ 'response' => 410 ] );
+			$this->fail_preview_request( self::FAILURE_LINK_DISABLED, $post_id );
 		}
 
 		$post = get_post( $post_id );
 		if ( ! $post ) {
-			wp_die( esc_html__( 'Preview link is invalid or has expired.', 'previewshare' ), '', [ 'response' => 410 ] );
+			$this->fail_preview_request( self::FAILURE_MISSING_POST, $post_id );
 		}
 
-		if ( ! \previewshare_is_supported_post_type( $post->post_type ) || ! \previewshare_is_previewable_post_status( $post->post_status ) ) {
-			wp_die( esc_html__( 'Preview link is not available for this content.', 'previewshare' ), '', [ 'response' => 410 ] );
+		if ( ! \previewshare_is_supported_post_type( $post->post_type ) ) {
+			$this->fail_preview_request( self::FAILURE_UNSUPPORTED_POST, $post_id );
+		}
+
+		if ( ! \previewshare_is_previewable_post_status( $post->post_status ) ) {
+			$this->fail_preview_request( self::FAILURE_UNSUPPORTED_STATUS, $post_id );
 		}
 
 		if ( 'publish' === $post->post_status ) {
@@ -387,6 +409,53 @@ class Actions {
 	}
 
 	/**
+	 * Render a safe public failure screen and emit opt-in diagnostics.
+	 *
+	 * @param string $reason_code Stable internal failure reason.
+	 * @param int    $post_id Optional related post ID when known.
+	 * @return void
+	 */
+	private function fail_preview_request( string $reason_code, int $post_id = 0 ): void {
+		$reason_code = sanitize_key( $reason_code );
+
+		\previewshare_log(
+			'preview_request_failed',
+			[
+				'reason_code' => $reason_code,
+				'post_id'     => $post_id > 0 ? $post_id : null,
+			]
+		);
+
+		/**
+		 * Fires when a public preview request cannot be served.
+		 *
+		 * The raw token and token hash are intentionally omitted.
+		 *
+		 * @param string $reason_code Stable internal failure reason.
+		 * @param int    $post_id Related post ID, or 0 when unknown.
+		 */
+		do_action( 'previewshare_preview_request_failed', $reason_code, $post_id );
+
+		wp_die(
+			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Message HTML is built from escaped translation strings in get_preview_failure_message().
+			$this->get_preview_failure_message(),
+			esc_html__( 'Preview link unavailable', 'previewshare' ),
+			[ 'response' => 410 ]
+		);
+	}
+
+	/**
+	 * Build the anonymous-safe preview failure message.
+	 *
+	 * @return string
+	 */
+	private function get_preview_failure_message(): string {
+		return '<h1>' . esc_html__( 'Preview link unavailable', 'previewshare' ) . '</h1>'
+			. '<p>' . esc_html__( 'This preview link can no longer be opened. It may have expired, been revoked, or no longer match available content.', 'previewshare' ) . '</p>'
+			. '<p>' . esc_html__( 'Please ask the person who sent the link to generate and share a new PreviewShare link.', 'previewshare' ) . '</p>';
+	}
+
+	/**
 	 * REST handler: return token meta for a given post_id.
 	 *
 	 * @param \WP_REST_Request $request Request.
@@ -406,15 +475,68 @@ class Actions {
 		$meta = $this->storage->get_token_meta( $post_id );
 
 		// Also indicate whether the post currently has an indexed token.
-		$has_token = (bool) get_post_meta( $post_id, '_previewshare_token_hash', true );
+		$has_token  = (bool) get_post_meta( $post_id, '_previewshare_token_hash', true );
+		$diagnostic = $this->get_post_recovery_guidance( $post_id, $post, $meta, $has_token );
 
 		return new \WP_REST_Response(
 			[
-				'has_token' => $has_token,
-				'meta' => $meta,
+				'has_token'  => $has_token,
+				'meta'       => $meta,
+				'diagnostic' => $diagnostic,
 			],
 			200
 		);
+	}
+
+	/**
+	 * Get admin/editor recovery guidance for a post's current link state.
+	 *
+	 * @param int                      $post_id Post ID.
+	 * @param \WP_Post                 $post Post object.
+	 * @param array<string,mixed>|null $meta Token meta.
+	 * @param bool                     $has_token Whether an indexed token exists.
+	 * @return array{reason_code:string,message:string,action:string}
+	 */
+	private function get_post_recovery_guidance( int $post_id, \WP_Post $post, ?array $meta, bool $has_token ): array {
+		unset( $post_id );
+
+		if ( ! \previewshare_is_previewable_post_status( $post->post_status ) ) {
+			return [
+				'reason_code' => self::FAILURE_UNSUPPORTED_STATUS,
+				'message'     => __( 'Preview links are unavailable for this content status.', 'previewshare' ),
+				'action'      => __( 'Move the content to a draft, pending, scheduled, private, or published status before generating a link.', 'previewshare' ),
+			];
+		}
+
+		if ( empty( $meta ) || ! $has_token ) {
+			return [
+				'reason_code' => self::FAILURE_TOKEN_NOT_FOUND,
+				'message'     => __( 'No active preview link is available for this content.', 'previewshare' ),
+				'action'      => __( 'Generate a new PreviewShare link and send the new URL to reviewers.', 'previewshare' ),
+			];
+		}
+
+		if ( ! empty( $meta['revoked'] ) ) {
+			return [
+				'reason_code' => self::FAILURE_TOKEN_REVOKED,
+				'message'     => __( 'The latest preview link was revoked.', 'previewshare' ),
+				'action'      => __( 'Generate a new PreviewShare link before sharing this content again.', 'previewshare' ),
+			];
+		}
+
+		if ( ! empty( $meta['expired'] ) ) {
+			return [
+				'reason_code' => self::FAILURE_TOKEN_EXPIRED,
+				'message'     => __( 'The latest preview link has expired.', 'previewshare' ),
+				'action'      => __( 'Generate a new PreviewShare link or increase the expiry time before sharing.', 'previewshare' ),
+			];
+		}
+
+		return [
+			'reason_code' => 'active',
+			'message'     => __( 'Preview links are available for this content.', 'previewshare' ),
+			'action'      => __( 'Copy an active link or generate a fresh one when reviewers need access.', 'previewshare' ),
+		];
 	}
 
 	/**
@@ -438,11 +560,53 @@ class Actions {
 	/**
 	 * Register Classic Editor meta boxes.
 	 *
+	 * @param string        $post_type Current post type from the Core hook.
+	 * @param \WP_Post|null $post      Current post from the Core hook.
 	 * @return void
 	 */
-	public function register_classic_meta_boxes(): void {
-		foreach ( \previewshare_get_supported_post_types() as $post_type ) {
-			if ( function_exists( 'use_block_editor_for_post_type' ) && use_block_editor_for_post_type( $post_type ) ) {
+	public function register_classic_meta_boxes( $post_type = '', $post = null ): void {
+		// Core supplies the post while firing `add_meta_boxes`. The per-post
+		// editor filter is needed because plugins such as Classic Editor can
+		// choose the editor for an individual post type instance.
+		if ( ! $post instanceof \WP_Post && function_exists( 'get_post' ) ) {
+			$post = get_post();
+		}
+
+		if ( $post instanceof \WP_Post ) {
+			$post_type = (string) $post->post_type;
+		}
+
+		$screen = null;
+		if ( ! $post instanceof \WP_Post && function_exists( 'get_current_screen' ) ) {
+			$screen = get_current_screen();
+			if ( $screen && ! empty( $screen->post_type ) ) {
+				$post_type = (string) $screen->post_type;
+			}
+		}
+
+		$supported_post_types = \previewshare_get_supported_post_types();
+		if ( '' !== $post_type && ! in_array( $post_type, $supported_post_types, true ) ) {
+			return;
+		}
+
+		$has_current_editor = $post instanceof \WP_Post && function_exists( 'use_block_editor_for_post' );
+		if ( $has_current_editor ) {
+			if ( use_block_editor_for_post( $post ) ) {
+				return;
+			}
+		} elseif ( $screen && method_exists( $screen, 'is_block_editor' ) ) {
+			$has_current_editor = true;
+			if ( $screen->is_block_editor() ) {
+				return;
+			}
+		}
+
+		// With the Core hook arguments, register only for the editor currently
+		// being prepared. Keep the no-argument callback behavior for callers that
+		// invoke this public method directly or on older hook implementations.
+		$post_types = '' !== $post_type ? [ $post_type ] : $supported_post_types;
+		foreach ( $post_types as $post_type ) {
+			if ( ! $has_current_editor && function_exists( 'use_block_editor_for_post_type' ) && use_block_editor_for_post_type( $post_type ) ) {
 				continue;
 			}
 
@@ -485,6 +649,8 @@ class Actions {
 
 		if ( $active_count > 0 ) {
 			echo '<p><a class="button" href="' . esc_url( $revoke_url ) . '">' . esc_html__( 'Revoke Active Links', 'previewshare' ) . '</a></p>';
+		} elseif ( ! empty( $meta['revoked'] ) || ! empty( $meta['expired'] ) ) {
+			echo '<p class="description">' . esc_html__( 'The latest preview link is no longer usable. Generate a new link before sharing this content again.', 'previewshare' ) . '</p>';
 		}
 	}
 
@@ -522,24 +688,44 @@ class Actions {
 		);
 
 		if ( ! ( $result instanceof \WP_Error ) ) {
-			set_transient(
-				'previewshare_admin_notice_' . get_current_user_id(),
-				[
-					'type' => 'success',
-					'url'  => $result['url'],
-				],
-				10 * MINUTE_IN_SECONDS
-			);
-		} else {
-			set_transient(
-				'previewshare_admin_notice_' . get_current_user_id(),
-				[
-					'type'    => 'error',
-					'message' => __( 'Preview link could not be generated.', 'previewshare' ),
-				],
-				10 * MINUTE_IN_SECONDS
-			);
+			nocache_headers();
+			header( 'Cache-Control: private, no-store, max-age=0', true );
+			// Older Core calls nocache_headers() again from wp_die() without private/no-store.
+			$nocache_headers_filter = static function ( array $headers ): array {
+				$cache_control = isset( $headers['Cache-Control'] ) ? (string) $headers['Cache-Control'] : '';
+
+				foreach ( [ 'no-store', 'private' ] as $directive ) {
+					if ( ! preg_match( '/(?:^|,)\s*' . preg_quote( $directive, '/' ) . '\s*(?:,|$)/i', $cache_control ) ) {
+						$cache_control .= ( '' !== $cache_control ? ', ' : '' ) . $directive;
+					}
+				}
+
+				$headers['Cache-Control'] = $cache_control;
+				return $headers;
+			};
+			add_filter( 'nocache_headers', $nocache_headers_filter, 10, 1 );
+
+			$message  = '<p>' . esc_html__( 'Copy this preview link before leaving this page.', 'previewshare' ) . '</p>';
+			$message .= '<p><label for="previewshare-generated-url">' . esc_html__( 'Preview link', 'previewshare' ) . '</label><br />';
+			$message .= '<input id="previewshare-generated-url" type="url" readonly class="large-text code" value="' . esc_attr( $result['url'] ) . '" onclick="this.select();" /></p>';
+			$message .= '<p><a href="' . esc_url( $this->get_admin_redirect_url( $post_id ) ) . '">' . esc_html__( 'Back to previous page', 'previewshare' ) . '</a></p>';
+
+			try {
+				// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Every dynamic value in $message is escaped for its HTML context above.
+				wp_die( $message, esc_html__( 'Preview link generated', 'previewshare' ), [ 'response' => 200 ] );
+			} finally {
+				remove_filter( 'nocache_headers', $nocache_headers_filter, 10 );
+			}
 		}
+
+		set_transient(
+			'previewshare_admin_notice_' . get_current_user_id(),
+			[
+				'type'    => 'error',
+				'message' => __( 'Preview link could not be generated.', 'previewshare' ),
+			],
+			10 * MINUTE_IN_SECONDS
+		);
 
 		wp_safe_redirect( $this->get_admin_redirect_url( $post_id ) );
 		exit;
@@ -556,11 +742,19 @@ class Actions {
 		$this->verify_admin_action( 'previewshare_revoke_links', $post_id );
 
 		$revoked = $this->storage->revoke_token_for_post( $post_id );
+		$links   = $revoked ? [] : $this->storage->get_links_for_post( $post_id );
+		$active  = false;
+		foreach ( $links as $link ) {
+			if ( empty( $link['revoked'] ) && ( null === $link['expires_at'] || (int) $link['expires_at'] > time() ) ) {
+				$active = true;
+				break;
+			}
+		}
 		set_transient(
 			'previewshare_admin_notice_' . get_current_user_id(),
 			[
-				'type'    => $revoked ? 'success' : 'info',
-				'message' => $revoked ? __( 'Preview links revoked.', 'previewshare' ) : __( 'No active preview links were found.', 'previewshare' ),
+				'type'    => $revoked ? 'success' : ( $active ? 'error' : 'info' ),
+				'message' => $revoked ? __( 'Preview links revoked.', 'previewshare' ) : ( $active ? __( 'Preview links could not be revoked.', 'previewshare' ) : __( 'No active preview links were found.', 'previewshare' ) ),
 			],
 			10 * MINUTE_IN_SECONDS
 		);
@@ -584,18 +778,15 @@ class Actions {
 
 		delete_transient( $key );
 
+		if ( empty( $notice['message'] ) ) {
+			return;
+		}
+
 		$type  = isset( $notice['type'] ) ? sanitize_key( $notice['type'] ) : 'info';
 		$class = in_array( $type, [ 'success', 'error', 'warning', 'info' ], true ) ? $type : 'info';
 
 		echo '<div class="notice notice-' . esc_attr( $class ) . ' is-dismissible">';
-
-		if ( ! empty( $notice['url'] ) ) {
-			echo '<p><strong>' . esc_html__( 'Preview link generated.', 'previewshare' ) . '</strong></p>';
-			echo '<p><input type="url" readonly class="large-text code" value="' . esc_attr( $notice['url'] ) . '" onclick="this.select();" /></p>';
-		} elseif ( ! empty( $notice['message'] ) ) {
-			echo '<p>' . esc_html( $notice['message'] ) . '</p>';
-		}
-
+		echo '<p>' . esc_html( $notice['message'] ) . '</p>';
 		echo '</div>';
 	}
 
@@ -639,6 +830,29 @@ class Actions {
 	}
 
 	/**
+	 * Keep tokenized preview responses out of shared and persistent caches.
+	 *
+	 * @return void
+	 */
+	public function send_preview_cache_headers(): void {
+		if ( ! $this->is_previewshare_request() ) {
+			return;
+		}
+
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- Standard shared cache-bypass flag.
+			define( 'DONOTCACHEPAGE', true );
+		}
+
+		if ( headers_sent() ) {
+			return;
+		}
+
+		nocache_headers();
+		header( 'Cache-Control: private, no-store, max-age=0', true );
+	}
+
+	/**
 	 * Add a body class while preview links are being viewed.
 	 *
 	 * @param string[] $classes Body classes.
@@ -667,6 +881,10 @@ class Actions {
 		wp_register_style( 'previewshare-preview-bar', false, [], $version );
 		wp_enqueue_style( 'previewshare-preview-bar' );
 		wp_add_inline_style( 'previewshare-preview-bar', $this->get_preview_bar_styles() );
+
+		wp_register_script( 'previewshare-preview-bar', false, [], $version, true );
+		wp_enqueue_script( 'previewshare-preview-bar' );
+		wp_add_inline_script( 'previewshare-preview-bar', $this->get_preview_bar_script() );
 	}
 
 	/**
@@ -713,11 +931,7 @@ class Actions {
 	private function get_preview_bar_styles(): string {
 		return '
 html {
-	margin-top: 40px !important;
-}
-
-body.previewshare-preview-active.admin-bar {
-	padding-top: 40px;
+	margin-top: var(--previewshare-preview-bar-offset, 40px) !important;
 }
 
 .previewshare-preview-bar {
@@ -769,6 +983,33 @@ body.admin-bar .previewshare-preview-bar {
 		top: 46px;
 	}
 }
+';
+	}
+
+	/**
+	 * Keep the page offset in sync with the rendered preview bar height.
+	 *
+	 * @return string JavaScript for the preview bar.
+	 */
+	private function get_preview_bar_script(): string {
+		return '
+(function () {
+	var bar = document.querySelector(".previewshare-preview-bar");
+	if (!bar) {
+		return;
+	}
+
+	function updateOffset() {
+		var offset = Math.max(40, Math.ceil(bar.getBoundingClientRect().bottom));
+		document.documentElement.style.setProperty("--previewshare-preview-bar-offset", offset + "px");
+	}
+
+	updateOffset();
+	window.addEventListener("resize", updateOffset);
+	if (window.ResizeObserver) {
+		new ResizeObserver(updateOffset).observe(bar);
+	}
+}());
 ';
 	}
 

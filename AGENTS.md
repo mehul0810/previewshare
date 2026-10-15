@@ -1,127 +1,84 @@
-# AGENTS.md for PreviewShare
+# PreviewShare repository guidance
 
-## Project Overview
+## Product and scope
 
-PreviewShare is a WordPress plugin that provides **secure, expiring preview links** for draft, pending, and scheduled WordPress content. It focuses on safety, control, and predictability for editorial workflows. It solves known gaps such as lack of expiration, revocation, SEO safety, and per-post preview visibility.
+PreviewShare creates revocable links for reviewing unpublished WordPress posts, pages, and enabled public post types. A link grants access to anyone holding its URL; it does not publish the content or authenticate the reviewer. Keep this repository guidance specific to this plugin and follow the current issue or PR acceptance criteria.
 
-PreviewShare includes:
-- Secure, unguessable preview links
-- Expiry and custom expiration dates
-- Link revocation and regeneration
-- Support for posts, pages, and Custom Post Types
-- SEO-safe noindex/nofollow
-- Read-only preview behavior
-- Lightweight and theme-agnostic functionality
+Verify release status from published tags and the [Releases page](https://github.com/mehul0810/previewshare/releases). A version in source or a candidate branch does not establish publication; do not describe candidate-only behavior as released.
 
-Include this file in the project’s root so AI agents can understand the plugin’s structure, workflow, tests, build commands (if any), coding style, and release expectations.
+## Architecture and invariants
 
----
+- `previewshare.php` loads configuration and Composer autoloading; `src/Plugin.php` composes and registers plugin services.
+- `src/Services/TokenService.php` creates and validates secret tokens. Keep raw tokens and usable preview URLs out of persistent plugin storage and logs; store hashed references.
+- `src/Services/PostMetaStorage.php` stores link detail records. Those records are authoritative; aggregate compatibility metadata is a projection, not the sole inventory source.
+- `src/Services/ReviewResponseService.php` owns private reviewer responses, retention, cleanup, and email-based WordPress privacy exporter/eraser hooks. `src/Services/ReviewVersion.php` ties approval freshness to saved content.
+- `src/REST/PreviewController.php` and `ReviewController.php` enforce link, capability, ownership, and response boundaries. `src/Abilities/PreviewAbilities.php` exposes optional WordPress Abilities API support through feature detection.
+- `src/Admin/Actions.php` coordinates preview resolution, Classic Editor actions, and the frontend preview bar. `assets/src/js/admin` and `settings.js` provide editor/settings interfaces; `assets/src/js/frontend` provides the reviewer form.
+- Unit tests are under `tests/Unit`; isolated WordPress runtime fixtures are under `tests/Runtime`; Playwright flows live in `tests/e2e`.
 
-## Development Environment
+Preserve authorization checks, object ownership checks, nonces where applicable, generic unavailable responses, and private cache headers. Never expose reviewer identity or history on the public preview.
 
-- WordPress environment (local or remote) with PHP >= 7.4
-- WP-CLI available for WordPress commands
-- Git for version control
-- Unix-like shell recommended (Linux or macOS)
+Reviewer responses are opt-in per link; name/email may be optional or required. Saved-content changes make an approval stale. Retry errors must preserve the entered response for correction or retry. Inputs are limited to 120 UTF-16 code units for names and 5,000 for comments.
 
----
+Daily WordPress scheduled cleanup deletes responses and identity older than 90 days while the plugin is active; timing depends on scheduled tasks running. Deactivation or uninstall stops cleanup and preserves records; reactivation resumes cleanup. WordPress privacy export and erasure require a supplied reviewer email address and the active plugin; do not claim those tools can locate email-less responses. Do not change these data, retention, security, or public extension contracts without explicit product approval.
 
-## Setup Instructions
+## Local setup and commands
 
-1. Clone the repository to your development directory.
-2. Run `composer install` if you are tracking dependencies via Composer.
-3. Set up a local WordPress install (using tools like LocalWP, Docker, or similar).
-4. Link the plugin into `wp-content/plugins/previewshare`.
-5. Enable the plugin from WordPress admin.
-6. Ensure dev tools (like a linter or test suite if added later) are configured before committing.
+Requirements: PHP 8.0+, Composer 2, Node.js 20.19+, npm, and Docker for WordPress `wp-env` runtime/browser fixtures. The plugin itself requires WordPress 5.8+; package headers are the compatibility source of truth.
 
----
+Install exact locked development dependencies with `composer install` and `npm ci`. Do not borrow another checkout's `node_modules` or build release assets from an unverified dependency tree.
 
-## Coding Conventions
+PHP checks:
 
-- Follow WordPress PHP coding standards:
-  - Indentation: 4 Tab Size
-  - Function names: `snake_case`
-  - Use proper escaping functions (`esc_html`, `esc_attr`, etc.)
-  - Sanitization on any user input
-- Documentation comments for public classes and functions
-- Keep logic modular and testable
+```sh
+composer test
+composer lint
+composer check-cs
+composer validate --no-check-publish --no-interaction
+vendor/bin/phpstan analyse -c phpstan.neon
+```
 
----
+JavaScript, styles, and production asset build:
 
-## Testing Instructions
+```sh
+npm run lint:js
+npm run lint:css
+npm run test:js -- --runInBand
+npm run build
+```
 
-*(Define tests here once they exist)*  
-If the project adds unit tests:
-- Use the WordPress PHPUnit test framework
-- Run tests locally before submitting pull requests
-- Use `vendor/bin/phpunit` or WP-CLI test commands
+The PHP tests use PHPUnit 9.6+, Brain Monkey, Mockery, and WordPress stubs; they do not require an installed WordPress site. `npm run test:e2e` is the owned local end-to-end entry point. It builds assets, starts the repository's `.wp-env.json` Docker fixture (ports 8889/8890), and cleans up posts created by its run. Do not target Studio, shared, or production sites; do not call `test:e2e:playwright` directly as the fixture setup and safety checks are in the wrapper.
 
----
+The Abilities API runtime check uses its own `tests/Runtime` fixture and requires an explicit official WordPress version, for example:
 
-## Build Commands
+```sh
+PREVIEWSHARE_WP_VERSION=6.9.7 npm run test:abilities:runtime
+```
 
-Since this is a PHP/WordPress plugin:
-- No mandatory build toolchain for v1.0.0
-- If you add assets (CSS/JS), specify build tools (npm/yarn) and commands (e.g., `npm run build`)
-- List any build steps clearly once implemented
+If working against a WordPress Studio site, check CLI availability first and use `studio wp`; never assume bare `wp` is connected to the intended site.
 
----
+## Built artifacts and release ZIP
 
-## Quality Gates
+`assets/dist` and `vendor` are ignored generated directories. A source checkout is not an installable release ZIP until built. `npm run plugin-zip` runs the production JS build, replaces Composer dependencies with `--no-dev`, and creates the official ZIP. Restore development Composer tools with `composer install` afterward. Then use `npm run validate:zip` and, when WordPress.org assets are in scope, `npm run validate:wporg`. Never use arbitrary existing generated assets as release proof.
 
-Before finalizing any patch:
-- Ensure coding standards pass linting (if configured)
-- Unit tests should be green
-- No unhandled PHP notices, warnings, or errors
-- No introduced security vulnerabilities
-- When work targets `develop` or `release/<milestone>`, verify whether GitHub Actions covers that branch. If hosted CI does not run there yet, run the cheapest reliable local validation for the touched surface and call out the missing hosted coverage explicitly in the PR or check-in.
+The ZIP deliberately omits repository-only guidance and tooling. Keep new root documentation excluded through `.distignore` and verify the generated package when packaging behavior changes.
 
----
+## Quality and design
 
-## Release and Versioning
+Follow the configured WordPress coding standards, escape output, sanitize and validate input, and document public functions and classes. Keep behavior modular and testable. PHP behavior changes require `composer test`; complete relevant syntax, coding-standard, and static-analysis checks. Do not finalize with unhandled plugin PHP errors or warnings.
 
-- Follow semantic versioning (MAJOR.MINOR.PATCH)
-- v1.0.0 is the initial release
-- Tag releases in Git with their version (e.g., `v1.0.0`)
-- Keep CHANGELOG updated with meaningful changes
-- For WordPress.org metadata work, keep `readme.txt` to a maximum of 5 high-intent generic tags even though the directory allows more.
+Use the narrowest relevant checks, then inspect the changed behavior at its actual surface. UI changes should account for loading, empty, error, success, keyboard, locale, and narrow-layout states. Preview rendering depends on the site's active theme, cache, and plugins; don't promise universal compatibility. See [DESIGN.md](DESIGN.md) and [docs/compatibility-matrix.md](docs/compatibility-matrix.md).
 
----
+For dependency changes, follow [docs/dependency-audit.md](docs/dependency-audit.md): report full and production audits and assess code included in browser assets, not only dependency labels.
 
-## Pull Request Guidelines
+## Documentation and collaboration
 
-- Title should follow: `[component] Short summary of change`
-- For milestone work, use the active `release/<milestone>` branch as the PR base.
-- Include a concise description of what changed and why
-- Reference relevant issues or tickets
-- Avoid unrelated changes in the same PR
+- `README.md` is source and contributor onboarding; `readme.txt` is the WordPress.org listing and release metadata. Keep versions and requirements aligned with `previewshare.php` and `package.json`.
+- Release history belongs in `readme.txt` and the plugin settings release notes; translations may require regenerating the POT. Keep WordPress.org tags within the existing five-tag limit. Do not create a separate changelog unless asked.
+- Use the repository PR title format `[component] Short summary of change`. Keep a PR focused and include relevant validation and evidence.
+- Report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/mehul0810/previewshare/security/advisories/new). Use [GitHub Issues](https://github.com/mehul0810/previewshare/issues) for ordinary bugs and requests.
+- Do not change dependency policy, public APIs, data formats, retention, compatibility promises, WordPress.org metadata, or release controls as incidental documentation work.
 
-## Release Branch Strategy
+## Release boundary
 
-- `develop` is the ongoing integration branch.
-- `main` is the production branch.
-- Create `release/<milestone>` branches from `develop` before milestone work starts.
-- Open PRs for milestone-tied work against the matching `release/<milestone>` branch.
-- After each production release on `main`, sync `develop` from `main`.
-
----
-
-## Security & Boundaries
-
-- Do not expose user credentials or site environment variables
-- Ensure preview tokens remain secure and unguessable
-- Avoid injecting preview URLs in publicly indexed content
-- Agents should not modify production environment variables or secrets
-
----
-
-## Summary Checklist for AI Agents
-
-When generating or modifying code in this project:
-- Understand PreviewShare’s core use cases (secure previews, expiry, revocation)
-- Respect WordPress coding conventions
-- Use existing API functions and WordPress hooks responsibly
-- Validate all input/output sanitation
-- Maintain minimal performance overhead
-- Keep WordPress.org-facing metadata concise, especially the 5-tag `readme.txt` cap.
+Keep the mainline-first release process. A 1.1.0 candidate branch or clean local checks do not mean the candidate is published. Protected-branch merges, tag creation, beta/production publication, and deployment require the applicable owner authorization. Do not trigger a release workflow or claim release status from source alone.
