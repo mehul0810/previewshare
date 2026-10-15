@@ -1540,7 +1540,7 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	expect( revokeResponse.status() ).toBe( 200 );
 	await expect(
 		page.locator( '.previewshare-panel__review-history li' )
-	).toHaveCount( 2 );
+	).toHaveCount( 4 );
 	const rejected = await anonymousContext.request.post(
 		new URL( '/wp-json/previewshare/v1/reviews/submit', baseURL ).toString(),
 		{
@@ -1555,7 +1555,7 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 $post_id = ${ Number( post.id ) };
 $args = array( 'post_type' => 'previewshare_review', 'post_status' => 'private', 'post_parent' => $post_id, 'fields' => 'ids', 'posts_per_page' => -1 );
 $ids = get_posts( $args );
-if ( count( $ids ) !== 2 ) { fwrite( STDERR, 'Expected two private review records.' ); exit( 1 ); }
+if ( count( $ids ) !== 4 ) { fwrite( STDERR, 'Expected four private review records.' ); exit( 1 ); }
 foreach ( $ids as $id ) { if ( '0000-00-00 00:00:00' === get_post( $id )->post_date_gmt ) { fwrite( STDERR, 'Review GMT date was not stored.' ); exit( 1 ); } }
 $hash = (string) get_post_meta( $ids[0], '_previewshare_link_hash', true );
 $reviews = PreviewShare\\Container::get( 'reviews' );
@@ -1563,9 +1563,9 @@ $latest = $reviews->latest_for_links( array( $hash => $post_id ) );
 if ( ! isset( $latest[ $hash ] ) || 'request_changes' !== $latest[ $hash ]['response_type'] ) { fwrite( STDERR, 'Batched inventory missed the latest response.' ); exit( 1 ); }
 $exporters = apply_filters( 'wp_privacy_personal_data_exporters', array() );
 $export = call_user_func( $exporters['previewshare-reviews']['callback'], 'reviewer@example.test', 1 );
-if ( count( $export['data'] ) !== 2 ) { fwrite( STDERR, 'Privacy exporter missed reviewer responses.' ); exit( 1 ); }
+if ( count( $export['data'] ) !== 4 ) { fwrite( STDERR, 'Privacy exporter missed reviewer responses.' ); exit( 1 ); }
 do_action( 'previewshare_cleanup_reviews' );
-if ( count( get_posts( $args ) ) !== 2 ) { fwrite( STDERR, 'Fresh review records were removed early.' ); exit( 1 ); }
+if ( count( get_posts( $args ) ) !== 4 ) { fwrite( STDERR, 'Fresh review records were removed early.' ); exit( 1 ); }
 $old = time() - ( 91 * DAY_IN_SECONDS );
 foreach ( $ids as $id ) { wp_update_post( array( 'ID' => $id, 'post_date' => gmdate( 'Y-m-d H:i:s', $old ), 'post_date_gmt' => gmdate( 'Y-m-d H:i:s', $old ) ) ); }
 do_action( 'previewshare_cleanup_reviews' );
