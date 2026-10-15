@@ -1528,7 +1528,9 @@ test( 'opted-in reviewer responses stay private, follow content versions, and st
 	await expect(
 		page.getByText( 'Please revise the opening paragraph.' )
 	).toBeVisible();
-	await page.getByRole( 'button', { name: 'Resolve', exact: true } ).click();
+	await page.locator( '.previewshare-panel__review-history li' )
+		.filter( { hasText: 'Please revise the opening paragraph.' } )
+		.getByRole( 'button', { name: 'Resolve', exact: true } ).click();
 	await expect( page.getByText( 'Resolved', { exact: true } ) ).toBeVisible();
 
 	const [ revokeResponse ] = await Promise.all( [
