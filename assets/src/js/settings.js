@@ -3041,7 +3041,7 @@ import {
 			'div',
 			{ className: 'previewshare-settings' },
 			el(
-				'header',
+				'div',
 				{ className: 'previewshare-product-header' },
 				el(
 					'div',
