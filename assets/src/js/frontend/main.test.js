@@ -59,6 +59,40 @@ const submit = () =>
 const sent = ( index ) =>
 	JSON.parse( window.fetch.mock.calls[ index ][ 1 ].body );
 
+test( 'an unconfirmed retry preserves the response until the server confirms it', async () => {
+	const comment = document.querySelector( '[name="comment"]' );
+	comment.value = 'Feedback to preserve';
+	window.fetch.mockRejectedValueOnce( new Error( 'Connection lost' ) );
+	submit();
+	await flush();
+	const original = sent( 0 );
+
+	window.fetch.mockResolvedValueOnce(
+		response( 409, {
+			code: 'review_unconfirmed',
+			message: 'Could not confirm',
+		} )
+	);
+	submit();
+	await flush();
+	expect( sent( 1 ) ).toEqual( original );
+	expect( comment.value ).toBe( 'Feedback to preserve' );
+	expect(
+		document.getElementById( 'previewshare-review-message' ).textContent
+	).toContain( 'Could not confirm' );
+
+	window.fetch.mockResolvedValueOnce(
+		response( 409, { code: 'review_duplicate' } )
+	);
+	submit();
+	await flush();
+	expect( sent( 2 ) ).toEqual( original );
+	expect( comment.value ).toBe( '' );
+	expect(
+		document.getElementById( 'previewshare-review-message' ).textContent
+	).toBe( messages.duplicate );
+} );
+
 test( 'an uncertain commit retries the exact payload, then sends later edits with a new ID', async () => {
 	const comment = document.querySelector( '[name="comment"]' );
 	const types = document.querySelectorAll( '[name="response_type"]' );

@@ -134,5 +134,6 @@ final class Plugin {
 	 */
 	public function deactivate() {
 		Services\ReviewResponseService::unschedule_cleanup();
+		wp_clear_scheduled_hook( 'previewshare_cleanup_rate_limits_continue' );
 	}
 }

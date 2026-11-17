@@ -139,9 +139,8 @@ class PreviewAbilitiesTest extends TestCase {
 			->with( 42, '_previewshare_ttl_hours', true )
 			->andReturn( '' );
 		Functions\expect( 'update_post_meta' )
-			->once()
-			->with( 42, '_previewshare_enabled', true )
-			->andReturn( true );
+			->never()
+			->with( 42, '_previewshare_enabled', true );
 		Functions\expect( 'home_url' )
 			->once()
 			->with( '/preview/generated-token' )
@@ -291,6 +290,17 @@ class PreviewAbilitiesTest extends TestCase {
 
 		$this->assertSame( 2, $result['total'] );
 		$this->assertSame( str_repeat( 'c', 64 ), $result['items'][0]['token_id'] );
+	}
+
+	public function test_status_filter_propagates_inventory_failure(): void {
+		$storage = Mockery::mock( PostMetaStorage::class );
+		$abilities = $this->makeAbilities( $storage );
+		Functions\when( '__' )->returnArg( 1 );
+		Functions\expect( 'current_user_can' )->once()->with( 'manage_options' )->andReturn( true );
+		$error = new WP_Error( 'previewshare_inventory_unavailable', 'Unavailable', [ 'status' => 503 ] );
+		$storage->shouldReceive( 'list_tokens_by_status' )->once()->with( 'active', 50, 1 )->andReturn( $error );
+
+		$this->assertSame( $error, $abilities->list_preview_links( [ 'status' => 'active' ] ) );
 	}
 
 

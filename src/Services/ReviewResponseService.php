@@ -25,6 +25,23 @@ final class ReviewResponseService {
 	private const CLEANUP_LIMIT      = 2000;
 	private const CLEANUP_BATCH_SIZE = 100;
 	private const ERASER_BATCH_SIZE  = 100;
+	private const NOT_DELETED        = 0;
+	private const DELETED            = 1;
+	private const MARKER_RETAINED    = 2;
+
+	/**
+	 * Submission marker persistence.
+	 *
+	 * @var ReviewSubmissionStore
+	 */
+	private $submissions;
+
+	/**
+	 * Initialize the review service.
+	 */
+	public function __construct() {
+		$this->submissions = new ReviewSubmissionStore();
+	}
 
 	/**
 	 * Register lifecycle and privacy hooks.
@@ -36,7 +53,7 @@ final class ReviewResponseService {
 		add_action( 'init', [ $this, 'schedule_cleanup' ], 21 );
 		add_action( self::CLEANUP_HOOK, [ $this, 'purge_expired' ] );
 		add_action( self::CONTINUE_HOOK, [ $this, 'purge_expired' ] );
-		add_action( 'before_delete_post', [ $this, 'delete_for_post' ] );
+		add_action( 'deleted_post', [ $this, 'delete_for_post' ], 10, 2 );
 		add_filter( 'wp_privacy_personal_data_exporters', [ $this, 'register_exporter' ] );
 		add_filter( 'wp_privacy_personal_data_erasers', [ $this, 'register_eraser' ] );
 	}
@@ -99,9 +116,14 @@ final class ReviewResponseService {
 	 * @return int|\WP_Error Created row ID or error.
 	 */
 	public function create_response( int $post_id, string $link_hash, string $content_hash, string $response_type, string $name, string $email, string $comment, string $submission_key ) {
-		$option_name = 'previewshare_review_request_' . $submission_key;
-		if ( ! add_option( $option_name, 0, '', false ) ) {
-			return new \WP_Error( 'review_duplicate', __( 'This response was already received.', 'previewshare' ), [ 'status' => 409 ] );
+		$option_name    = ReviewSubmissionStore::PREFIX . $submission_key;
+		$reservation_id = $this->submissions->reserve( $option_name );
+		if ( ! $reservation_id ) {
+			if ( 0 === $reservation_id && $this->submissions->has_response( $option_name, $post_id, $link_hash ) ) {
+				return new \WP_Error( 'review_duplicate', __( 'This response was already received.', 'previewshare' ), [ 'status' => 409 ] );
+			}
+
+			return $this->unconfirmed_submission();
 		}
 
 		$created_gmt = current_time( 'mysql', true );
@@ -121,8 +143,21 @@ final class ReviewResponseService {
 		);
 
 		if ( is_wp_error( $review_id ) || ! $review_id ) {
-			delete_option( $option_name );
-			return new \WP_Error( 'review_storage_failed', __( 'The response could not be saved. Please try again.', 'previewshare' ), [ 'status' => 500 ] );
+			if ( ! $this->submissions->release( $option_name, $reservation_id ) ) {
+				return $this->unconfirmed_submission();
+			}
+			return $this->storage_failure();
+		}
+
+		$review_id = (int) $review_id;
+		if ( true !== $this->submissions->post_exists( $post_id ) ) {
+			// The parent delete hook can finish before wp_insert_post() writes
+			// the child. No retry can take over this marker before metadata is written.
+			wp_delete_post( $review_id, true );
+			if ( false !== $this->submissions->post_exists( $review_id ) || ! $this->submissions->release( $option_name, $reservation_id, $review_id ) ) {
+				return $this->unconfirmed_submission();
+			}
+			return $this->storage_failure();
 		}
 
 		$meta = [
@@ -131,19 +166,48 @@ final class ReviewResponseService {
 			'_previewshare_response_type'     => $response_type,
 			'_previewshare_reviewer_name'     => $name,
 			'_previewshare_reviewer_email'    => $email,
-			'_previewshare_submission_option' => $option_name,
+			ReviewSubmissionStore::META_KEY  => $option_name,
 		];
 		foreach ( $meta as $key => $value ) {
-			if ( ! add_post_meta( (int) $review_id, $key, $value, true ) ) {
-				wp_delete_post( (int) $review_id, true );
-				delete_option( $option_name );
-				return new \WP_Error( 'review_storage_failed', __( 'The response could not be saved. Please try again.', 'previewshare' ), [ 'status' => 500 ] );
+			if ( ! add_post_meta( $review_id, $key, $value, true ) ) {
+				wp_delete_post( $review_id, true );
+				$cleared = $this->submissions->clear_deleted_response( $review_id, $option_name, $reservation_id );
+				if ( null === $cleared ) {
+					$this->schedule_cleanup_continuation( HOUR_IN_SECONDS );
+				}
+				return true === $cleared ? $this->storage_failure() : $this->unconfirmed_submission();
 			}
 		}
 
-		update_option( $option_name, (int) $review_id, false );
-		do_action( 'previewshare_review_response_accepted', (int) $review_id, $post_id, $link_hash, $response_type );
-		return (int) $review_id;
+		if ( ! $this->submissions->commit( $option_name, $review_id, $post_id ) ) {
+			if ( false === $this->submissions->post_exists( $post_id ) && true === $this->submissions->post_exists( $review_id ) ) {
+				$this->delete_response( $review_id );
+			}
+			if ( null === $this->submissions->clear_deleted_response( $review_id, $option_name, $reservation_id ) ) {
+				$this->schedule_cleanup_continuation( HOUR_IN_SECONDS );
+			}
+			return $this->unconfirmed_submission();
+		}
+		do_action( 'previewshare_review_response_accepted', $review_id, $post_id, $link_hash, $response_type );
+		return $review_id;
+	}
+
+	/**
+	 * Report an unsuccessful review write with a known outcome.
+	 *
+	 * @return \WP_Error
+	 */
+	private function storage_failure(): \WP_Error {
+		return new \WP_Error( 'review_storage_failed', __( 'The response could not be saved. Please try again.', 'previewshare' ), [ 'status' => 500 ] );
+	}
+
+	/**
+	 * Report a response whose durable state could not be confirmed.
+	 *
+	 * @return \WP_Error
+	 */
+	private function unconfirmed_submission(): \WP_Error {
+		return new \WP_Error( 'review_unconfirmed', __( 'We could not confirm whether your response was saved. Please retry. Before refreshing, copy your response and ask the editor whether it was saved.', 'previewshare' ), [ 'status' => 409 ] );
 	}
 
 	/**
@@ -368,7 +432,7 @@ final class ReviewResponseService {
 			foreach ( $ids as $id ) {
 				$id     = (int) $id;
 				$cursor = $id;
-				if ( ! $this->delete_response( $id ) ) {
+				if ( self::DELETED !== $this->delete_response( $id ) ) {
 					$had_failures = true;
 					update_option( self::CLEANUP_FAILED, true, false );
 				}
@@ -395,8 +459,9 @@ final class ReviewResponseService {
 
 		delete_option( self::CLEANUP_CURSOR );
 		delete_option( self::CLEANUP_FAILED );
-		if ( $had_failures ) {
-			$this->schedule_cleanup_continuation( HOUR_IN_SECONDS );
+		$markers = $this->submissions->purge_orphans( self::CLEANUP_BATCH_SIZE, self::CLEANUP_LIMIT );
+		if ( $had_failures || false !== $markers ) {
+			$this->schedule_cleanup_continuation( true === $markers ? 5 * MINUTE_IN_SECONDS : HOUR_IN_SECONDS );
 			return;
 		}
 
@@ -406,25 +471,32 @@ final class ReviewResponseService {
 	/**
 	 * Remove child review records when their owning post is deleted.
 	 *
-	 * @param int $post_id Post being deleted.
+	 * @param int           $post_id Deleted post ID.
+	 * @param \WP_Post|null $post Deleted post passed by WordPress.
 	 * @return void
 	 */
-	public function delete_for_post( int $post_id ): void {
-		if ( self::POST_TYPE === get_post_type( $post_id ) ) {
+	public function delete_for_post( int $post_id, ?\WP_Post $post = null ): void {
+		if ( in_array( $post ? $post->post_type : get_post_type( $post_id ), [ self::POST_TYPE, 'attachment' ], true ) ) {
 			return;
 		}
-		$ids = get_posts(
-			[
-				'post_type'      => self::POST_TYPE,
-				'post_status'    => 'private',
-				'post_parent'    => $post_id,
-				'posts_per_page' => -1,
-				'fields'         => 'ids',
-				'no_found_rows'  => true,
-			]
-		);
-		foreach ( $ids as $id ) {
-			$this->delete_response( (int) $id );
+		$cursor = 0;
+		$failed = false;
+		do {
+			$ids = $this->query_review_ids( $cursor, self::CLEANUP_BATCH_SIZE, null, null, $post_id );
+			if ( null === $ids ) {
+				$failed = true;
+				break;
+			}
+			$count = count( $ids );
+			foreach ( $ids as $id ) {
+				$cursor  = $id;
+				$deleted = $this->delete_response( $id );
+				$failed  = $failed || self::NOT_DELETED === $deleted;
+			}
+		} while ( self::CLEANUP_BATCH_SIZE === $count );
+		if ( $failed ) {
+			update_option( self::CLEANUP_FAILED, true, false );
+			$this->schedule_cleanup_continuation( HOUR_IN_SECONDS );
 		}
 	}
 
@@ -551,13 +623,11 @@ final class ReviewResponseService {
 			return new \WP_Error( 'review_eraser_query_failed', __( 'PreviewShare could not check for responses to erase. Please try the erasure request again.', 'previewshare' ) );
 		}
 		foreach ( $ids as $id ) {
-			$id     = (int) $id;
-			$cursor = $id;
-			if ( $this->delete_response( $id ) ) {
-				$state['items_removed'] = true;
-			} else {
-				$state['items_retained'] = true;
-			}
+			$id                      = (int) $id;
+			$cursor                  = $id;
+			$deletion                = $this->delete_response( $id );
+			$state['items_removed']  = $state['items_removed'] || self::NOT_DELETED !== $deletion;
+			$state['items_retained'] = $state['items_retained'] || self::DELETED !== $deletion;
 		}
 		$more = false;
 		if ( '' !== $email ) {
@@ -622,10 +692,11 @@ final class ReviewResponseService {
 	 * @param int         $after_id Exclusive ID lower bound.
 	 * @param int         $limit Maximum rows.
 	 * @param string|null $email Optional exact reviewer email.
-	 * @param string|null $cutoff Optional exclusive GMT creation-time upper bound.
+	 * @param string|null $cutoff Optional GMT cutoff for reviews whose parent still exists.
+	 * @param int|null    $parent_id Optional owning post ID.
 	 * @return array<int,int>|null Null when the database query fails.
 	 */
-	private function query_review_ids( int $after_id, int $limit, ?string $email = null, ?string $cutoff = null ): ?array {
+	private function query_review_ids( int $after_id, int $limit, ?string $email = null, ?string $cutoff = null, ?int $parent_id = null ): ?array {
 		global $wpdb;
 
 		$sql       = "SELECT reviews.ID FROM {$wpdb->posts} AS reviews";
@@ -637,8 +708,14 @@ final class ReviewResponseService {
 			$arguments = array_merge( $arguments, [ '_previewshare_reviewer_email', $email ] );
 		}
 		if ( null !== $cutoff ) {
-			$sql        .= ' AND reviews.post_date_gmt < %s';
+			// Retry a failed parent cascade at the next bounded pass without shortening
+			// retention for reviews whose owning post still exists.
+			$sql        .= " AND (reviews.post_date_gmt < %s OR (reviews.post_parent > 0 AND NOT EXISTS (SELECT 1 FROM {$wpdb->posts} AS owners WHERE owners.ID = reviews.post_parent)))";
 			$arguments[] = $cutoff;
+		}
+		if ( null !== $parent_id ) {
+			$sql        .= ' AND reviews.post_parent = %d';
+			$arguments[] = $parent_id;
 		}
 		$sql        .= ' ORDER BY reviews.ID ASC LIMIT %d';
 		$arguments[] = $limit;
@@ -698,16 +775,21 @@ final class ReviewResponseService {
 	 * Delete a record and its idempotency marker together.
 	 *
 	 * @param int $review_id Review record ID.
-	 * @return bool Whether the post and idempotency marker were removed.
+	 * @return int Outcome of deleting the response and marker.
 	 */
-	private function delete_response( int $review_id ): bool {
-		$option_name = (string) get_post_meta( $review_id, '_previewshare_submission_option', true );
+	private function delete_response( int $review_id ): int {
+		$option_name = get_post_meta( $review_id, ReviewSubmissionStore::META_KEY, true );
+		$has_marker  = is_string( $option_name ) && 0 === strpos( $option_name, ReviewSubmissionStore::PREFIX );
+		if ( $has_marker && ! $this->submissions->prepare_review_deletion( $option_name, $review_id ) ) {
+			return self::NOT_DELETED;
+		}
 		if ( ! wp_delete_post( $review_id, true ) ) {
-			return false;
+			return self::NOT_DELETED;
 		}
-		if ( 0 === strpos( $option_name, 'previewshare_review_request_' ) ) {
-			delete_option( $option_name );
+		if ( $has_marker && ! $this->submissions->remove_orphan( $option_name, $review_id ) ) {
+			$this->schedule_cleanup_continuation( HOUR_IN_SECONDS );
+			return self::MARKER_RETAINED;
 		}
-		return true;
+		return self::DELETED;
 	}
 }

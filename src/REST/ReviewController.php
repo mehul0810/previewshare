@@ -46,6 +46,9 @@ final class ReviewController {
 		$this->reviews = $reviews;
 		add_action( 'rest_api_init', [ $this, 'register_routes' ] );
 		add_action( 'previewshare_cleanup_reviews', [ $this, 'cleanup_rate_limits' ] );
+		// Continue rate-limit batches independently from review-response retries.
+		add_action( 'previewshare_cleanup_rate_limits_continue', [ $this, 'cleanup_rate_limits' ] );
+		// Keep processing already scheduled shared-hook events during upgrades.
 		add_action( 'previewshare_cleanup_reviews_continue', [ $this, 'cleanup_rate_limits' ] );
 	}
 
@@ -548,8 +551,8 @@ final class ReviewController {
 			}
 		}
 
-		if ( 100 === count( $rows ) && ! wp_next_scheduled( 'previewshare_cleanup_reviews_continue' ) ) {
-			wp_schedule_single_event( time() + ( 5 * MINUTE_IN_SECONDS ), 'previewshare_cleanup_reviews_continue' );
+		if ( 100 === count( $rows ) && ! wp_next_scheduled( 'previewshare_cleanup_rate_limits_continue' ) ) {
+			wp_schedule_single_event( time() + ( 5 * MINUTE_IN_SECONDS ), 'previewshare_cleanup_rate_limits_continue' );
 		}
 	}
 

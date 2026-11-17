@@ -26,20 +26,37 @@ class PostMetaCasTestDatabase {
 		return serialize( [ $sql, $args ] );
 	}
 
+	public function esc_like( string $value ): string {
+		return addcslashes( $value, '_%\\' );
+	}
+
 	public function query( string $query ): int {
 		[ $sql, $args ] = unserialize( $query );
 		$this->queries[] = $sql;
+		if ( str_contains( $sql, 'SET sharing.meta_value' ) ) {
+			return 0;
+		}
 		return call_user_func_array( $this->callback, $args );
 	}
 
 	public function get_var( string $query ) {
 		return $this->lookup_result;
 	}
+
+	public function get_col( string $query ): array {
+		return [ '17' ];
+	}
 }
 
 class PostMetaStorageTest extends TestCase {
 
 	private const HASH_KEY = 'previewshare-test-token-hash-key-for-storage-tests';
+
+	protected function setUp(): void {
+		parent::setUp();
+		Functions\when( 'get_object_subtype' )->justReturn( 'post' );
+		Functions\when( 'sanitize_meta' )->returnArg( 2 );
+	}
 
 	public function test_store_token_persists_hashed_link_and_cache_entry(): void {
 		$storage      = $this->make_storage();
@@ -49,13 +66,16 @@ class PostMetaStorageTest extends TestCase {
 		$stored_links = null;
 
 		Functions\expect( 'get_post_meta' )
-			->times( 3 )
+			->times( 4 )
 			->andReturnUsing(
-				static function( int $requested_post_id, string $key, bool $single ) use ( $post_id ) {
+				static function( int $requested_post_id, string $key, bool $single ) use ( $post_id, $hash, &$stored_links ) {
 					if ( $requested_post_id !== $post_id ) {
 						return null;
 					}
 
+					if ( '_previewshare_token:' . $hash === $key ) {
+						return $stored_links[ $hash ];
+					}
 					return '' === $key || '_previewshare_links' === $key ? [] : '';
 				}
 			);
@@ -192,10 +212,11 @@ class PostMetaStorageTest extends TestCase {
 		Functions\expect( 'get_posts' )->once()->andReturn( [ $post_id ] );
 		Functions\expect( 'get_post_meta' )->twice()->andReturnUsing(
 			static function ( int $requested_post_id, string $key, bool $single ) use ( $post_id, $hash, $detail ) {
+				static $read = 0;
 				if ( $post_id !== $requested_post_id || true !== $single ) {
 					return '';
 				}
-				return '_previewshare_token:' . $hash === $key ? $detail : [];
+				return '_previewshare_token:' . $hash === $key && 1 === ++$read ? $detail : '';
 			}
 		);
 		Functions\expect( 'update_post_meta' )->never();
@@ -204,7 +225,7 @@ class PostMetaStorageTest extends TestCase {
 		$this->assertFalse( $storage->record_token_view( $token ) );
 		$this->assertStringContainsString( 'UPDATE wp_postmeta SET meta_value', $GLOBALS['wpdb']->sql );
 		$this->assertStringContainsString( '_previewshare_token:' . $hash, $GLOBALS['wpdb']->sql );
-		$this->assertStringContainsString( 'AND meta_value = %s', $GLOBALS['wpdb']->sql );
+		$this->assertStringContainsString( 'AND CAST(meta_value AS BINARY) = %s', $GLOBALS['wpdb']->sql );
 
 		if ( null === $previous_db ) {
 			unset( $GLOBALS['wpdb'] );
@@ -707,7 +728,7 @@ class PostMetaStorageTest extends TestCase {
 		$this->assertSame( 1, $revoked['total'] );
 		$this->assertSame( 'revoked', $revoked['items'][0]['status'] );
 		$this->assertSame( 2, $fake_wpdb->get_results_calls );
-		$this->assertSame( 2, $fake_wpdb->get_var_calls );
+		$this->assertSame( 4, $fake_wpdb->get_var_calls );
 		$this->assertStringContainsString( 'INSTR(REVERSE(pm.meta_value)', $fake_wpdb->last_result_query );
 		$this->assertStringContainsString( 'SUBSTR(pm.meta_value', $fake_wpdb->last_result_query );
 		$this->assertStringContainsString( 'SUBSTR(pm.meta_value, 1 - INSTR(REVERSE(pm.meta_value)', $fake_wpdb->last_result_query );
@@ -966,11 +987,14 @@ class FakePreviewShareWpdb {
 		return array_slice( $this->matching_rows(), $offset, $per_page );
 	}
 
-	public function get_var( string $query ): int {
+	public function get_var( string $query ): ?int {
 		$this->get_var_calls++;
 		$this->last_var_query = $query;
 		$this->last_result_query = '';
 		$this->last_var_args = $this->last_prepare_args;
+		if ( str_contains( $query, 'NOT COALESCE' ) ) {
+			return null;
+		}
 
 		return count( $this->matching_rows() );
 	}

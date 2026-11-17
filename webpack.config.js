@@ -40,6 +40,8 @@ const config = {
 		...defaultConfig.output,
 		path: path.join( __dirname, 'assets/dist/' ),
 		filename: 'js/[name].min.js',
+		chunkFilename: 'js/[name].[contenthash:8].min.js',
+		publicPath: '',
 	},
 	module: {
 		...defaultConfig.module,

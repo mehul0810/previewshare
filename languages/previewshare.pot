@@ -487,8 +487,12 @@ msgstr ""
 msgid "PreviewShare reviews"
 msgstr ""
 
-#: src/Services/ReviewResponseService.php:96
+#: src/Services/ReviewResponseService.php:106
 msgid "This response was already received."
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:109
+msgid "We could not confirm whether your response was saved. Please retry. Before refreshing, copy your response and ask the editor whether it was saved."
 msgstr ""
 
 #: src/Services/ReviewResponseService.php:104
@@ -1410,4 +1414,32 @@ msgstr ""
 
 #: assets/src/js/settings.js
 msgid "Respected WordPress date and time formats, site timezone, and locale in link history."
+msgstr ""
+
+#: assets/src/js/settings.js
+msgid "Loading preview links…"
+msgstr ""
+
+#: assets/src/js/settings.js
+msgid "Preview links changed while loading. The list was refreshed; load more to see older links."
+msgstr ""
+
+#: assets/src/js/settings.js
+msgid "The loaded list may be out of date. Refresh it before loading older links."
+msgstr ""
+
+#: assets/src/js/settings.js
+msgid "Refresh preview links"
+msgstr ""
+
+#: src/Services/LinkInventoryCursor.php
+msgid "The preview link continuation is invalid. Refresh the list."
+msgstr ""
+
+#: src/Services/LinkInventoryCursor.php
+msgid "Preview links changed while loading. Refresh the list."
+msgstr ""
+
+#: src/Services/LinkInventoryCursor.php
+msgid "Preview links could not be loaded. Please try again."
 msgstr ""

@@ -370,11 +370,14 @@ final class PreviewAbilities {
 			$total = $this->storage->count_tokens();
 		} else {
 			$result = $this->storage->list_tokens_by_status( $status, $per_page, $page );
-			$items  = array_map(
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			$items = array_map(
 				fn( array $row ): array => $this->format_link_list_item( $row, (int) $row['post_id'] ),
 				$result['items']
 			);
-			$total  = $result['total'];
+			$total = $result['total'];
 		}
 
 		return [

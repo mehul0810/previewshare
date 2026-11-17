@@ -1,5 +1,7 @@
 import { formatSiteDate, formatPreviewLabel } from './date-utils';
-import { DataViews, filterSortAndPaginate } from '@wordpress/dataviews/wp';
+import { loadDataViews } from './load-dataviews';
+import { useScopedNotices, NoticeRegion } from './scoped-notices';
+import { fetchInventoryBatch } from './inventory-batch';
 import removeAccents from 'remove-accents';
 import {
 	check,
@@ -17,12 +19,17 @@ import {
 	buildRestRequestUrl,
 	fallbackSettings,
 	getRestBase,
-	getInventoryBatchState,
 	mergeInventoryItems,
 	INVENTORY_BATCH_PAGES,
 	INVENTORY_PAGE_SIZE,
 	normalizeSettings,
 } from './settings-utils';
+
+if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
+	// Webpack uses this special assignment to locate the lazy chunk in the plugin directory.
+	// eslint-disable-next-line camelcase, no-undef
+	__webpack_public_path__ = window.previewshare_settings.asset_base;
+}
 
 ( function ( wp ) {
 	const {
@@ -46,6 +53,7 @@ import {
 	} = wp.components;
 
 	const AUTOSAVE_DELAY = 450;
+	const MAX_AUTO_REFRESH_PAGES = 10;
 	const DAY_IN_SECONDS = 24 * 60 * 60;
 	const localized = window.previewshare_settings || {};
 	const restBase = getRestBase( localized );
@@ -536,9 +544,12 @@ import {
 		);
 		const [ settings, setSettings ] = useState( initialSettings );
 		const [ activeTab, setActiveTab ] = useState( getTabFromUrl );
+		const [ dataViewsModule, setDataViewsModule ] = useState( null );
+		const [ dataViewsFailed, setDataViewsFailed ] = useState( false );
 		const [ tokens, setTokens ] = useState( [] );
 		const [ totalTokens, setTotalTokens ] = useState( 0 );
 		const [ hasMoreTokens, setHasMoreTokens ] = useState( false );
+		const [ inventoryStale, setInventoryStale ] = useState( false );
 		const [ loadingMoreTokens, setLoadingMoreTokens ] = useState( false );
 		const [ view, setView ] = useState( {
 			type: 'table',
@@ -575,7 +586,7 @@ import {
 		const [ workingTokenId, setWorkingTokenId ] = useState( '' );
 		const [ deleteCandidate, setDeleteCandidate ] = useState( null );
 		const [ deleteError, setDeleteError ] = useState( '' );
-		const [ notice, setNotice ] = useState( null );
+		const { notices, notify, clearNotice } = useScopedNotices();
 		const persistedSettingsRef = useRef( initialSettings );
 		const latestSettingsRef = useRef( initialSettings );
 		const saveTimerRef = useRef( null );
@@ -586,8 +597,11 @@ import {
 		const resetContextRef = useRef( null );
 		const tokenRequestIdRef = useRef( 0 );
 		const tokensRef = useRef( [] );
+		const inventoryTotalRef = useRef( null );
 		const nextInventoryPageRef = useRef( 1 );
+		const nextInventoryCursorRef = useRef( 'start' );
 		const mountedRef = useRef( false );
+		const inventoryStartedRef = useRef( false );
 		const tabListRef = useRef( null );
 
 		useEffect( () => {
@@ -655,7 +669,6 @@ import {
 		useEffect( () => {
 			mountedRef.current = true;
 			fetchSettings();
-			fetchTokens();
 
 			return () => {
 				mountedRef.current = false;
@@ -667,8 +680,58 @@ import {
 			// eslint-disable-next-line react-hooks/exhaustive-deps
 		}, [] );
 
-		function notify( status, message, url = '' ) {
-			setNotice( { status, message, url } );
+		useEffect( () => {
+			if (
+				! inventoryStartedRef.current &&
+				( activeTab === 'overview' || activeTab === 'previews' )
+			) {
+				inventoryStartedRef.current = true;
+				fetchTokens();
+			}
+			// Fetch once when a tab first needs the inventory.
+			// eslint-disable-next-line react-hooks/exhaustive-deps
+		}, [ activeTab ] );
+
+		useEffect( () => {
+			let cancelled = false;
+			let settled = false;
+			let timeout;
+			if (
+				activeTab === 'previews' &&
+				! dataViewsModule &&
+				! dataViewsFailed &&
+				typeof wp.element.useInsertionEffect === 'function'
+			) {
+				timeout = window.setTimeout( () => {
+					settled = true;
+					if ( ! cancelled ) {
+						setDataViewsFailed( true );
+					}
+				}, 5000 );
+				loadDataViews()
+					.then( ( module ) => {
+						if ( ! cancelled && ! settled ) {
+							settled = true;
+							window.clearTimeout( timeout );
+							setDataViewsModule( module );
+						}
+					} )
+					.catch( () => {
+						if ( ! cancelled && ! settled ) {
+							settled = true;
+							window.clearTimeout( timeout );
+							setDataViewsFailed( true );
+						}
+					} );
+			}
+			return () => {
+				cancelled = true;
+				window.clearTimeout( timeout );
+			};
+		}, [ activeTab, dataViewsModule, dataViewsFailed ] );
+
+		function notifySettings( status, message ) {
+			notify( status, message, '', 'settings' );
 		}
 
 		function fetchSettings() {
@@ -698,62 +761,57 @@ import {
 					}
 
 					setLoadingSettings( false );
-					notify(
+					notifySettings(
 						'error',
 						__( 'Settings could not be loaded.', 'previewshare' )
 					);
 				} );
 		}
 
-		async function fetchTokens( { append = false } = {} ) {
+		async function fetchTokens( {
+			append = false,
+			refreshLoaded = false,
+			resetView = false,
+			changed = false,
+		} = {} ) {
 			const requestId = ++tokenRequestIdRef.current;
 			const firstPage = append ? nextInventoryPageRef.current : 1;
 			const existingItems = append ? tokensRef.current : [];
-			let nextPage = firstPage;
-			let reportedTotal = 0;
-			let pagesFetched = 0;
-			let hasMore = true;
-			const items = [];
-
+			const pageLimit = refreshLoaded
+				? Math.min(
+						MAX_AUTO_REFRESH_PAGES,
+						Math.max( 1, nextInventoryPageRef.current - 1 )
+				  )
+				: INVENTORY_BATCH_PAGES;
 			if ( ! append ) {
-				tokensRef.current = [];
-				setHasMoreTokens( false );
 				setLoadingTokens( true );
 			} else {
 				setLoadingMoreTokens( true );
 			}
 
 			try {
-				while ( pagesFetched < INVENTORY_BATCH_PAGES ) {
-					const data = await apiFetch(
-						'/tokens?per_page=' +
-							INVENTORY_PAGE_SIZE +
-							'&page=' +
-							nextPage,
-						{
-							method: 'GET',
-						}
-					);
-					const pageItems = Array.isArray( data.items )
-						? data.items
-						: [];
-
-					reportedTotal = Number( data.total ) || 0;
-					items.push( ...pageItems );
-					pagesFetched += 1;
-					nextPage += 1;
-					const batchState = getInventoryBatchState( {
-						existingCount: existingItems.length,
-						loadedCount: items.length,
-						pageItemsCount: pageItems.length,
-						reportedTotal,
-						pagesFetched,
-					} );
-
-					hasMore = batchState.hasMore;
-					if ( ! batchState.shouldFetchNextPage ) {
-						break;
+				const batch = await fetchInventoryBatch( {
+					apiFetch,
+					append,
+					page: firstPage,
+					cursor: append ? nextInventoryCursorRef.current : 'start',
+					pageSize: INVENTORY_PAGE_SIZE,
+					pageLimit,
+					existingCount: existingItems.length,
+					previousTotal: inventoryTotalRef.current,
+					isCurrent: () =>
+						mountedRef.current &&
+						requestId === tokenRequestIdRef.current,
+				} );
+				if ( batch.cancelled ) {
+					return;
+				}
+				if ( batch.changed ) {
+					if ( ! changed ) {
+						await fetchTokens( { resetView: true, changed: true } );
+						return;
 					}
+					throw new Error( 'Inventory changed during refresh' );
 				}
 
 				if (
@@ -763,14 +821,34 @@ import {
 					return;
 				}
 
-				const mergedItems = mergeInventoryItems( existingItems, items );
-				const total = reportedTotal || mergedItems.length;
+				const mergedItems = mergeInventoryItems(
+					existingItems,
+					batch.items
+				);
+				const total = batch.total || mergedItems.length;
 
 				tokensRef.current = mergedItems;
+				inventoryTotalRef.current = batch.total;
 				setTokens( mergedItems );
+				if ( ! append ) {
+					setInventoryStale( false );
+				}
+				if ( resetView ) {
+					setView( ( current ) => ( { ...current, page: 1 } ) );
+				}
+				if ( changed ) {
+					notify(
+						'info',
+						__(
+							'Preview links changed while loading. The list was refreshed; load more to see older links.',
+							'previewshare'
+						)
+					);
+				}
 				setTotalTokens( total );
-				setHasMoreTokens( hasMore && mergedItems.length < total );
-				nextInventoryPageRef.current = nextPage;
+				setHasMoreTokens( batch.hasMore && mergedItems.length < total );
+				nextInventoryPageRef.current = batch.nextPage;
+				nextInventoryCursorRef.current = batch.nextCursor;
 				setLoadingTokens( false );
 				setLoadingMoreTokens( false );
 			} catch {
@@ -788,6 +866,17 @@ import {
 					__( 'Preview links could not be loaded.', 'previewshare' )
 				);
 			}
+		}
+
+		function refreshAfterMutation() {
+			if ( nextInventoryPageRef.current - 1 > MAX_AUTO_REFRESH_PAGES ) {
+				++tokenRequestIdRef.current;
+				setLoadingTokens( false );
+				setLoadingMoreTokens( false );
+				setInventoryStale( true );
+				return;
+			}
+			fetchTokens( { refreshLoaded: true } );
 		}
 
 		function scheduleAutoSave( nextSettings, revision ) {
@@ -873,11 +962,11 @@ import {
 					setSaveState( 'saved' );
 					if ( saveErrorRef.current ) {
 						saveErrorRef.current = false;
-						setNotice( null );
+						clearNotice( 'settings' );
 					}
 
 					if ( options.notice ) {
-						notify(
+						notifySettings(
 							'success',
 							options.message ||
 								__( 'Settings saved.', 'previewshare' )
@@ -898,7 +987,7 @@ import {
 					setSavingSettings( false );
 					setSaveState( 'error' );
 					saveErrorRef.current = true;
-					notify(
+					notifySettings(
 						'error',
 						__( 'Settings could not be saved.', 'previewshare' )
 					);
@@ -1008,9 +1097,9 @@ import {
 					setSaveState( 'saved' );
 					if ( saveErrorRef.current ) {
 						saveErrorRef.current = false;
-						setNotice( null );
+						clearNotice( 'settings' );
 					}
-					notify(
+					notifySettings(
 						'success',
 						__( 'Default settings restored.', 'previewshare' )
 					);
@@ -1036,7 +1125,7 @@ import {
 						setSavingSettings( false );
 						setSaveState( 'error' );
 						saveErrorRef.current = true;
-						notify(
+						notifySettings(
 							'error',
 							__(
 								'Default settings could not be restored.',
@@ -1052,7 +1141,7 @@ import {
 					setSavingSettings( false );
 					setSaveState( 'error' );
 					saveErrorRef.current = true;
-					notify(
+					notifySettings(
 						'error',
 						__(
 							'Default settings could not be restored.',
@@ -1122,7 +1211,7 @@ import {
 						);
 					}
 
-					fetchTokens();
+					refreshAfterMutation();
 				} )
 				.catch( () => {
 					notify(
@@ -1160,7 +1249,7 @@ import {
 						'success',
 						__( 'Preview link revoked.', 'previewshare' )
 					);
-					fetchTokens();
+					refreshAfterMutation();
 				} )
 				.catch( () => {
 					notify(
@@ -1200,7 +1289,7 @@ import {
 							'previewshare'
 						)
 					);
-					fetchTokens();
+					refreshAfterMutation();
 					window.setTimeout(
 						() =>
 							document
@@ -1334,6 +1423,17 @@ import {
 				body: { id },
 			} )
 				.then( ( data ) => {
+					tokensRef.current = tokensRef.current.map( ( item ) =>
+						item.id === id
+							? {
+									...item,
+									expires_at: data.expires_at,
+									expired: false,
+									status: 'active',
+							  }
+							: item
+					);
+					setTokens( tokensRef.current );
 					notify(
 						'success',
 						sprintf(
@@ -1345,7 +1445,7 @@ import {
 							formatDate( data.expires_at )
 						)
 					);
-					fetchTokens();
+					refreshAfterMutation();
 				} )
 				.catch( () => {
 					notify(
@@ -1357,40 +1457,6 @@ import {
 					);
 				} )
 				.finally( () => setWorkingTokenId( '' ) );
-		}
-
-		function renderNotice() {
-			if ( ! notice ) {
-				return null;
-			}
-
-			return el(
-				'div',
-				{
-					className: 'previewshare-notice-region',
-					role: 'region',
-					'aria-label': __( 'PreviewShare notices', 'previewshare' ),
-				},
-				el(
-					Notice,
-					{
-						className: 'previewshare-app-notice',
-						status: notice.status,
-						isDismissible: true,
-						onRemove: () => setNotice( null ),
-					},
-					el( 'p', null, notice.message ),
-					notice.url
-						? el( 'input', {
-								className: 'previewshare-copy-field code',
-								readOnly: true,
-								type: 'url',
-								value: notice.url,
-								onFocus: ( event ) => event.target.select(),
-						  } )
-						: null
-				)
-			);
 		}
 
 		function renderSaveState() {
@@ -1475,6 +1541,37 @@ import {
 			}
 		}
 
+		function renderInventoryStale() {
+			return inventoryStale
+				? el(
+						'div',
+						{
+							className: 'previewshare-inventory-continuation',
+							role: 'status',
+						},
+						el(
+							'p',
+							{ className: 'previewshare-inline-note' },
+							__(
+								'The loaded list may be out of date. Refresh it before loading older links.',
+								'previewshare'
+							)
+						),
+						el(
+							Button,
+							{
+								variant: 'secondary',
+								isBusy: loadingTokens,
+								disabled: loadingTokens,
+								onClick: () =>
+									fetchTokens( { resetView: true } ),
+							},
+							__( 'Refresh preview links', 'previewshare' )
+						)
+				  )
+				: null;
+		}
+
 		function renderOverview() {
 			const activeTokens = tokens.filter(
 				( token ) => token.status === 'active'
@@ -1485,6 +1582,7 @@ import {
 			return el(
 				'div',
 				{ className: 'previewshare-tab-content previewshare-overview' },
+				renderInventoryStale(),
 				el(
 					'div',
 					{ className: 'previewshare-tab-intro' },
@@ -2444,6 +2542,19 @@ import {
 		}
 
 		function renderPreviews() {
+			if (
+				typeof wp.element.useInsertionEffect === 'function' &&
+				! dataViewsModule &&
+				! dataViewsFailed
+			) {
+				return el(
+					'div',
+					{ className: 'previewshare-loading', role: 'status' },
+					el( Spinner ),
+					__( 'Loading preview links…', 'previewshare' )
+				);
+			}
+			const { DataViews, filterSortAndPaginate } = dataViewsModule || {};
 			const fields = getTokenFields(
 				handleExtend,
 				workingTokenId,
@@ -2501,6 +2612,7 @@ import {
 						'previewshare'
 					)
 				),
+				renderInventoryStale(),
 				! canRenderDataViews
 					? renderLegacyLinkTable( legacyTokens )
 					: el(
@@ -2568,7 +2680,7 @@ import {
 									: undefined
 							)
 					  ),
-				hasMoreTokens
+				hasMoreTokens && ! inventoryStale
 					? el(
 							'div',
 							{
@@ -2593,7 +2705,8 @@ import {
 								{
 									variant: 'secondary',
 									isBusy: loadingMoreTokens,
-									disabled: loadingMoreTokens,
+									disabled:
+										loadingMoreTokens || loadingTokens,
 									onClick: () =>
 										fetchTokens( { append: true } ),
 								},
@@ -3122,7 +3235,7 @@ import {
 					)
 				)
 			),
-			renderNotice(),
+			el( NoticeRegion, { notices, clearNotice, Notice } ),
 			loadingSettings
 				? el(
 						'div',

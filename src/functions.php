@@ -114,7 +114,6 @@ function previewshare_generate_preview_link( int $post_id, ?int $ttl_hours = nul
 		return new \WP_Error( 'token_storage_failed', 'Preview token could not be stored.', [ 'status' => 500 ] );
 	}
 
-	update_post_meta( $post_id, '_previewshare_enabled', true );
 	if ( null !== $ttl_hours ) {
 		update_post_meta( $post_id, '_previewshare_ttl_hours', $ttl );
 	}

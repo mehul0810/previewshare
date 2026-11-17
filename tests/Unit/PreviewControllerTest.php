@@ -20,6 +20,26 @@ use WP_REST_Response;
 
 class PreviewControllerTest extends TestCase {
 
+	public function test_cursor_inventory_uses_additive_continuation_and_preserves_legacy_route(): void {
+		$storage = Mockery::mock( PostMetaStorage::class );
+		$controller = $this->makeController( $storage );
+		$storage->shouldReceive( 'list_tokens_by_cursor' )->once()->with( 25, 'start' )->andReturn( [ 'items' => [], 'total' => 1, 'next_cursor' => 'opaque' ] );
+		$storage->shouldReceive( 'list_tokens' )->never();
+		$storage->shouldReceive( 'count_tokens' )->never();
+		Functions\expect( 'get_current_user_id' )->once()->andReturn( 7 );
+		Functions\expect( 'get_option' )->once()->with( 'previewshare_enable_logging', false )->andReturn( false );
+		$response = $controller->list_tokens( new WP_REST_Request( [ 'per_page' => 25, 'cursor' => 'start' ] ) );
+		self::assertSame( [ 'items' => [], 'total' => 1, 'next_cursor' => 'opaque' ], $response->get_data() );
+	}
+
+	public function test_cursor_change_is_returned_as_an_error(): void {
+		$storage = Mockery::mock( PostMetaStorage::class );
+		$controller = $this->makeController( $storage );
+		$error = new WP_Error( 'previewshare_inventory_changed', 'Refresh', [ 'status' => 409 ] );
+		$storage->shouldReceive( 'list_tokens_by_cursor' )->once()->with( 50, 'cursor' )->andReturn( $error );
+		self::assertSame( $error, $controller->list_tokens( new WP_REST_Request( [ 'cursor' => 'cursor' ] ) ) );
+	}
+
 	public function test_list_tokens_returns_enriched_response(): void {
 		$storage    = Mockery::mock( PostMetaStorage::class );
 		$controller = $this->makeController( $storage );
@@ -44,6 +64,7 @@ class PreviewControllerTest extends TestCase {
 				]
 			);
 		$storage->shouldReceive( 'count_tokens' )->once()->andReturn( 1 );
+		Functions\expect( '_prime_post_caches' )->once()->with( [ 42 ], false, false );
 
 		Functions\expect( 'get_post' )
 			->once()
@@ -214,9 +235,8 @@ class PreviewControllerTest extends TestCase {
 			->with( 42, '_previewshare_ttl_hours', true )
 			->andReturn( '' );
 		Functions\expect( 'update_post_meta' )
-			->once()
-			->with( 42, '_previewshare_enabled', true )
-			->andReturn( true );
+			->never()
+			->with( 42, '_previewshare_enabled', true );
 		Functions\expect( 'home_url' )
 			->once()
 			->with( '/preview/generated-token' )

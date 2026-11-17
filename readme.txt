@@ -4,7 +4,7 @@ Tags: preview, draft preview, preview link, share draft, public preview
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 

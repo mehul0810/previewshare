@@ -200,6 +200,9 @@ if ( ! class_exists( 'WP_Post' ) ) {
 		/** @var string */
 		public $post_status;
 
+		/** @var int */
+		public $post_parent;
+
 		/** @var string */
 		public $post_title;
 
@@ -216,6 +219,7 @@ if ( ! class_exists( 'WP_Post' ) ) {
 			$this->ID          = (int) ( $data['ID'] ?? 0 );
 			$this->post_type   = (string) ( $data['post_type'] ?? 'post' );
 			$this->post_status = (string) ( $data['post_status'] ?? 'draft' );
+			$this->post_parent = (int) ( $data['post_parent'] ?? 0 );
 			$this->post_title   = (string) ( $data['post_title'] ?? '' );
 			$this->post_content = (string) ( $data['post_content'] ?? '' );
 			$this->post_excerpt = (string) ( $data['post_excerpt'] ?? '' );

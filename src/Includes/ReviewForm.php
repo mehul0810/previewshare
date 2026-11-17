@@ -161,7 +161,7 @@ final class ReviewForm {
 			return;
 		}
 
-		$context = $this->current_link();
+		$context = $this->current_link( true, true );
 		if ( ! $context ) {
 			return;
 		}
@@ -210,9 +210,10 @@ final class ReviewForm {
 	 * Resolve the current opted-in preview without exposing response data.
 	 *
 	 * @param bool $responses_required Whether this link must accept responses.
+	 * @param bool $include_snapshot Whether to prepare a signed response form.
 	 * @return array{token:string,post_id:int,link:array<string,mixed>,content_snapshot?:string,request_id?:string}|null
 	 */
-	private function current_link( bool $responses_required = true ): ?array {
+	private function current_link( bool $responses_required = true, bool $include_snapshot = false ): ?array {
 		$token = (string) get_query_var( 'previewshare_token' );
 		if ( '' === $token ) {
 			return null;
@@ -242,7 +243,7 @@ final class ReviewForm {
 			'post_id'          => $post_id,
 			'link'             => $context['link'],
 		];
-		if ( $responses_required ) {
+		if ( $include_snapshot ) {
 			$result['content_snapshot'] = ReviewVersion::issue_snapshot( $post, $context['hash'] );
 			$result['request_id']       = wp_generate_uuid4();
 		}

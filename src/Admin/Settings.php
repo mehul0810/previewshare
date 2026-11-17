@@ -78,7 +78,7 @@ class Settings {
 		wp_enqueue_script(
 			'previewshare-settings',
 			$plugin_url . 'assets/dist/js/previewshare-settings.min.js',
-			$asset['dependencies'],
+			array_values( array_unique( array_merge( $asset['dependencies'], [ 'react', 'react-dom', 'wp-components', 'wp-data', 'wp-date', 'wp-element', 'wp-hooks', 'wp-i18n' ] ) ) ),
 			$asset['version'],
 			true
 		);
@@ -97,6 +97,7 @@ class Settings {
 			[
 				// Base REST namespace for the plugin.
 				'rest_url'          => rest_url( 'previewshare/v1' ),
+				'asset_base'        => $plugin_url . 'assets/dist/',
 				'date_settings' => \previewshare_get_date_display_settings(),
 				'nonce'             => wp_create_nonce( 'wp_rest' ),
 				'settings'          => \previewshare_get_settings(),

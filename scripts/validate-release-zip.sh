@@ -53,6 +53,12 @@ for required_path in "${required_paths[@]}"; do
 	fi
 done
 
+inventory_chunk="$(unzip -p "${ZIP_PATH}" "${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.min.js" | grep -Eo 'previewshare-dataviews\.[a-f0-9]{8}\.min\.js' | head -n 1 || true)"
+if [[ -z "${inventory_chunk}" ]] || ! grep -Fxq "${PLUGIN_SLUG}/assets/dist/js/${inventory_chunk}" "${LIST_FILE}"; then
+	echo "Release zip is missing the settings inventory chunk." >&2
+	exit 1
+fi
+
 if unzip -p "${ZIP_PATH}" "${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.min.asset.php" | grep -Eq "'(react-jsx-runtime|wp-primitives)'"; then
 	echo "Settings bundle depends on a script handle that WordPress 5.8 does not register." >&2
 	exit 1

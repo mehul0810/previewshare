@@ -62,7 +62,7 @@ class AdminActionsTest extends TestCase {
 		$token_service->shouldReceive( 'generate' )->once()->andReturn( $token );
 		$storage->shouldReceive( 'get_post_id_by_token' )->once()->with( $token )->andReturn( false );
 		$storage->shouldReceive( 'store_token' )->once()->with( 42, $token, 6, 'Admin generated link', false, false )->andReturn( true );
-		Functions\expect( 'update_post_meta' )->twice()->andReturn( true );
+		Functions\expect( 'update_post_meta' )->once()->with( 42, '_previewshare_ttl_hours', 6 )->andReturn( true );
 		Functions\expect( 'home_url' )->once()->with( '/preview/' . $token )->andReturn( $url );
 		Functions\expect( 'wp_get_referer' )->once()->andReturn( 'https://example.test/wp-admin/post.php?post=42&action=edit' );
 		Functions\expect( 'esc_attr' )->once()->with( $url )->andReturn( $escaped_url );

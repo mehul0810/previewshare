@@ -13,7 +13,7 @@ export const fallbackSettings = {
 };
 
 export const INVENTORY_PAGE_SIZE = 100;
-export const INVENTORY_BATCH_PAGES = 10;
+export const INVENTORY_BATCH_PAGES = 1;
 
 export function getInventoryBatchState( {
 	existingCount = 0,
