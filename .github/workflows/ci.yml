@@ -217,6 +217,28 @@ jobs:
         run: composer install --no-progress --prefer-dist
       - name: Install dependencies
         run: npm ci
+      - name: Use the Debian security archive for the PHP 8.0 fixture
+        if: matrix.wordpress == '5.8.17'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          template = Path('node_modules/@wordpress/env/lib/runtime/docker/init-config.js')
+          source = template.read_text()
+          marker = "RUN sed -i '/buster-updates/d' /etc/apt/sources.list\n"
+          if source.count(marker) != 1:
+              raise SystemExit('Unexpected wp-env Dockerfile template. Review the Bullseye archive setup.')
+
+          # Keep apt's signature and package checksum verification enabled.
+          archive = 'https://archive.debian.org/debian-security bullseye-security'
+          mirror = 'http://deb.debian.org/debian-security bullseye-security'
+          bullseye = (
+              '\n# bullseye security packages have moved to the Debian archive.\n'
+              f"RUN sed -i 's|{mirror}|{archive}|' /etc/apt/sources.list\n"
+              f"RUN grep -F '{archive}' /etc/apt/sources.list\n"
+          )
+          template.write_text(source.replace(marker, marker + bullseye, 1))
+          PY
       - name: Run independent-session MySQL race proof
         env:
           PREVIEWSHARE_WP_VERSION: ${{ matrix.wordpress }}
