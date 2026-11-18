@@ -24,10 +24,10 @@ final class ReviewWriteStore {
 	 * @param int                  $post_id Owning post ID.
 	 * @param string               $comment Plain-text response.
 	 * @param array<string,string> $metadata Required response metadata.
-	 * @return int|null New review ID, zero for an existing request, or null on an unsupported backend.
+	 * @return int|string|null New review ID, zero for an existing request, a denial code, or null on an unsupported backend.
 	 * @throws \RuntimeException If a transaction cannot be confirmed.
 	 */
-	public function save( string $option_name, int $post_id, string $comment, array $metadata ): ?int {
+	public function save( string $option_name, int $post_id, string $comment, array $metadata ): int|string|null {
 		global $wpdb;
 		if ( ! $wpdb instanceof \wpdb ) {
 			return null;
@@ -47,6 +47,8 @@ final class ReviewWriteStore {
 			$guid_base                      = home_url( '/?post_type=previewshare_review&p=' );
 			$author                         = get_current_user_id();
 			$content                        = wp_unslash( $comment );
+			$supported_types                = \previewshare_get_supported_post_types();
+			$has_identity                   = '' !== $metadata['_previewshare_reviewer_name'] && '' !== $metadata['_previewshare_reviewer_email'];
 			$values                         = array_map(
 				static fn( string $value ): string => (string) maybe_serialize( wp_unslash( $value ) ),
 				$metadata
@@ -69,8 +71,17 @@ final class ReviewWriteStore {
 				// existing response through ordinary reconciliation after closing.
 				return 0;
 			}
-			if ( null === $connection->get_row( "SELECT ID FROM $posts WHERE ID = ?" . $lock, [ $post_id ] ) ) {
-				throw new \RuntimeException( 'The review parent no longer exists.' );
+			$access_sql = ReviewSubmissionAccess::select_sql( $posts, $postmeta, '?', '?' );
+			// Shared locks protect the existing post and metadata rows from edits
+			// while allowing reviewers with distinct request keys to proceed.
+			$access = $connection->get_row(
+				$access_sql . ( $mysql ? ' LOCK IN SHARE MODE' : '' ),
+				ReviewSubmissionAccess::parameters( $post_id, $metadata['_previewshare_link_hash'] )
+			);
+			$link   = ReviewSubmissionAccess::decode( $access['link'] ?? null );
+			$denial = ReviewSubmissionAccess::denial( $access, $link, $supported_types, $has_identity );
+			if ( '' !== $denial ) {
+				return $denial;
 			}
 
 			$inserted  = $connection->execute(
@@ -98,6 +109,9 @@ final class ReviewWriteStore {
 			}
 			if ( 1 !== $connection->execute( "UPDATE $options SET option_value = ? WHERE option_id = ? AND option_name = ? AND option_value = 'ready'", [ (string) $review_id, (int) $request['option_id'], $option_name ] ) ) {
 				throw new \RuntimeException( 'The review receipt could not be recorded.' );
+			}
+			if ( is_array( $link ) && ReviewSubmissionAccess::is_expired( $link ) ) {
+				return 'review_expired';
 			}
 			$connection->commit();
 			return $review_id;

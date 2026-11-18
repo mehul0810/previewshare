@@ -24,9 +24,15 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class PostMetaStorage {
 
+	/**
+	 * Post metadata prefix for authoritative link records.
+	 *
+	 * @internal
+	 */
+	public const DETAIL_META_PREFIX = '_previewshare_token:';
+
 	private const LINKS_META_KEY        = '_previewshare_links';
 	private const CURRENT_HASH_META_KEY = '_previewshare_token_hash';
-	private const DETAIL_META_PREFIX    = '_previewshare_token:';
 	private const REVERSE_META_PREFIX   = '_previewshare_token_rev:';
 	private const CACHE_GROUP           = 'previewshare_tokens';
 
@@ -326,13 +332,35 @@ class PostMetaStorage {
 	 * @return bool
 	 */
 	public function record_token_view( string $token ): bool {
-		$hash    = $this->token_service->hash( $token );
-		$post_id = $this->get_post_id_by_hash( $hash );
+		$hash = $this->token_service->hash( $token );
+		return $this->record_view_by_hash( $this->get_post_id_by_hash( $hash ), $hash );
+	}
 
-		if ( ! $post_id ) {
+	/**
+	 * Count a view after the preview request has resolved its owning post.
+	 *
+	 * The counter still checks the authoritative record before each attempt.
+	 *
+	 * @param string $token Raw token.
+	 * @param int    $post_id Resolved owning post.
+	 * @return bool
+	 * @internal
+	 */
+	public function record_resolved_token_view( string $token, int $post_id ): bool {
+		return $this->record_view_by_hash( $post_id, $this->token_service->hash( $token ) );
+	}
+
+	/**
+	 * Increment the current active link's view count.
+	 *
+	 * @param int    $post_id Owning post ID.
+	 * @param string $hash Hashed link token.
+	 * @return bool
+	 */
+	private function record_view_by_hash( int $post_id, string $hash ): bool {
+		if ( $post_id <= 0 ) {
 			return false;
 		}
-
 		$key = self::DETAIL_META_PREFIX . $hash;
 		for ( $attempt = 0; $attempt < 3; $attempt++ ) {
 			$stored_link = get_post_meta( $post_id, $key, true );

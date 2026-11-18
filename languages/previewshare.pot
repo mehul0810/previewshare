@@ -1136,6 +1136,10 @@ msgstr ""
 msgid "Page %1$d of %2$d"
 msgstr ""
 
+#: assets/src/js/settings.js
+msgid "Links per page"
+msgstr ""
+
 #: assets/src/js/settings.js:1793
 msgid "Previous"
 msgstr ""

@@ -28,6 +28,9 @@ class ReviewFormTest extends TestCase {
 	private $request_ids_issued = 0;
 
 	/** @var int */
+	private $link_resolutions = 0;
+
+	/** @var int */
 	private $queried_post_id = 42;
 
 	/** @var WP_Post */
@@ -43,6 +46,7 @@ class ReviewFormTest extends TestCase {
 		$storage = Mockery::mock( PostMetaStorage::class );
 		$storage->shouldReceive( 'get_link_by_token' )->andReturnUsing(
 			function ( string $token ) {
+				++$this->link_resolutions;
 				if ( 'review-token' !== $token ) {
 					return null;
 				}
@@ -96,6 +100,7 @@ class ReviewFormTest extends TestCase {
 		$this->assertStringStartsWith( '<p>Shared draft</p>', $content );
 		$this->assertSame( 1, substr_count( $content, 'id="previewshare-review-form"' ) );
 		$this->assertSame( 1, $this->request_ids_issued );
+		$this->assertSame( 4, $this->link_resolutions );
 		$this->assertSame( $content, $this->form->append_to_content( $content ) );
 		ob_start();
 		$this->form->render();

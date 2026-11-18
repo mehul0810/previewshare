@@ -6,6 +6,7 @@
  */
 
 use PreviewShare\Services\ReviewResponseService;
+use PreviewShare\Services\PostMetaStorage;
 use PreviewShare\Services\ReviewSubmissionStore;
 
 if ( ! defined( 'ABSPATH' ) || PHP_SAPI !== 'cli' || wp_get_environment_type() !== 'local' || ( $args[0] ?? '' ) !== '--disposable-fixture' ) {
@@ -22,6 +23,10 @@ if ( 'seed' === $mode ) {
 	if ( ! is_int( $parent ) || $parent <= 0 ) {
 		throw new RuntimeException( 'Could not seed the transaction proof.' );
 	}
+	$detail = [ 'responses_enabled' => true, 'revoked' => 0, 'expires_at' => null ];
+	if ( ! add_post_meta( $parent, '_previewshare_enabled', true, true ) || ! add_post_meta( $parent, PostMetaStorage::DETAIL_META_PREFIX . $link, $detail, true ) ) {
+		throw new RuntimeException( 'Could not seed an eligible review link.' );
+	}
 	echo $parent, PHP_EOL;
 	return;
 }
@@ -37,6 +42,22 @@ $check   = static function ( bool $passed, string $failure ): void {
 		throw new RuntimeException( $failure );
 	}
 };
+
+$denials = [
+	'revoked'  => [ [ 'revoked' => 1 ], 'review_revoked' ],
+	'expired'  => [ [ 'expires_at' => time() - 1 ], 'review_expired' ],
+	'disabled' => [ [ 'responses_enabled' => false ], 'review_disabled' ],
+	'identity' => [ [ 'identity_required' => true ], 'review_identity_required' ],
+];
+if ( isset( $denials[ $mode ] ) ) {
+	[ $change, $expected ] = $denials[ $mode ];
+	$link_key = PostMetaStorage::DETAIL_META_PREFIX . $link;
+	$detail   = get_post_meta( $id, $link_key, true );
+	$check( is_array( $detail ) && false !== update_post_meta( $id, $link_key, $change + $detail ), 'Could not change the eligible review fixture.' );
+	$result = $service->create_response( $id, $link, str_repeat( 'b', 64 ), 'comment', '', '', 'Synthetic feedback', $key );
+	$check( is_wp_error( $result ) && $expected === $result->get_error_code(), 'The write did not enforce current review eligibility.' );
+	$mode = 'absent';
+}
 
 if ( 'legacy-zero' === $mode ) {
 	$check( add_option( $marker, '0', '', false ), 'Could not seed an ambiguous legacy reservation.' );

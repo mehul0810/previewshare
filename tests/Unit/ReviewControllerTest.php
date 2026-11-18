@@ -352,6 +352,7 @@ class ReviewControllerTest extends TestCase {
 			'malformed name' => [ 'name', "\xc3\x28", 'review_invalid_name' ],
 			'malformed comment' => [ 'comment', "\xc3\x28", 'review_invalid_comment' ],
 			'oversized raw comment' => [ 'comment', str_repeat( 'a', 20001 ), 'review_comment_too_long' ],
+			'oversized raw email' => [ 'email', str_repeat( 'a', 191 ), 'review_email_too_long' ],
 		];
 	}
 

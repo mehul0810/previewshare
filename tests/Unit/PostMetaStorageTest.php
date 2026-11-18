@@ -566,7 +566,10 @@ class PostMetaStorageTest extends TestCase {
 		$this->assertSame( 'expired', $expired['status'] );
 	}
 
-	public function test_record_token_view_updates_active_link_view_fields(): void {
+	/**
+	 * @dataProvider view_resolution_modes
+	 */
+	public function test_record_token_view_updates_active_link_view_fields( bool $resolved ): void {
 		$storage = $this->make_storage();
 		$token   = 'active-token';
 		$hash    = hash_hmac( 'sha256', $token, self::HASH_KEY );
@@ -584,11 +587,15 @@ class PostMetaStorageTest extends TestCase {
 			}
 		};
 
-		Functions\expect( 'get_option' )
-			->twice()
-			->with( 'previewshare_enable_caching', true )
-			->andReturn( false );
-		Functions\expect( 'get_posts' )->once()->andReturn( [ $post_id ] );
+		if ( $resolved ) {
+			Functions\expect( 'get_posts' )->never();
+		} else {
+			Functions\expect( 'get_option' )
+				->twice()
+				->with( 'previewshare_enable_caching', true )
+				->andReturn( false );
+			Functions\expect( 'get_posts' )->once()->andReturn( [ $post_id ] );
+		}
 		Functions\expect( 'get_post_meta' )
 			->once()
 			->with( $post_id, '_previewshare_token:' . $hash, true )
@@ -610,7 +617,8 @@ class PostMetaStorageTest extends TestCase {
 			->with( $post_id, 'post_meta' )
 			->andReturn( true );
 
-		$this->assertTrue( $storage->record_token_view( $token ) );
+		$recorded = $resolved ? $storage->record_resolved_token_view( $token, $post_id ) : $storage->record_token_view( $token );
+		$this->assertTrue( $recorded );
 		$updated_link = maybe_unserialize( $GLOBALS['wpdb']->args[0] );
 		$this->assertSame( 3, $updated_link['view_count'] );
 		$this->assertIsInt( $updated_link['last_viewed_at'] );
@@ -619,6 +627,16 @@ class PostMetaStorageTest extends TestCase {
 		} else {
 			$GLOBALS['wpdb'] = $previous_db;
 		}
+	}
+
+	/**
+	 * @return array<string,array{bool}>
+	 */
+	public static function view_resolution_modes(): array {
+		return [
+			'reverse lookup' => [ false ],
+			'known parent'   => [ true ],
+		];
 	}
 
 	public function test_get_token_meta_uses_detail_rows_for_current_view_counts(): void {

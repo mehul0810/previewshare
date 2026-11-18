@@ -206,22 +206,37 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 		);
 	}
 
+	const linkReferencesByInventory = new WeakMap();
+
 	function getUniqueLinkReference( item, inventoryItems ) {
 		const id = String( item.id );
-		let length = Math.min( 8, id.length );
-
-		while (
-			length < id.length &&
-			inventoryItems.some(
-				( other ) =>
-					other.id !== item.id &&
-					String( other.id ).startsWith( id.slice( 0, length ) )
-			)
-		) {
-			length++;
+		let references = linkReferencesByInventory.get( inventoryItems );
+		if ( ! references ) {
+			references = new Map();
+			linkReferencesByInventory.set( inventoryItems, references );
+		}
+		if ( references.has( id ) ) {
+			return references.get( id );
 		}
 
-		return id.slice( 0, length );
+		// Only resolve references for links whose Extend action is rendered.
+		let length = Math.min( 8, id.length );
+		while ( length < id.length ) {
+			const prefix = id.slice( 0, length );
+			if (
+				! inventoryItems.some(
+					( other ) =>
+						other.id !== item.id &&
+						String( other.id ).startsWith( prefix )
+				)
+			) {
+				break;
+			}
+			length++;
+		}
+		const reference = id.slice( 0, length );
+		references.set( id, reference );
+		return reference;
 	}
 
 	function extendLinkAriaLabel( item, inventoryItems ) {
@@ -674,6 +689,7 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 			let timeout;
 			if (
 				activeTab === 'previews' &&
+				! compactInventory &&
 				! dataViewsModule &&
 				! dataViewsFailed &&
 				typeof wp.element.useInsertionEffect === 'function'
@@ -704,7 +720,7 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 				cancelled = true;
 				window.clearTimeout( timeout );
 			};
-		}, [ activeTab, dataViewsModule, dataViewsFailed ] );
+		}, [ activeTab, compactInventory, dataViewsModule, dataViewsFailed ] );
 
 		function notifySettings( status, message ) {
 			notify( status, message, '', 'settings' );
@@ -1950,7 +1966,7 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 			);
 		}
 
-		function renderLegacyLinkTable( items, nativeControls = false ) {
+		function renderLegacyLinkTable( items ) {
 			const selectedStatuses = getFilterValues(
 				( view.filters || [] ).find(
 					( filter ) => filter.field === 'status'
@@ -1976,7 +1992,7 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 
 				return 'asc' === sort.direction ? 'ascending' : 'descending';
 			};
-			if ( sortField && ! nativeControls ) {
+			if ( sortField ) {
 				sortedItems.sort( ( left, right ) => {
 					const leftValue = sortField.getValue( { item: left } );
 					const rightValue = sortField.getValue( { item: right } );
@@ -1990,6 +2006,9 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 				} );
 			}
 			const perPage = Math.max( 1, Number( view.perPage ) || 20 );
+			const pageSizes = [ ...new Set( [ 20, 50, 100, perPage ] ) ].sort(
+				( left, right ) => left - right
+			);
 			const totalPages = Math.max(
 				1,
 				Math.ceil( sortedItems.length / perPage )
@@ -1998,180 +2017,167 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 				Math.max( 1, Number( view.page ) || 1 ),
 				totalPages
 			);
-			const pageItems = nativeControls
-				? items
-				: sortedItems.slice(
-						( currentPage - 1 ) * perPage,
-						currentPage * perPage
-				  );
+			const pageItems = sortedItems.slice(
+				( currentPage - 1 ) * perPage,
+				currentPage * perPage
+			);
 			const renderCell = ( label, content, className ) =>
 				el( 'td', { className, 'data-label': label }, content );
 
 			return el(
 				'div',
 				{ className: 'previewshare-legacy-inventory' },
-				! nativeControls &&
+				el(
+					'div',
+					{ className: 'previewshare-legacy-toolbar' },
+					el( TextControl, {
+						label: __( 'Search preview links', 'previewshare' ),
+						value: view.search || '',
+						placeholder: __(
+							'Search by content or label',
+							'previewshare'
+						),
+						onChange: ( search ) =>
+							setView( ( current ) => ( {
+								...current,
+								search,
+								page: 1,
+							} ) ),
+					} ),
 					el(
-						'div',
-						{ className: 'previewshare-legacy-toolbar' },
-						el( TextControl, {
-							label: __( 'Search preview links', 'previewshare' ),
-							value: view.search || '',
-							placeholder: __(
-								'Search by content or label',
-								'previewshare'
-							),
-							onChange: ( search ) =>
-								setView( ( current ) => ( {
-									...current,
-									search,
-									page: 1,
-								} ) ),
-						} ),
+						'fieldset',
+						{ className: 'previewshare-status-filters' },
+						el( 'legend', null, __( 'Status', 'previewshare' ) ),
+						...[
+							{
+								label: __( 'Active', 'previewshare' ),
+								value: 'active',
+							},
+							{
+								label: __( 'Expiring soon', 'previewshare' ),
+								value: 'expiring_soon',
+							},
+							{
+								label: __( 'Expired', 'previewshare' ),
+								value: 'expired',
+							},
+							{
+								label: __( 'Revoked', 'previewshare' ),
+								value: 'revoked',
+							},
+						].map( ( option ) =>
+							el( CheckboxControl, {
+								key: option.value,
+								label: option.label,
+								checked: selectedStatuses.includes(
+									option.value
+								),
+								onChange: ( checked ) => {
+									setView( ( current ) => {
+										const currentFilters =
+											current.filters || [];
+										const statusFilter =
+											currentFilters.find(
+												( filter ) =>
+													filter.field === 'status'
+											);
+										const statuses = getFilterValues(
+											statusFilter
+										).filter(
+											( status ) =>
+												status !== option.value
+										);
+										if ( checked ) {
+											statuses.push( option.value );
+										}
+
+										return {
+											...current,
+											filters: [
+												...currentFilters.filter(
+													( filter ) =>
+														filter.field !==
+														'status'
+												),
+												...( statuses.length
+													? [
+															{
+																field: 'status',
+																operator:
+																	'isAny',
+																value: statuses,
+															},
+													  ]
+													: [] ),
+											],
+											page: 1,
+										};
+									} );
+								},
+							} )
+						)
+					),
+					el(
+						'fieldset',
+						{ className: 'previewshare-status-filters' },
 						el(
-							'fieldset',
-							{ className: 'previewshare-status-filters' },
-							el(
-								'legend',
-								null,
-								__( 'Status', 'previewshare' )
-							),
-							...[
-								{
-									label: __( 'Active', 'previewshare' ),
-									value: 'active',
-								},
-								{
-									label: __(
-										'Expiring soon',
-										'previewshare'
-									),
-									value: 'expiring_soon',
-								},
-								{
-									label: __( 'Expired', 'previewshare' ),
-									value: 'expired',
-								},
-								{
-									label: __( 'Revoked', 'previewshare' ),
-									value: 'revoked',
-								},
-							].map( ( option ) =>
+							'legend',
+							null,
+							__( 'Content type', 'previewshare' )
+						),
+						...Object.entries( availablePostTypes ).map(
+							( [ postType, label ] ) =>
 								el( CheckboxControl, {
-									key: option.value,
-									label: option.label,
-									checked: selectedStatuses.includes(
-										option.value
-									),
-									onChange: ( checked ) => {
+									key: postType,
+									label,
+									checked:
+										selectedPostTypes.includes( postType ),
+									onChange: ( checked ) =>
 										setView( ( current ) => {
 											const currentFilters =
 												current.filters || [];
-											const statusFilter =
-												currentFilters.find(
-													( filter ) =>
-														filter.field ===
-														'status'
+											const currentPostTypes =
+												getFilterValues(
+													currentFilters.find(
+														( filter ) =>
+															filter.field ===
+															'post_type'
+													)
+												).filter(
+													( value ) =>
+														value !== postType
 												);
-											const statuses = getFilterValues(
-												statusFilter
-											).filter(
-												( status ) =>
-													status !== option.value
-											);
 											if ( checked ) {
-												statuses.push( option.value );
+												currentPostTypes.push(
+													postType
+												);
 											}
-
 											return {
 												...current,
 												filters: [
 													...currentFilters.filter(
 														( filter ) =>
 															filter.field !==
-															'status'
+															'post_type'
 													),
-													...( statuses.length
+													...( currentPostTypes.length
 														? [
 																{
-																	field: 'status',
+																	field: 'post_type',
 																	operator:
 																		'isAny',
-																	value: statuses,
+																	value: currentPostTypes,
 																},
 														  ]
 														: [] ),
 												],
 												page: 1,
 											};
-										} );
-									},
+										} ),
 								} )
-							)
-						),
-						el(
-							'fieldset',
-							{ className: 'previewshare-status-filters' },
-							el(
-								'legend',
-								null,
-								__( 'Content type', 'previewshare' )
-							),
-							...Object.entries( availablePostTypes ).map(
-								( [ postType, label ] ) =>
-									el( CheckboxControl, {
-										key: postType,
-										label,
-										checked:
-											selectedPostTypes.includes(
-												postType
-											),
-										onChange: ( checked ) =>
-											setView( ( current ) => {
-												const currentFilters =
-													current.filters || [];
-												const currentPostTypes =
-													getFilterValues(
-														currentFilters.find(
-															( filter ) =>
-																filter.field ===
-																'post_type'
-														)
-													).filter(
-														( value ) =>
-															value !== postType
-													);
-												if ( checked ) {
-													currentPostTypes.push(
-														postType
-													);
-												}
-												return {
-													...current,
-													filters: [
-														...currentFilters.filter(
-															( filter ) =>
-																filter.field !==
-																'post_type'
-														),
-														...( currentPostTypes.length
-															? [
-																	{
-																		field: 'post_type',
-																		operator:
-																			'isAny',
-																		value: currentPostTypes,
-																	},
-															  ]
-															: [] ),
-													],
-													page: 1,
-												};
-											} ),
-									} )
-							)
 						)
-					),
+					)
+				),
 				loadingTokens
 					? el(
 							'div',
@@ -2493,7 +2499,7 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 									'previewshare'
 								)
 							),
-				! nativeControls && ! loadingTokens
+				! loadingTokens
 					? el(
 							'div',
 							{ className: 'previewshare-legacy-pagination' },
@@ -2505,6 +2511,41 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 									__( 'Page %1$d of %2$d', 'previewshare' ),
 									currentPage,
 									totalPages
+								)
+							),
+							el(
+								'label',
+								{
+									className: 'previewshare-legacy-page-size',
+								},
+								__( 'Links per page', 'previewshare' ),
+								el(
+									'select',
+									{
+										'aria-label': __(
+											'Links per page',
+											'previewshare'
+										),
+										value: String( perPage ),
+										onChange: ( event ) =>
+											setView( ( current ) => ( {
+												...current,
+												page: 1,
+												perPage: Number(
+													event.target.value
+												),
+											} ) ),
+									},
+									...pageSizes.map( ( size ) =>
+										el(
+											'option',
+											{
+												key: size,
+												value: String( size ),
+											},
+											size
+										)
+									)
 								)
 							),
 							el(
@@ -2540,6 +2581,7 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 
 		function renderPreviews() {
 			if (
+				! compactInventory &&
 				typeof wp.element.useInsertionEffect === 'function' &&
 				! dataViewsModule &&
 				! dataViewsFailed
@@ -2559,44 +2601,51 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 				settings.available_post_types
 			);
 			const canRenderDataViews = Boolean(
-				DataViews && typeof wp.element.useInsertionEffect === 'function'
+				DataViews &&
+					! compactInventory &&
+					typeof wp.element.useInsertionEffect === 'function'
 			);
 			const processed = canRenderDataViews
 				? filterSortAndPaginate( tokens, view, fields )
 				: null;
-			const normalizedSearch = normalizeSearchInput( view.search || '' );
-			const searchableFields = fields.filter(
-				( field ) => field.enableGlobalSearch
-			);
-			const statusFilter = ( view.filters || [] ).find(
-				( filter ) => filter.field === 'status'
-			);
-			const selectedStatuses = getFilterValues( statusFilter );
-			const selectedPostTypes = getFilterValues(
-				( view.filters || [] ).find(
-					( filter ) => filter.field === 'post_type'
-				)
-			);
-			const legacyTokens = tokens.filter( ( token ) => {
-				const actualStatus = isExpiringSoon( token )
-					? 'expiring_soon'
-					: token.status;
-				const statusMatches =
-					selectedStatuses.length === 0 ||
-					selectedStatuses.includes( actualStatus );
-				const postTypeMatches =
-					selectedPostTypes.length === 0 ||
-					selectedPostTypes.includes( token.post_type );
-				const searchMatches =
-					! normalizedSearch ||
-					searchableFields.some( ( field ) =>
-						normalizeSearchInput(
-							String( field.getValue( { item: token } ) )
-						).includes( normalizedSearch )
-					);
+			let legacyTokens = null;
+			if ( ! canRenderDataViews ) {
+				const normalizedSearch = normalizeSearchInput(
+					view.search || ''
+				);
+				const searchableFields = fields.filter(
+					( field ) => field.enableGlobalSearch
+				);
+				const statusFilter = ( view.filters || [] ).find(
+					( filter ) => filter.field === 'status'
+				);
+				const selectedStatuses = getFilterValues( statusFilter );
+				const selectedPostTypes = getFilterValues(
+					( view.filters || [] ).find(
+						( filter ) => filter.field === 'post_type'
+					)
+				);
+				legacyTokens = tokens.filter( ( token ) => {
+					const actualStatus = isExpiringSoon( token )
+						? 'expiring_soon'
+						: token.status;
+					const statusMatches =
+						selectedStatuses.length === 0 ||
+						selectedStatuses.includes( actualStatus );
+					const postTypeMatches =
+						selectedPostTypes.length === 0 ||
+						selectedPostTypes.includes( token.post_type );
+					const searchMatches =
+						! normalizedSearch ||
+						searchableFields.some( ( field ) =>
+							normalizeSearchInput(
+								String( field.getValue( { item: token } ) )
+							).includes( normalizedSearch )
+						);
 
-				return statusMatches && postTypeMatches && searchMatches;
-			} );
+					return statusMatches && postTypeMatches && searchMatches;
+				} );
+			}
 			const actions = getInventoryActions();
 
 			return el(
@@ -2610,72 +2659,39 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 					)
 				),
 				renderInventoryStale( true ),
-				! canRenderDataViews
+				legacyTokens
 					? renderLegacyLinkTable( legacyTokens )
 					: el(
 							'div',
 							{ className: 'previewshare-dataviews' },
-							el(
-								DataViews,
-								{
-									data: processed.data,
-									fields,
-									view,
-									onChangeView: setView,
-									paginationInfo: processed.paginationInfo,
-									defaultLayouts: { table: {} },
-									config: {
-										perPageSizes: [ 20, 50, 100 ],
-									},
-									actions,
-									isLoading:
-										loadingTokens || loadingMoreTokens,
-									getItemId: ( item ) => item.id,
-									searchLabel: __(
-										'Search preview links',
-										'previewshare'
-									),
-									empty: el(
-										'p',
-										{
-											className:
-												'previewshare-empty-state',
-										},
-										__(
-											'No preview links match this view.',
-											'previewshare'
-										)
-									),
+							el( DataViews, {
+								data: processed.data,
+								fields,
+								view,
+								onChangeView: setView,
+								paginationInfo: processed.paginationInfo,
+								defaultLayouts: { table: {} },
+								config: {
+									perPageSizes: [ 20, 50, 100 ],
 								},
-								compactInventory
-									? el(
-											wp.element.Fragment,
-											null,
-											el(
-												'div',
-												{
-													className:
-														'dataviews__view-actions',
-												},
-												el( DataViews.Search, {
-													label: __(
-														'Search preview links',
-														'previewshare'
-													),
-												} )
-											),
-											el( DataViews.Filters, {
-												className:
-													'dataviews-filters__container',
-											} ),
-											renderLegacyLinkTable(
-												processed.data,
-												true
-											),
-											el( DataViews.Pagination )
-									  )
-									: undefined
-							)
+								actions,
+								isLoading: loadingTokens || loadingMoreTokens,
+								getItemId: ( item ) => item.id,
+								searchLabel: __(
+									'Search preview links',
+									'previewshare'
+								),
+								empty: el(
+									'p',
+									{
+										className: 'previewshare-empty-state',
+									},
+									__(
+										'No preview links match this view.',
+										'previewshare'
+									)
+								),
+							} )
 					  ),
 				hasMoreTokens && ! inventoryStale
 					? el(

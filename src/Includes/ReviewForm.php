@@ -105,13 +105,13 @@ final class ReviewForm {
 			return $content;
 		}
 
-		$context = $this->current_link();
+		$context = $this->current_link( true, true );
 		if ( ! $context || (int) $context['post_id'] !== get_the_ID() ) {
 			return $content;
 		}
 
 		ob_start();
-		$this->render();
+		$this->render_form( $context );
 		return $content . ob_get_clean();
 	}
 
@@ -164,6 +164,20 @@ final class ReviewForm {
 
 		$context = $this->current_link( true, true );
 		if ( ! $context ) {
+			return;
+		}
+
+		$this->render_form( $context );
+	}
+
+	/**
+	 * Print a form from a link context validated by the caller.
+	 *
+	 * @param array{token:string,post_id:int,link:array<string,mixed>,content_snapshot:string,request_id:string} $context Validated preview context.
+	 * @return void
+	 */
+	private function render_form( array $context ): void {
+		if ( $this->rendered ) {
 			return;
 		}
 

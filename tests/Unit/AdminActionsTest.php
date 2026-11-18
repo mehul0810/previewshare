@@ -449,8 +449,12 @@ class AdminActionsTest extends TestCase {
 		Functions\when( 'PreviewShare\\Admin\\headers_sent' )->justReturn( false );
 		Functions\expect( 'PreviewShare\\Admin\\nocache_headers' )->once();
 		Functions\expect( 'PreviewShare\\Admin\\header' )
-			->once()
-			->with( 'Cache-Control: private, no-store, max-age=0', true );
+			->twice()
+			->withArgs(
+				static function( string $header, bool $replace ): bool {
+					return $replace && in_array( $header, [ 'Cache-Control: private, no-store, max-age=0', 'Referrer-Policy: no-referrer' ], true );
+				}
+			);
 
 		$actions->send_preview_cache_headers();
 
@@ -514,9 +518,9 @@ class AdminActionsTest extends TestCase {
 				]
 			);
 		$storage->shouldNotReceive( 'get_token_meta' );
-		$storage->shouldReceive( 'record_token_view' )
+		$storage->shouldReceive( 'record_resolved_token_view' )
 			->once()
-			->with( 'preview-token' )
+			->with( 'preview-token', 42 )
 			->andReturn( true );
 
 		$actions->maybe_handle_preview_request( $query );

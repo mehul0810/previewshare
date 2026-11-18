@@ -136,6 +136,8 @@ final class ReviewResponseService {
 			$review_id = $this->create_legacy_response( $post_id, $link_hash, $comment, $option_name, $meta );
 		} elseif ( 0 === $review_id ) {
 			return $this->confirm_existing_response( $option_name, $post_id, $link_hash, true );
+		} elseif ( is_string( $review_id ) ) {
+			return ReviewSubmissionAccess::error( $review_id );
 		} else {
 			$this->refresh_review_caches( $option_name, $review_id );
 		}
@@ -195,7 +197,18 @@ final class ReviewResponseService {
 		}
 
 		foreach ( $meta as $key => $value ) {
-			if ( ! add_post_meta( $review_id, $key, $value, true ) ) {
+			if ( ReviewSubmissionStore::META_KEY === $key ) {
+				// A complete metadata set can be reconciled by a retry. Check
+				// current access before making it eligible for reconciliation.
+				try {
+					$denial = ReviewSubmissionAccess::seal_legacy_response( $post_id, $review_id, $link_hash, $meta );
+				} catch ( \RuntimeException $error ) {
+					return $this->rollback_response( $review_id, $option_name, $reservation_id );
+				}
+				if ( '' !== $denial ) {
+					return $this->rollback_response( $review_id, $option_name, $reservation_id, ReviewSubmissionAccess::error( $denial ) );
+				}
+			} elseif ( ! add_post_meta( $review_id, $key, $value, true ) ) {
 				return $this->rollback_response( $review_id, $option_name, $reservation_id );
 			}
 		}
@@ -247,12 +260,13 @@ final class ReviewResponseService {
 	/**
 	 * Delete an unsuccessful response and clear any metadata left behind.
 	 *
-	 * @param int    $review_id Review record ID.
-	 * @param string $option_name Private request option.
-	 * @param int    $reservation_id Option row ID of the writer.
-	 * @return \WP_Error Storage failure or unconfirmed outcome.
+	 * @param int            $review_id Review record ID.
+	 * @param string         $option_name Private request option.
+	 * @param int            $reservation_id Option row ID of the writer.
+	 * @param \WP_Error|null $reason Error to report after successful rollback.
+	 * @return \WP_Error Storage failure, denial or unconfirmed outcome.
 	 */
-	private function rollback_response( int $review_id, string $option_name, int $reservation_id ): \WP_Error {
+	private function rollback_response( int $review_id, string $option_name, int $reservation_id, ?\WP_Error $reason = null ): \WP_Error {
 		if ( ! $this->submissions->finish_rollback( $option_name, $reservation_id, $review_id ) ) {
 			return $this->unconfirmed_submission();
 		}
@@ -262,7 +276,7 @@ final class ReviewResponseService {
 		if ( null === $cleared ) {
 			$this->schedule_cleanup_continuation( HOUR_IN_SECONDS );
 		}
-		return true === $cleared ? $this->storage_failure() : $this->unconfirmed_submission();
+		return true === $cleared ? ( $reason ?? $this->storage_failure() ) : $this->unconfirmed_submission();
 	}
 
 	/**

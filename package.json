@@ -27,7 +27,8 @@
     "minimatch": "3.1.5",
     "serialize-javascript": "7.0.6",
     "uuid": "11.1.1",
-    "webpack-dev-server": "5.2.5"
+    "webpack-dev-server": "5.2.5",
+    "colord": "2.9.4"
   },
   "files": [
     "assets/dist",

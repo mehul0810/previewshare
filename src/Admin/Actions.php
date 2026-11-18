@@ -373,7 +373,7 @@ class Actions {
 			exit;
 		}
 
-		$this->storage->record_token_view( $token );
+		$this->storage->record_resolved_token_view( $token, $post_id );
 
 		// Safely set the query so template hierarchy will pick the correct template.
 		$query->set( 'p', $post_id );
@@ -850,6 +850,7 @@ class Actions {
 
 		nocache_headers();
 		header( 'Cache-Control: private, no-store, max-age=0', true );
+		header( 'Referrer-Policy: no-referrer', true );
 	}
 
 	/**

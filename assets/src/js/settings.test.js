@@ -1056,13 +1056,16 @@ describe( 'PreviewShare responsive inventory', () => {
 	} );
 
 	it.each( [ false, true ] )(
-		'combines native status and content-type filters in compact mode %s',
+		'combines status and content-type filters in compact mode %s',
 		async ( compact ) => {
 			window.matchMedia = jest.fn( () => ( {
 				matches: compact,
 				addEventListener: jest.fn(),
 				removeEventListener: jest.fn(),
 			} ) );
+			if ( compact ) {
+				loadDataViews.mockClear();
+			}
 			const expiresAt = Math.floor( Date.now() / 1000 ) + 3600;
 			const { initialSettings } = setupFetch( null, [
 				{
@@ -1095,39 +1098,72 @@ describe( 'PreviewShare responsive inventory', () => {
 				findButton( 'Preview links' ).click();
 				await flushPromises();
 			} );
-			const statusField = window.__previewshareDataViewsProps.fields.find(
-				( field ) => field.id === 'status'
-			);
-			expect( statusField.filterBy ).toEqual( {
-				operators: [ 'isAny' ],
-				isPrimary: true,
-			} );
-			expect(
-				statusField.elements.map( ( option ) => option.value )
-			).toEqual( [ 'active', 'expiring_soon', 'expired', 'revoked' ] );
-			await act( async () => {
-				window.__previewshareDataViewsProps.onChangeView( {
-					...window.__previewshareDataViewsProps.view,
-					filters: [
-						{
-							field: 'status',
-							operator: 'isAny',
-							value: [ 'expiring_soon' ],
-						},
-						{
-							field: 'post_type',
-							operator: 'isAny',
-							value: [ 'page' ],
-						},
-					],
+			const verifyDesktopFilters = () => {
+				const statusField =
+					window.__previewshareDataViewsProps.fields.find(
+						( field ) => field.id === 'status'
+					);
+				expect( statusField.filterBy ).toEqual( {
+					operators: [ 'isAny' ],
+					isPrimary: true,
 				} );
-				await flushPromises();
-			} );
-			expect(
-				window.__previewshareDataViewsProps.data.map(
-					( item ) => item.id
-				)
-			).toEqual( [ 'page-link' ] );
+				expect(
+					statusField.elements.map( ( option ) => option.value )
+				).toEqual( [
+					'active',
+					'expiring_soon',
+					'expired',
+					'revoked',
+				] );
+			};
+			const verifyCompactDoesNotLoadDataViews = () => {
+				expect( loadDataViews ).not.toHaveBeenCalled();
+			};
+			if ( compact ) {
+				const filterInput = ( group, label ) => {
+					const fieldset = Array.from(
+						document.querySelectorAll(
+							'.previewshare-legacy-toolbar fieldset'
+						)
+					).find(
+						( item ) =>
+							item.querySelector( 'legend' ).textContent === group
+					);
+					return fieldset.querySelector(
+						'input[aria-label="' + label + '"]'
+					);
+				};
+				await act( async () => {
+					Simulate.change( filterInput( 'Status', 'Expiring soon' ), {
+						target: { checked: true },
+					} );
+					Simulate.change( filterInput( 'Content type', 'Page' ), {
+						target: { checked: true },
+					} );
+					await flushPromises();
+				} );
+				verifyCompactDoesNotLoadDataViews();
+			} else {
+				verifyDesktopFilters();
+				await act( async () => {
+					window.__previewshareDataViewsProps.onChangeView( {
+						...window.__previewshareDataViewsProps.view,
+						filters: [
+							{
+								field: 'status',
+								operator: 'isAny',
+								value: [ 'expiring_soon' ],
+							},
+							{
+								field: 'post_type',
+								operator: 'isAny',
+								value: [ 'page' ],
+							},
+						],
+					} );
+					await flushPromises();
+				} );
+			}
 			expect( document.body.textContent ).toContain( 'Page review' );
 			expect( document.body.textContent ).toContain( '#43' );
 			expect( document.body.textContent ).not.toContain( 'Post review' );
@@ -1217,15 +1253,20 @@ describe( 'PreviewShare responsive inventory', () => {
 				findButton( 'Preview links' ).click();
 				await flushPromises();
 			} );
+			const verifyCreatedTimestamp = ( expected ) => {
+				const created = window.__previewshareDataViewsProps.fields.find(
+					( field ) => field.id === 'created_at'
+				);
+				expect(
+					created.render( { item: { created_at: 1700000000 } } )
+				).toBe( expected );
+			};
 			expect( document.body.textContent ).toContain( viewed );
 			expect( document.body.textContent ).toContain( expires );
 			expect( document.body.textContent ).toContain( '#42' );
-			const created = window.__previewshareDataViewsProps.fields.find(
-				( field ) => field.id === 'created_at'
-			);
-			expect(
-				created.render( { item: { created_at: 1700000000 } } )
-			).toBe( viewed );
+			if ( ! compact ) {
+				verifyCreatedTimestamp( viewed );
+			}
 		}
 	);
 
@@ -1290,13 +1331,13 @@ describe( 'PreviewShare responsive inventory', () => {
 		} );
 		expect(
 			document.querySelector( '.previewshare-dataviews' )
-		).not.toBeNull();
+		).toBeNull();
 		expect(
 			document.querySelector( '[data-testid="native-filters"]' )
-		).not.toBeNull();
+		).toBeNull();
 		expect(
 			document.querySelector( '.previewshare-legacy-toolbar' )
-		).toBeNull();
+		).not.toBeNull();
 		const row = document.querySelector(
 			'.previewshare-legacy-link-table tbody tr'
 		);
@@ -1419,11 +1460,18 @@ describe( 'PreviewShare responsive inventory', () => {
 		expect(
 			window.__previewshareDataViewsProps.view.filters[ 0 ].value
 		).toEqual( [ 'expired', 'revoked' ] );
+		expect(
+			document.querySelector(
+				'.previewshare-legacy-toolbar input[aria-label="Expired"]'
+			).checked
+		).toBe( true );
+		expect(
+			document.querySelector(
+				'.previewshare-legacy-toolbar input[aria-label="Revoked"]'
+			).checked
+		).toBe( true );
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				page: 2,
-			} );
+			findButton( 'Next' ).click();
 			await flushPromises();
 		} );
 		expect(
@@ -1532,7 +1580,7 @@ describe( 'PreviewShare responsive inventory', () => {
 		] );
 	} );
 
-	it( 'uses DataViews global-search fields and accent normalization in compact mode', async () => {
+	it( 'uses compact search without loading DataViews and keeps search across resize', async () => {
 		let narrow = true;
 		let onViewportChange;
 		window.matchMedia = jest.fn( () => ( {
@@ -1546,6 +1594,7 @@ describe( 'PreviewShare responsive inventory', () => {
 			},
 			removeEventListener: jest.fn(),
 		} ) );
+		loadDataViews.mockClear();
 		const { initialSettings } = setupFetch( null, [
 			{
 				id: 'token-id-search-must-not-match',
@@ -1561,10 +1610,13 @@ describe( 'PreviewShare responsive inventory', () => {
 			findButton( 'Preview links' ).click();
 			await flushPromises();
 		} );
+		expect( loadDataViews ).not.toHaveBeenCalled();
+		expect(
+			document.querySelector( '.previewshare-dataviews' )
+		).toBeNull();
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				search: 'token-id-search-must-not-match',
+			Simulate.change( findInput( 'Search preview links' ), {
+				target: { value: 'token-id-search-must-not-match' },
 			} );
 			await flushPromises();
 		} );
@@ -1574,9 +1626,8 @@ describe( 'PreviewShare responsive inventory', () => {
 			)
 		).toHaveLength( 0 );
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				search: 'soren',
+			Simulate.change( findInput( 'Search preview links' ), {
+				target: { value: 'soren' },
 			} );
 			await flushPromises();
 		} );
@@ -1589,9 +1640,78 @@ describe( 'PreviewShare responsive inventory', () => {
 			onViewportChange();
 			await flushPromises();
 		} );
+		expect( loadDataViews ).toHaveBeenCalledTimes( 1 );
+		expect(
+			document.querySelector( '.previewshare-dataviews' )
+		).not.toBeNull();
 		expect( window.__previewshareDataViewsProps.view.search ).toBe(
 			'soren'
 		);
+	} );
+
+	it( 'keeps page-size and pagination controls in compact mode without loading DataViews', async () => {
+		let narrow = true;
+		let onViewportChange;
+		window.matchMedia = jest.fn( () => ( {
+			get matches() {
+				return narrow;
+			},
+			addEventListener: ( type, callback ) => {
+				if ( type === 'change' ) {
+					onViewportChange = callback;
+				}
+			},
+			removeEventListener: jest.fn(),
+		} ) );
+		loadDataViews.mockClear();
+		const items = Array.from( { length: 55 }, ( _, index ) => ( {
+			id: 'link-' + index,
+			post_id: index + 1,
+			post_title: 'Preview ' + index,
+			post_type: 'post',
+			status: 'active',
+			expires_at: Math.floor( Date.now() / 1000 ) + 86400,
+		} ) );
+		const { initialSettings } = setupFetch( null, items );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+
+		expect( loadDataViews ).not.toHaveBeenCalled();
+		const rows = () =>
+			document.querySelectorAll(
+				'.previewshare-legacy-link-table tbody tr'
+			);
+		expect( rows() ).toHaveLength( 20 );
+		const pageSize = document.querySelector(
+			'select[aria-label="Links per page"]'
+		);
+		expect( pageSize ).not.toBeNull();
+		pageSize.focus();
+		expect( pageSize ).toBe( document.activeElement );
+		await act( async () => {
+			Simulate.change( pageSize, { target: { value: '50' } } );
+			await flushPromises();
+		} );
+		expect( rows() ).toHaveLength( 50 );
+		expect( pageSize.value ).toBe( '50' );
+		await act( async () => {
+			findButton( 'Next' ).click();
+			await flushPromises();
+		} );
+		expect( rows() ).toHaveLength( 5 );
+		expect( document.body.textContent ).toContain( 'Page 2 of 2' );
+
+		await act( async () => {
+			narrow = false;
+			onViewportChange();
+			await flushPromises();
+		} );
+		expect( loadDataViews ).toHaveBeenCalledTimes( 1 );
+		expect( window.__previewshareDataViewsProps.view.perPage ).toBe( 50 );
+		expect( window.__previewshareDataViewsProps.view.page ).toBe( 2 );
 	} );
 } );
 
@@ -1645,24 +1765,78 @@ describe( 'PreviewShare inventory row actions', () => {
 			await flushPromises();
 		} );
 	}
+	function expectCompactRevokedState() {
+		const rows = Array.from(
+			document.querySelectorAll(
+				'.previewshare-legacy-link-table tbody tr'
+			)
+		);
+		expect( rows ).toHaveLength( 2 );
+		expect(
+			rows.find( ( row ) => row.textContent.includes( 'Client review' ) )
+				.textContent
+		).toContain( 'Revoked' );
+		expect(
+			rows.find( ( row ) => row.textContent.includes( 'Legal approval' ) )
+				.textContent
+		).toContain( 'Active' );
+	}
+	function expectDesktopRevokedState() {
+		const data = window.__previewshareDataViewsProps.data;
+		expect( data ).toHaveLength( 2 );
+		expect(
+			data.find( ( item ) => item.id === 'selected-link' ).status
+		).toBe( 'revoked' );
+		expect(
+			data.find( ( item ) => item.id === 'sibling-link' ).status
+		).toBe( 'active' );
+	}
+	function expectRevokeEligibility() {
+		const revoke = window.__previewshareDataViewsProps.actions.find(
+			( action ) => action.id === 'revoke'
+		);
+		expect( revoke.isEligible( links()[ 0 ] ) ).toBe( true );
+		expect( revoke.isEligible( { status: 'revoked' } ) ).toBe( false );
+	}
+	function expectCompactEntryCount( count ) {
+		expect(
+			document.querySelectorAll(
+				'.previewshare-legacy-link-table tbody tr'
+			)
+		).toHaveLength( count );
+	}
+	function expectDesktopEntryCount( count ) {
+		expect( window.__previewshareDataViewsProps.data ).toHaveLength(
+			count
+		);
+	}
+	function expectCompactDeletedState() {
+		const rows = document.querySelectorAll(
+			'.previewshare-legacy-link-table tbody tr'
+		);
+		expect( rows ).toHaveLength( 1 );
+		expect( rows[ 0 ].textContent ).toContain( 'Legal approval' );
+		expect( rows[ 0 ].textContent ).not.toContain( 'Client review' );
+	}
+	function expectDesktopDeletedState() {
+		expect(
+			window.__previewshareDataViewsProps.data.map( ( item ) => item.id )
+		).toEqual( [ 'sibling-link' ] );
+		expect( window.__previewshareDataViewsProps.view.page ).toBe( 1 );
+	}
 	it.each( [ false, true ] )(
 		'revokes the selected expired link and retains its entry in compact mode %s',
 		async ( compact ) => {
 			await openInventory( compact );
-			const revoke = window.__previewshareDataViewsProps.actions.find(
-				( action ) => action.id === 'revoke'
-			);
-			expect( revoke.isEligible( links()[ 0 ] ) ).toBe( true );
-			expect( revoke.isEligible( { status: 'revoked' } ) ).toBe( false );
+			if ( ! compact ) {
+				expectRevokeEligibility();
+			}
 			await invokeAction( 'revoke', compact );
-			const data = window.__previewshareDataViewsProps.data;
-			expect( data ).toHaveLength( 2 );
-			expect(
-				data.find( ( item ) => item.id === 'selected-link' ).status
-			).toBe( 'revoked' );
-			expect(
-				data.find( ( item ) => item.id === 'sibling-link' ).status
-			).toBe( 'active' );
+			if ( compact ) {
+				expectCompactRevokedState();
+			} else {
+				expectDesktopRevokedState();
+			}
 			const request = window.fetch.mock.calls.find( ( [ url ] ) =>
 				String( url ).endsWith( '/tokens/revoke' )
 			);
@@ -1693,21 +1867,22 @@ describe( 'PreviewShare inventory row actions', () => {
 				await flushPromises();
 			} );
 			expect( document.querySelector( '[role="dialog"]' ) ).toBeNull();
-			expect( window.__previewshareDataViewsProps.data ).toHaveLength(
-				2
-			);
+			if ( compact ) {
+				expectCompactEntryCount( 2 );
+			} else {
+				expectDesktopEntryCount( 2 );
+			}
 			await invokeAction( 'delete', compact );
 			await act( async () => {
 				dialogButton( 'Delete link' ).click();
 				await flushPromises();
 			} );
 			expect( document.querySelector( '[role="dialog"]' ) ).toBeNull();
-			expect(
-				window.__previewshareDataViewsProps.data.map(
-					( item ) => item.id
-				)
-			).toEqual( [ 'sibling-link' ] );
-			expect( window.__previewshareDataViewsProps.view.page ).toBe( 1 );
+			if ( compact ) {
+				expectCompactDeletedState();
+			} else {
+				expectDesktopDeletedState();
+			}
 			const request = window.fetch.mock.calls.find( ( [ url ] ) =>
 				String( url ).endsWith( '/tokens/delete' )
 			);
@@ -2546,35 +2721,28 @@ describe( 'PreviewShare expiring-link management', () => {
 			'.previewshare-legacy-link-table button[aria-label^="Extend"]';
 		expectExtendNames( compactSelector );
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				search: 'Other draft',
-				page: 1,
+			Simulate.change( findInput( 'Search preview links' ), {
+				target: { value: 'Other draft' },
 			} );
 			await flushPromises();
 		} );
 		expectExtendNames( compactSelector, [ expectedNames[ 2 ] ] );
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				search: '',
-				page: 1,
+			Simulate.change( findInput( 'Search preview links' ), {
+				target: { value: '' },
 			} );
 			await flushPromises();
 		} );
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				perPage: 1,
-			} );
+			Simulate.change(
+				document.querySelector( 'select[aria-label="Links per page"]' ),
+				{ target: { value: '1' } }
+			);
 			await flushPromises();
 		} );
 		expectExtendNames( compactSelector, [ expectedNames[ 0 ] ] );
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				page: 2,
-			} );
+			findButton( 'Next' ).click();
 			await flushPromises();
 		} );
 		expectExtendNames( compactSelector, [ expectedNames[ 1 ] ] );
