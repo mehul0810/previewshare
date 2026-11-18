@@ -476,6 +476,23 @@ class AdminActionsTest extends TestCase {
 		$this->assertTrue( true );
 	}
 
+	public function test_robots_protection_covers_zero_like_token_values(): void {
+		$actions = $this->make_actions();
+
+		Functions\expect( 'get_query_var' )
+			->twice()
+			->with( 'previewshare_token' )
+			->andReturn( '0' );
+		Functions\when( 'PreviewShare\Admin\headers_sent' )->justReturn( false );
+		Functions\expect( 'PreviewShare\Admin\header' )
+			->with( 'X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex', true )
+			->once();
+
+		$actions->send_preview_robots_header();
+
+		$this->assertTrue( $actions->filter_preview_robots( [] )['noindex'] );
+	}
+
 	public function test_maybe_handle_preview_request_sets_main_query_for_valid_draft(): void {
 		$storage = Mockery::mock( PostMetaStorage::class );
 		$actions = $this->make_actions( $storage );
@@ -495,6 +512,15 @@ class AdminActionsTest extends TestCase {
 			}
 		);
 		Functions\when( 'PreviewShare\Admin\headers_sent' )->justReturn( true );
+		foreach ( [ 'rel_canonical', 'wp_shortlink_wp_head', 'rest_output_link_wp_head', 'rsd_link', 'wlwmanifest_link' ] as $callback ) {
+			Functions\expect( 'remove_action' )->with( 'wp_head', $callback, 10 )->once()->andReturn( true );
+		}
+		Functions\expect( 'remove_action' )->with( 'wp_head', 'feed_links', 2 )->once()->andReturn( true );
+		Functions\expect( 'remove_action' )->with( 'wp_head', 'feed_links_extra', 3 )->once()->andReturn( true );
+		Functions\expect( 'remove_action' )->with( 'wp_head', 'wp_oembed_add_discovery_links', 4 )->once()->andReturn( true );
+		Functions\expect( 'remove_action' )->with( 'wp_head', 'wp_oembed_add_discovery_links', 10 )->once()->andReturn( true );
+		Functions\expect( 'remove_action' )->with( 'template_redirect', 'wp_shortlink_header', 11 )->once()->andReturn( true );
+		Functions\expect( 'remove_action' )->with( 'template_redirect', 'rest_output_link_header', 11 )->once()->andReturn( true );
 		Functions\expect( 'get_post_meta' )
 			->once()
 			->with( 42, '_previewshare_enabled', true )
@@ -536,6 +562,50 @@ class AdminActionsTest extends TestCase {
 		$this->assertSame( 42, $query->queried_object_id );
 		$this->assertSame( 1, $query->found_posts );
 		$this->assertSame( 1, $query->post_count );
+	}
+
+	/**
+	 * @dataProvider alternate_preview_formats
+	 */
+	public function test_preview_request_rejects_alternate_formats( string $format ): void {
+		$storage = Mockery::mock( PostMetaStorage::class );
+		$storage->shouldNotReceive( 'get_token_diagnostic' );
+		$actions = $this->make_actions( $storage );
+		$query   = new WP_Query();
+		if ( 'embed' === $format ) {
+			$query->set( 'embed', 'true' );
+		} else {
+			$query->$format = true;
+		}
+
+		Functions\expect( 'is_admin' )->once()->andReturn( false );
+		Functions\when( 'get_query_var' )->justReturn( 'preview-token' );
+		Functions\when( 'PreviewShare\Admin\headers_sent' )->justReturn( false );
+		Functions\when( 'PreviewShare\Admin\nocache_headers' )->justReturn( null );
+		Functions\expect( 'PreviewShare\Admin\header' )->with( 'Cache-Control: private, no-store, max-age=0', true )->once();
+		Functions\expect( 'PreviewShare\Admin\header' )->with( 'Referrer-Policy: no-referrer', true )->once();
+		Functions\expect( 'PreviewShare\Admin\header' )->with( 'X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex', true )->once();
+		Functions\when( 'esc_html__' )->returnArg( 1 );
+		Functions\expect( 'wp_die' )
+			->with( '', 'Preview link unavailable', [ 'response' => 404 ] )
+			->once()
+			->andThrow( new \RuntimeException( 'preview format unavailable' ) );
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'preview format unavailable' );
+
+		$actions->maybe_handle_preview_request( $query );
+	}
+
+	/**
+	 * @return array<string,array{string}>
+	 */
+	public static function alternate_preview_formats(): array {
+		return [
+			'feed'      => [ 'is_feed' ],
+			'embed'     => [ 'embed' ],
+			'trackback' => [ 'is_trackback' ],
+		];
 	}
 
 	public function test_maybe_handle_preview_request_maps_revoked_token_to_internal_failure_reason(): void {

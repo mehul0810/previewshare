@@ -124,7 +124,7 @@ final class ReviewWriteConnection {
 
 			// Keep Core's host/socket/port and flags, but never obtain a pooled connection.
 			$dbhost = (string) $database->__get( 'dbhost' );
-			$dbhost = str_starts_with( $dbhost, 'p:' ) ? substr( $dbhost, 2 ) : $dbhost;
+			$dbhost = 0 === strpos( $dbhost, 'p:' ) ? substr( $dbhost, 2 ) : $dbhost;
 			$host   = $database->parse_db_host( $dbhost );
 			if ( false === $host ) {
 				throw new \RuntimeException( 'Could not resolve the WordPress MySQL host.' );

@@ -161,6 +161,15 @@ if ( ! class_exists( 'WP_Query' ) ) {
 		/** @var bool */
 		public $is_single = false;
 
+		/** @var bool */
+		public $is_feed = false;
+
+		/** @var bool */
+		public $is_embed = false;
+
+		/** @var bool */
+		public $is_trackback = false;
+
 		/** @var mixed */
 		public $queried_object;
 

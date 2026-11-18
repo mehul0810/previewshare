@@ -6,6 +6,43 @@ export function Changelog( { wp, installedVersion, intro } ) {
 	const { Icon } = wp.components;
 	const entries = [
 		{
+			version: '1.1.1',
+			summary: __(
+				'Safer reviews and faster link management',
+				'previewshare'
+			),
+			items: [
+				__(
+					'Fixed false success messages for reviewer responses and preserved edits when a submission needs to be retried.',
+					'previewshare'
+				),
+				__(
+					'Improved protection against duplicate responses and rechecked link access before accepting feedback.',
+					'previewshare'
+				),
+				__(
+					'Strengthened preview indexing protections, suppressed browser referrers, and updated a bundled dependency for security.',
+					'previewshare'
+				),
+				__(
+					'Fixed status-filtered link results and refreshed the inventory when PreviewShare detects changes during pagination.',
+					'previewshare'
+				),
+				__(
+					'Reduced repeated work when opening previews and browsing links, and made the link inventory lighter on narrower screens.',
+					'previewshare'
+				),
+				__(
+					'Improved WordPress privacy export and erasure for reviewer responses, including clearer errors and more reliable handling of large batches.',
+					'previewshare'
+				),
+				__(
+					'Improved recovery from interrupted review writes and cleanup, and made bulk link revocation more efficient.',
+					'previewshare'
+				),
+			],
+		},
+		{
 			version: '1.1.0',
 			summary: __( 'Settings and reviewer feedback', 'previewshare' ),
 			items: [

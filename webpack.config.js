@@ -19,6 +19,23 @@ const mode = inProduction ? 'production' : 'development';
 
 const config = {
 	...defaultConfig,
+	resolve: {
+		...defaultConfig.resolve,
+		alias: {
+			...defaultConfig.resolve.alias,
+			// WordPress 5.8 provides createElement and Fragment through wp-element,
+			// but does not register the newer react-jsx-runtime script handle.
+			// Adapt JSX calls to that stable API instead of bundling React's runtime.
+			'react/jsx-runtime$': path.join(
+				__dirname,
+				'assets/src/js/wp-jsx-runtime.js'
+			),
+			'react/jsx-dev-runtime$': path.join(
+				__dirname,
+				'assets/src/js/wp-jsx-runtime.js'
+			),
+		},
+	},
 	mode,
 	entry: {
 		...defaultConfig.entry,
@@ -54,7 +71,8 @@ const config = {
 		),
 		new DependencyExtractionWebpackPlugin( {
 			// WordPress 5.8 does not register react-jsx-runtime or wp-primitives.
-			// Bundle them so the settings app supports the declared minimum version.
+			// The JSX runtime requests resolve to the wp-element adapter above;
+			// bundle primitives to support the declared minimum version.
 			useDefaults: false,
 			requestToExternal( request ) {
 				// DataViews' ESM build uses newer package internals. Bundle those

@@ -78,7 +78,7 @@ class Actions {
 		add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_preview_bar_styles' ] );
 		add_action( 'wp_body_open', [ $this, 'render_preview_bar' ], 0 );
 		add_action( 'wp_footer', [ $this, 'render_preview_bar' ], 0 );
-		add_filter( 'wp_robots', [ $this, 'filter_preview_robots' ] );
+		add_filter( 'wp_robots', [ $this, 'filter_preview_robots' ], PHP_INT_MAX );
 		add_filter( 'body_class', [ $this, 'add_preview_body_class' ] );
 		add_filter( 'post_row_actions', [ $this, 'add_post_row_actions' ], 10, 2 );
 		add_filter( 'page_row_actions', [ $this, 'add_post_row_actions' ], 10, 2 );
@@ -328,13 +328,27 @@ class Actions {
 			return;
 		}
 
-		$token = (string) get_query_var( 'previewshare_token' );
-		if ( '' === $token ) {
+		$token = $this->get_preview_request_token();
+		if ( null === $token ) {
 			return;
 		}
 
 		$this->send_preview_cache_headers();
 		$this->send_preview_robots_header();
+		$this->suppress_preview_discovery_links();
+
+		// Preview links are for HTML pages. Do not expose their content in
+		// alternate representations consumed by crawlers or external services.
+		// Core may clear is_embed before this query becomes singular.
+		$embed = $query->get( 'embed' );
+		if ( $query->is_feed || $query->is_embed || $query->is_trackback || ( '' !== $embed && null !== $embed ) ) {
+			wp_die( '', esc_html__( 'Preview link unavailable', 'previewshare' ), [ 'response' => 404 ] );
+		}
+
+		if ( ! is_string( $token ) ) {
+			$this->fail_preview_request( self::FAILURE_TOKEN_NOT_FOUND );
+			return;
+		}
 
 		$diagnostic = $this->storage->get_token_diagnostic( $token );
 		$post_id    = isset( $diagnostic['post_id'] ) ? (int) $diagnostic['post_id'] : 0;
@@ -406,6 +420,35 @@ class Actions {
 
 		// Prevent canonical redirects from interfering with the preview URL.
 		add_filter( 'redirect_canonical', [ $this, 'disable_canonical_redirect_for_preview' ], 10, 2 );
+	}
+
+	/**
+	 * Remove WordPress discovery metadata from tokenized preview responses.
+	 *
+	 * @return void
+	 */
+	private function suppress_preview_discovery_links(): void {
+		// These core links can expose alternate URLs for a private preview.
+		$head_callbacks = [
+			'rel_canonical'                 => 10,
+			'wp_shortlink_wp_head'          => 10,
+			'rest_output_link_wp_head'      => 10,
+			'wp_oembed_add_discovery_links' => 10,
+			'rsd_link'                      => 10,
+			'wlwmanifest_link'              => 10,
+			'feed_links'                    => 2,
+			'feed_links_extra'              => 3,
+		];
+
+		foreach ( $head_callbacks as $callback => $priority ) {
+			remove_action( 'wp_head', $callback, $priority );
+		}
+		// Newer versions also register oEmbed discovery after the feed links.
+		remove_action( 'wp_head', 'wp_oembed_add_discovery_links', 4 );
+
+		// WordPress also sends shortlink and REST discovery links as HTTP headers.
+		remove_action( 'template_redirect', 'wp_shortlink_header', 11 );
+		remove_action( 'template_redirect', 'rest_output_link_header', 11 );
 	}
 
 	/**
@@ -550,7 +593,7 @@ class Actions {
 	public function disable_canonical_redirect_for_preview( $redirect_url, $_requested_url ) {
 		unset( $_requested_url );
 
-		if ( get_query_var( 'previewshare_token' ) ) {
+		if ( $this->is_previewshare_request() ) {
 			return false;
 		}
 
@@ -903,7 +946,7 @@ class Actions {
 		<div class="previewshare-preview-bar" role="status" aria-live="polite">
 			<div class="previewshare-preview-bar__inner">
 				<strong class="previewshare-preview-bar__label"><?php esc_html_e( 'Draft preview', 'previewshare' ); ?></strong>
-				<span class="previewshare-preview-bar__message"><?php esc_html_e( 'This content is shared privately. Search engines are blocked from indexing this preview link.', 'previewshare' ); ?></span>
+				<span class="previewshare-preview-bar__message"><?php esc_html_e( 'This content is shared privately. Search engines are asked to exclude this preview.', 'previewshare' ); ?></span>
 			</div>
 		</div>
 		<?php
@@ -915,13 +958,23 @@ class Actions {
 	 * @return bool
 	 */
 	private function is_previewshare_request(): bool {
-		if ( get_query_var( 'previewshare_token' ) ) {
-			return true;
-		}
+		return null !== $this->get_preview_request_token();
+	}
 
+	/**
+	 * Read the token query value, retaining malformed values for rejection.
+	 *
+	 * @return mixed Null when the request has no token.
+	 */
+	private function get_preview_request_token() {
 		global $wp;
 
-		return isset( $wp->query_vars['previewshare_token'] ) && (bool) $wp->query_vars['previewshare_token'];
+		$token = get_query_var( 'previewshare_token' );
+		if ( '' === $token || null === $token || false === $token ) {
+			$token = $wp->query_vars['previewshare_token'] ?? '';
+		}
+
+		return '' === $token ? null : $token;
 	}
 
 	/**

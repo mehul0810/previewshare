@@ -2,7 +2,7 @@
 # This file is distributed under the GPLv3 or later.
 msgid ""
 msgstr ""
-"Project-Id-Version: PreviewShare 1.1.0\n"
+"Project-Id-Version: PreviewShare 1.1.1\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/previewshare\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -278,7 +278,7 @@ msgid "Draft preview"
 msgstr ""
 
 #: src/Admin/Actions.php:832
-msgid "This content is shared privately. Search engines are blocked from indexing this preview link."
+msgid "This content is shared privately. Search engines are asked to exclude this preview."
 msgstr ""
 
 #: src/Admin/Actions.php:929
@@ -1381,6 +1381,38 @@ msgstr ""
 
 #: assets/src/js/settings.js:2771
 msgid "Settings and reviewer feedback"
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Safer reviews and faster link management"
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Fixed false success messages for reviewer responses and preserved edits when a submission needs to be retried."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Improved protection against duplicate responses and rechecked link access before accepting feedback."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Strengthened preview indexing protections, suppressed browser referrers, and updated a bundled dependency for security."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Fixed status-filtered link results and refreshed the inventory when PreviewShare detects changes during pagination."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Reduced repeated work when opening previews and browsing links, and made the link inventory lighter on narrower screens."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Improved WordPress privacy export and erasure for reviewer responses, including clearer errors and more reliable handling of large batches."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Improved recovery from interrupted review writes and cleanup, and made bulk link revocation more efficient."
 msgstr ""
 
 #: assets/src/js/settings.js:2795

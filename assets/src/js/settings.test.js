@@ -298,7 +298,7 @@ function setupFetch( settingsOverride = null, initialItems = [] ) {
 async function mountSettingsApp( initialSettings, dateSettings = {} ) {
 	document.body.innerHTML = '<div id="previewshare-settings-app"></div>';
 	Object.assign( window.previewshare_settings, {
-		version: '1.1.0',
+		version: '1.1.1',
 		plugin_icons_url:
 			'/wp-content/plugins/previewshare/assets/images/plugins/',
 		rest_url: '/wp-json/previewshare/v1',
@@ -327,7 +327,7 @@ beforeAll( () => {
 	setupWordPressMocks();
 	globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 	window.previewshare_settings = {
-		version: '1.1.0',
+		version: '1.1.1',
 		plugin_icons_url:
 			'/wp-content/plugins/previewshare/assets/images/plugins/',
 		rest_url: '/wp-json/previewshare/v1',
@@ -2540,13 +2540,13 @@ describe( 'PreviewShare settings navigation', () => {
 		const entries = Array.from(
 			document.querySelectorAll( '.previewshare-changelog-entry' )
 		);
-		expect( entries ).toHaveLength( 4 );
+		expect( entries ).toHaveLength( 5 );
 		expect( entries[ 0 ].open ).toBe( true );
-		expect( entries[ 0 ].textContent ).toContain( 'v1.1.0' );
+		expect( entries[ 0 ].textContent ).toContain( 'v1.1.1' );
 		expect( entries[ 0 ].textContent ).toContain( 'Latest' );
 		expect( entries[ 0 ].textContent ).toContain( 'Installed' );
 		expect( entries[ 1 ].open ).toBe( false );
-		expect( entries[ 1 ].textContent ).toContain( 'v1.0.2' );
+		expect( entries[ 1 ].textContent ).toContain( 'v1.1.0' );
 	} );
 
 	it( 'keeps diagnostics logging in Overview without a diagnostics tab', async () => {
