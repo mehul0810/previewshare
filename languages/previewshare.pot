@@ -1483,3 +1483,109 @@ msgstr ""
 #: src/Services/LinkInventoryCursor.php
 msgid "Preview links could not be loaded. Please try again."
 msgstr ""
+
+#: src/Admin/Actions.php:254
+msgid "Insufficient permissions"
+msgstr ""
+
+#: src/Admin/Actions.php:259
+msgid "Cannot edit this post"
+msgstr ""
+
+#: src/Admin/Actions.php:264
+#: src/Admin/Actions.php:516
+#: src/functions.php:89
+msgid "PreviewShare is not enabled for this post type"
+msgstr ""
+
+#: src/Admin/Actions.php:511
+#: src/functions.php:85
+msgid "Invalid post ID"
+msgstr ""
+
+#: src/Admin/Actions.php:752
+msgid "Copy this preview link before leaving this page."
+msgstr ""
+
+#: src/Admin/Actions.php:755
+msgid "Back to previous page"
+msgstr ""
+
+#: src/Admin/Actions.php:759
+msgid "Preview link generated"
+msgstr ""
+
+#: src/functions.php:80
+msgid "PreviewShare services are unavailable."
+msgstr ""
+
+#: src/functions.php:93
+msgid "Post must be published, draft, pending, scheduled, or private to generate preview links"
+msgstr ""
+
+#: src/functions.php:110
+msgid "Preview token could not be generated."
+msgstr ""
+
+#: src/functions.php:114
+msgid "Preview token could not be stored."
+msgstr ""
+
+#: src/REST/PreviewController.php:380
+#: src/REST/PreviewController.php:413
+msgid "Invalid token id"
+msgstr ""
+
+#: src/REST/PreviewController.php:384
+#: src/REST/PreviewController.php:421
+#: src/Services/PostMetaStorage.php:595
+#: src/Services/PostMetaStorage.php:675
+msgid "Preview link not found."
+msgstr ""
+
+#: src/REST/PreviewController.php:389
+#: src/Services/PostMetaStorage.php:599
+msgid "Preview access could not be revoked."
+msgstr ""
+
+#: src/REST/PreviewController.php:443
+#: src/Services/PostMetaStorage.php:588
+#: src/Services/PostMetaStorage.php:670
+msgid "Invalid preview link."
+msgstr ""
+
+#: src/REST/PreviewController.php:595
+msgid "Token is required"
+msgstr ""
+
+#: src/Services/PostMetaStorage.php:500
+#: src/Services/PostMetaStorage.php:514
+msgid "Preview link inventory is temporarily unavailable."
+msgstr ""
+
+#: src/Services/PostMetaStorage.php:603
+#: src/Services/PostMetaStorage.php:609
+#: src/Services/PostMetaStorage.php:612
+#: src/Services/PostMetaStorage.php:616
+msgid "Preview link could not be removed from inventory."
+msgstr ""
+
+#: src/Services/PostMetaStorage.php:686
+msgid "Only active links expiring within 24 hours can be extended."
+msgstr ""
+
+#: src/Services/PostMetaStorage.php:694
+msgid "Preview link could not be extended."
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:971
+#: src/Services/ReviewResponseService.php:985
+#: src/Services/ReviewResponseService.php:1031
+#: src/Services/ReviewResponseService.php:1034
+#: src/Services/ReviewResponseService.php:1038
+msgid "Reviewer responses could not be retrieved for export."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js:43
+msgid "Added WordPress language pack support for the settings screen, editor controls, and preview link messages."
+msgstr ""

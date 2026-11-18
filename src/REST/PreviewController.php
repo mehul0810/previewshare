@@ -377,16 +377,16 @@ class PreviewController {
 		$id = $request->get_param( 'id' );
 
 		if ( ! is_string( $id ) || 1 !== preg_match( '/\\A[a-fA-F0-9]{64}\\z/', $id ) ) {
-			return new \WP_Error( 'invalid_id', 'Invalid token id', [ 'status' => 400 ] );
+			return new \WP_Error( 'invalid_id', __( 'Invalid token id', 'previewshare' ), [ 'status' => 400 ] );
 		}
 
 		if ( ! $this->storage->get_token_context_by_id( strtolower( $id ) ) ) {
-			return new \WP_Error( 'link_not_found', 'Preview link not found.', [ 'status' => 404 ] );
+			return new \WP_Error( 'link_not_found', __( 'Preview link not found.', 'previewshare' ), [ 'status' => 404 ] );
 		}
 
 		$revoked = $this->storage->revoke_token_by_id( strtolower( $id ) );
 		if ( ! $revoked ) {
-			return new \WP_Error( 'link_revoke_failed', 'Preview access could not be revoked.', [ 'status' => 500 ] );
+			return new \WP_Error( 'link_revoke_failed', __( 'Preview access could not be revoked.', 'previewshare' ), [ 'status' => 500 ] );
 		}
 
 		\previewshare_log(
@@ -410,7 +410,7 @@ class PreviewController {
 	public function delete_by_id( $request ) {
 		$id = $request->get_param( 'id' );
 		if ( ! is_string( $id ) || 1 !== preg_match( '/\\A[a-fA-F0-9]{64}\\z/', $id ) ) {
-			return new \WP_Error( 'invalid_id', 'Invalid token id', [ 'status' => 400 ] );
+			return new \WP_Error( 'invalid_id', __( 'Invalid token id', 'previewshare' ), [ 'status' => 400 ] );
 		}
 
 		$result = $this->storage->delete_token_by_id( strtolower( $id ) );
@@ -418,7 +418,7 @@ class PreviewController {
 			return $result;
 		}
 		if ( true !== $result ) {
-			return new \WP_Error( 'link_not_found', 'Preview link not found.', [ 'status' => 404 ] );
+			return new \WP_Error( 'link_not_found', __( 'Preview link not found.', 'previewshare' ), [ 'status' => 404 ] );
 		}
 
 		return new \WP_REST_Response(
@@ -440,7 +440,7 @@ class PreviewController {
 		$id = sanitize_key( (string) $request->get_param( 'id' ) );
 
 		if ( '' === $id ) {
-			return new \WP_Error( 'invalid_id', 'Invalid preview link.', [ 'status' => 400 ] );
+			return new \WP_Error( 'invalid_id', __( 'Invalid preview link.', 'previewshare' ), [ 'status' => 400 ] );
 		}
 
 		$result = $this->storage->extend_token_by_id( $id );
@@ -592,7 +592,7 @@ class PreviewController {
 		$token = $request->get_param( 'token' );
 
 		if ( empty( $token ) ) {
-			return new \WP_Error( 'invalid_token', 'Token is required', [ 'status' => 400 ] );
+			return new \WP_Error( 'invalid_token', __( 'Token is required', 'previewshare' ), [ 'status' => 400 ] );
 		}
 
 		// Use storage driver revoke implementation.

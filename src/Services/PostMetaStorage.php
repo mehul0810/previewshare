@@ -585,35 +585,35 @@ class PostMetaStorage {
 	 */
 	public function delete_token_by_id( string $id ) {
 		if ( 1 !== preg_match( '/\\A[a-fA-F0-9]{64}\\z/', $id ) ) {
-			return new \WP_Error( 'invalid_id', 'Invalid preview link.', [ 'status' => 400 ] );
+			return new \WP_Error( 'invalid_id', __( 'Invalid preview link.', 'previewshare' ), [ 'status' => 400 ] );
 		}
 
 		$hash    = strtolower( $id );
 		$post_id = $this->get_post_id_by_detail_hash( $hash );
 		$link    = $post_id ? $this->get_link_record( $post_id, $hash ) : null;
 		if ( ! $post_id || ! $link ) {
-			return new \WP_Error( 'link_not_found', 'Preview link not found.', [ 'status' => 404 ] );
+			return new \WP_Error( 'link_not_found', __( 'Preview link not found.', 'previewshare' ), [ 'status' => 404 ] );
 		}
 
 		if ( ! $this->revoke_token_and_refresh_sharing( $post_id, $hash ) ) {
-			return new \WP_Error( 'link_revoke_failed', 'Preview access could not be revoked.', [ 'status' => 500 ] );
+			return new \WP_Error( 'link_revoke_failed', __( 'Preview access could not be revoked.', 'previewshare' ), [ 'status' => 500 ] );
 		}
 
 		if ( ! $this->remove_aggregate_link( $post_id, $hash ) ) {
-			return new \WP_Error( 'link_delete_failed', 'Preview link could not be removed from inventory.', [ 'status' => 500 ] );
+			return new \WP_Error( 'link_delete_failed', __( 'Preview link could not be removed from inventory.', 'previewshare' ), [ 'status' => 500 ] );
 		}
 
 		// Keep the revoked detail record until every resolver index is removed.
 		$current_hash = get_post_meta( $post_id, self::CURRENT_HASH_META_KEY, true );
 		if ( is_string( $current_hash ) && strtolower( $current_hash ) === $hash && ! $this->delete_post_meta_value( $post_id, self::CURRENT_HASH_META_KEY, $current_hash ) ) {
-			return new \WP_Error( 'link_delete_failed', 'Preview link could not be removed from inventory.', [ 'status' => 500 ] );
+			return new \WP_Error( 'link_delete_failed', __( 'Preview link could not be removed from inventory.', 'previewshare' ), [ 'status' => 500 ] );
 		}
 		if ( ! $this->delete_post_meta_value( $post_id, self::REVERSE_META_PREFIX . $hash ) ) {
-			return new \WP_Error( 'link_delete_failed', 'Preview link could not be removed from inventory.', [ 'status' => 500 ] );
+			return new \WP_Error( 'link_delete_failed', __( 'Preview link could not be removed from inventory.', 'previewshare' ), [ 'status' => 500 ] );
 		}
 
 		if ( ! $this->delete_post_meta_value( $post_id, self::DETAIL_META_PREFIX . $hash ) ) {
-			return new \WP_Error( 'link_delete_failed', 'Preview link could not be removed from inventory.', [ 'status' => 500 ] );
+			return new \WP_Error( 'link_delete_failed', __( 'Preview link could not be removed from inventory.', 'previewshare' ), [ 'status' => 500 ] );
 		}
 
 		$this->delete_cache( $hash );
@@ -667,12 +667,12 @@ class PostMetaStorage {
 	public function extend_token_by_id( string $id ) {
 		$hash = sanitize_key( $id );
 		if ( '' === $hash ) {
-			return new \WP_Error( 'invalid_id', 'Invalid preview link.', [ 'status' => 400 ] );
+			return new \WP_Error( 'invalid_id', __( 'Invalid preview link.', 'previewshare' ), [ 'status' => 400 ] );
 		}
 
 		$post_id = $this->get_post_id_by_hash( $hash );
 		if ( ! $post_id ) {
-			return new \WP_Error( 'link_not_found', 'Preview link not found.', [ 'status' => 404 ] );
+			return new \WP_Error( 'link_not_found', __( 'Preview link not found.', 'previewshare' ), [ 'status' => 404 ] );
 		}
 
 		$stored_link = get_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, true );
@@ -683,7 +683,7 @@ class PostMetaStorage {
 			|| null === $link['expires_at']
 			|| (int) $link['expires_at'] > time() + DAY_IN_SECONDS
 		) {
-			return new \WP_Error( 'link_not_extendable', 'Only active links expiring within 24 hours can be extended.', [ 'status' => 409 ] );
+			return new \WP_Error( 'link_not_extendable', __( 'Only active links expiring within 24 hours can be extended.', 'previewshare' ), [ 'status' => 409 ] );
 		}
 
 		$updated_link = array_merge(
@@ -691,7 +691,7 @@ class PostMetaStorage {
 			[ 'expires_at' => (int) $link['expires_at'] + DAY_IN_SECONDS ]
 		);
 		if ( ! $this->compare_and_swap_existing_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $stored_link, $updated_link ) ) {
-			return new \WP_Error( 'link_update_failed', 'Preview link could not be extended.', [ 'status' => 500 ] );
+			return new \WP_Error( 'link_update_failed', __( 'Preview link could not be extended.', 'previewshare' ), [ 'status' => 500 ] );
 		}
 		$this->update_existing_aggregate_link( $post_id, $hash, $updated_link );
 

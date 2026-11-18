@@ -1591,6 +1591,11 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 			);
 			const enabledPostTypes = settings.post_types || [];
 			const availablePostTypes = settings.available_post_types || {};
+			// Keep both gettext calls extractable from the minified bundle.
+			const activeLinkLabels = {
+				loaded: __( 'Loaded active links', 'previewshare' ),
+				total: __( 'Active links', 'previewshare' ),
+			};
 
 			return el(
 				'div',
@@ -1625,9 +1630,9 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 					'div',
 					{ className: 'previewshare-metrics' },
 					el( MetricCard, {
-						label: hasMoreTokens
-							? __( 'Loaded active links', 'previewshare' )
-							: __( 'Active links', 'previewshare' ),
+						label: activeLinkLabels[
+							hasMoreTokens ? 'loaded' : 'total'
+						],
 						value: activeTokens.length,
 						icon: link,
 						description: __(

@@ -77,20 +77,20 @@ function previewshare_generate_preview_link( int $post_id, ?int $ttl_hours = nul
 	$storage       = Container::storage();
 
 	if ( ! $token_service instanceof TokenService || ! $storage instanceof PostMetaStorage ) {
-		return new \WP_Error( 'previewshare_unavailable', 'PreviewShare services are unavailable.', [ 'status' => 500 ] );
+		return new \WP_Error( 'previewshare_unavailable', __( 'PreviewShare services are unavailable.', 'previewshare' ), [ 'status' => 500 ] );
 	}
 
 	$post = get_post( $post_id );
 	if ( ! $post ) {
-		return new \WP_Error( 'invalid_post', 'Invalid post ID', [ 'status' => 400 ] );
+		return new \WP_Error( 'invalid_post', __( 'Invalid post ID', 'previewshare' ), [ 'status' => 400 ] );
 	}
 
 	if ( ! previewshare_is_supported_post_type( $post->post_type ) ) {
-		return new \WP_Error( 'unsupported_post_type', 'PreviewShare is not enabled for this post type', [ 'status' => 400 ] );
+		return new \WP_Error( 'unsupported_post_type', __( 'PreviewShare is not enabled for this post type', 'previewshare' ), [ 'status' => 400 ] );
 	}
 
 	if ( ! previewshare_is_previewable_post_status( $post->post_status ) ) {
-		return new \WP_Error( 'invalid_post_status', 'Post must be published, draft, pending, scheduled, or private to generate preview links', [ 'status' => 400 ] );
+		return new \WP_Error( 'invalid_post_status', __( 'Post must be published, draft, pending, scheduled, or private to generate preview links', 'previewshare' ), [ 'status' => 400 ] );
 	}
 
 	$ttl   = previewshare_get_effective_ttl_hours( $post_id, $ttl_hours );
@@ -107,11 +107,11 @@ function previewshare_generate_preview_link( int $post_id, ?int $ttl_hours = nul
 	}
 
 	if ( '' === $token ) {
-		return new \WP_Error( 'token_generation_failed', 'Preview token could not be generated.', [ 'status' => 500 ] );
+		return new \WP_Error( 'token_generation_failed', __( 'Preview token could not be generated.', 'previewshare' ), [ 'status' => 500 ] );
 	}
 
 	if ( ! $storage->store_token( $post_id, $token, $ttl, $label, $responses_enabled, $identity_required ) ) {
-		return new \WP_Error( 'token_storage_failed', 'Preview token could not be stored.', [ 'status' => 500 ] );
+		return new \WP_Error( 'token_storage_failed', __( 'Preview token could not be stored.', 'previewshare' ), [ 'status' => 500 ] );
 	}
 
 	if ( null !== $ttl_hours ) {

@@ -96,18 +96,19 @@ class Actions {
 		}
 
 		$asset        = \previewshare_get_asset_metadata(
-			'assets/dist/js/previewshare-admin.min.asset.php',
+			'assets/dist/js/previewshare-editor.asset.php',
 			[ 'wp-api-fetch', 'wp-edit-post' ]
 		);
 		$dependencies = array_values( array_unique( array_merge( $asset['dependencies'], [ 'wp-edit-post', 'wp-components' ] ) ) );
 
 		wp_enqueue_script(
 			'previewshare-editor',
-			PREVIEWSHARE_PLUGIN_URL . 'assets/dist/js/previewshare-admin.min.js',
+			PREVIEWSHARE_PLUGIN_URL . 'assets/dist/js/previewshare-editor.js',
 			$dependencies,
 			$asset['version'],
 			true
 		);
+		wp_set_script_translations( 'previewshare-editor', 'previewshare' );
 
 		wp_enqueue_style(
 			'previewshare-editor',
@@ -250,17 +251,17 @@ class Actions {
 	 */
 	public function check_generate_url_permissions( $request ) {
 		if ( ! current_user_can( 'edit_posts' ) ) {
-			return new \WP_Error( 'rest_forbidden', 'Insufficient permissions', [ 'status' => 403 ] );
+			return new \WP_Error( 'rest_forbidden', __( 'Insufficient permissions', 'previewshare' ), [ 'status' => 403 ] );
 		}
 
 		$post_id = $request->get_param( 'post_id' );
 		if ( $post_id && ! current_user_can( 'edit_post', $post_id ) ) {
-			return new \WP_Error( 'rest_forbidden', 'Cannot edit this post', [ 'status' => 403 ] );
+			return new \WP_Error( 'rest_forbidden', __( 'Cannot edit this post', 'previewshare' ), [ 'status' => 403 ] );
 		}
 
 		$post = $post_id ? get_post( $post_id ) : null;
 		if ( $post && ! \previewshare_is_supported_post_type( $post->post_type ) ) {
-			return new \WP_Error( 'rest_forbidden', 'PreviewShare is not enabled for this post type', [ 'status' => 403 ] );
+			return new \WP_Error( 'rest_forbidden', __( 'PreviewShare is not enabled for this post type', 'previewshare' ), [ 'status' => 403 ] );
 		}
 
 		return true;
@@ -507,12 +508,12 @@ class Actions {
 	public function get_post_token_meta( $request ) {
 		$post_id = absint( $request->get_param( 'post_id' ) );
 		if ( ! $post_id || ! get_post( $post_id ) ) {
-			return new \WP_Error( 'invalid_post', 'Invalid post ID', [ 'status' => 400 ] );
+			return new \WP_Error( 'invalid_post', __( 'Invalid post ID', 'previewshare' ), [ 'status' => 400 ] );
 		}
 
 		$post = get_post( $post_id );
 		if ( ! \previewshare_is_supported_post_type( $post->post_type ) ) {
-			return new \WP_Error( 'unsupported_post_type', 'PreviewShare is not enabled for this post type', [ 'status' => 400 ] );
+			return new \WP_Error( 'unsupported_post_type', __( 'PreviewShare is not enabled for this post type', 'previewshare' ), [ 'status' => 400 ] );
 		}
 
 		$meta = $this->storage->get_token_meta( $post_id );

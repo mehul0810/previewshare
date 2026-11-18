@@ -9,8 +9,7 @@ const {
 // Reuse the default @wordpress/scripts webpack config and extend it.
 // Keep WP Scripts behaviors (Babel, externals, optimizations) while
 // adding our custom entries (frontend/admin/settings) and an output
-// layout that writes to `assets/dist/js/[name].min.js` so existing
-// enqueue paths continue to work.
+// layout under `assets/dist/js/` for WordPress enqueues.
 const defaultConfig = require( '@wordpress/scripts/config/webpack.config' );
 const wpPot = require( 'wp-pot' );
 
@@ -43,15 +42,23 @@ const config = {
 			'./assets/src/js/frontend/main.js',
 			'./assets/src/css/frontend/main.css',
 		],
-		'previewshare-admin': [
-			'./assets/src/js/admin/main.js',
-			'./assets/src/css/admin/main.css',
-		],
-		// Settings React app we added - builds to assets/dist/js/previewshare-settings.min.js
-		'previewshare-settings': [
-			'./assets/src/js/settings.js',
-			'./assets/src/css/admin/settings.css',
-		],
+		// WordPress's translation scanner skips .min.js files. Keep
+		// optimizing these bundles and publish them with scannable names.
+		'previewshare-admin': {
+			import: [
+				'./assets/src/js/admin/main.js',
+				'./assets/src/css/admin/main.css',
+			],
+			// WP-CLI can strip "dmin" when mapping an admin.js filename.
+			filename: 'js/previewshare-editor.js',
+		},
+		'previewshare-settings': {
+			import: [
+				'./assets/src/js/settings.js',
+				'./assets/src/css/admin/settings.css',
+			],
+			filename: 'js/[name].js',
+		},
 	},
 	output: {
 		...defaultConfig.output,

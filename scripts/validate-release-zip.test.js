@@ -10,9 +10,10 @@ const requiredPaths = [
 	'license.txt',
 	'config/constants.php',
 	'src/Plugin.php',
-	'assets/dist/js/previewshare-admin.min.js',
-	'assets/dist/js/previewshare-settings.min.js',
-	'assets/dist/js/previewshare-settings.min.asset.php',
+	'assets/dist/js/previewshare-editor.js',
+	'assets/dist/js/previewshare-editor.asset.php',
+	'assets/dist/js/previewshare-settings.js',
+	'assets/dist/js/previewshare-settings.asset.php',
 	'assets/dist/js/previewshare-dataviews.abcdef01.min.js',
 	'assets/dist/js/previewshare.min.js',
 	'languages/previewshare.pot',
@@ -45,10 +46,10 @@ function writeFixtureZip(
 
 		if ( file === 'languages/previewshare.pot' ) {
 			content = potContent ?? defaultPotContent;
-		} else if ( file === 'assets/dist/js/previewshare-settings.min.js' ) {
+		} else if ( file === 'assets/dist/js/previewshare-settings.js' ) {
 			content = 'previewshare-dataviews.abcdef01.min.js';
 		} else if (
-			file === 'assets/dist/js/previewshare-settings.min.asset.php'
+			file === 'assets/dist/js/previewshare-settings.asset.php'
 		) {
 			content = settingsAssetContent ?? defaultSettingsAssetContent;
 		}

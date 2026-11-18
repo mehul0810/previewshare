@@ -54,6 +54,7 @@ class PostMetaStorageTest extends TestCase {
 
 	protected function setUp(): void {
 		parent::setUp();
+		Functions\when( '__' )->returnArg( 1 );
 		Functions\when( 'get_object_subtype' )->justReturn( 'post' );
 		Functions\when( 'sanitize_meta' )->returnArg( 2 );
 		Functions\when( 'wp_unslash' )->returnArg( 1 );

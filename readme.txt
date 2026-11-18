@@ -144,6 +144,7 @@ The release artifact includes compiled assets, Composer autoload files, `compose
 * Reduced repeated work when opening previews and browsing links, and made the link inventory lighter on narrower screens.
 * Improved WordPress privacy export and erasure for reviewer responses, including clearer errors and more reliable handling of large batches.
 * Improved recovery from interrupted review writes and cleanup, and made bulk link revocation more efficient.
+* Added WordPress language pack support for the settings screen, editor controls, and preview link messages.
 
 = 1.1.0 =
 * Redesigned the PreviewShare settings workspace across Overview, Preview Links, Content Types, Changelog, and More plugins.

@@ -20,6 +20,11 @@ use WP_REST_Response;
 
 class PreviewControllerTest extends TestCase {
 
+	protected function setUp(): void {
+		parent::setUp();
+		Functions\when( '__' )->returnArg( 1 );
+	}
+
 	public function test_cursor_inventory_uses_additive_continuation_and_preserves_legacy_route(): void {
 		$storage = Mockery::mock( PostMetaStorage::class );
 		$controller = $this->makeController( $storage );

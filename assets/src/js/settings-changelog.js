@@ -40,6 +40,10 @@ export function Changelog( { wp, installedVersion, intro } ) {
 					'Improved recovery from interrupted review writes and cleanup, and made bulk link revocation more efficient.',
 					'previewshare'
 				),
+				__(
+					'Added WordPress language pack support for the settings screen, editor controls, and preview link messages.',
+					'previewshare'
+				),
 			],
 		},
 		{
