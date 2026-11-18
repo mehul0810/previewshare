@@ -25,6 +25,12 @@ class ReviewFormTest extends TestCase {
 	private $sharing_enabled = true;
 
 	/** @var int */
+	private $request_ids_issued = 0;
+
+	/** @var int */
+	private $link_resolutions = 0;
+
+	/** @var int */
 	private $queried_post_id = 42;
 
 	/** @var WP_Post */
@@ -40,6 +46,7 @@ class ReviewFormTest extends TestCase {
 		$storage = Mockery::mock( PostMetaStorage::class );
 		$storage->shouldReceive( 'get_link_by_token' )->andReturnUsing(
 			function ( string $token ) {
+				++$this->link_resolutions;
 				if ( 'review-token' !== $token ) {
 					return null;
 				}
@@ -75,7 +82,7 @@ class ReviewFormTest extends TestCase {
 		Functions\when( 'get_object_taxonomies' )->justReturn( [] );
 		Functions\when( 'wp_json_encode' )->alias( 'json_encode' );
 		Functions\when( 'wp_salt' )->justReturn( 'test-secret' );
-		Functions\when( 'wp_generate_uuid4' )->justReturn( 'request-uuid' );
+		Functions\when( 'wp_generate_uuid4' )->alias( function () { ++$this->request_ids_issued; return 'request-uuid'; } );
 		Functions\when( 'rest_url' )->justReturn( 'https://example.test/wp-json/previewshare/v1/reviews/submit' );
 		Functions\when( 'esc_url' )->returnArg( 1 );
 		Functions\when( 'esc_attr' )->returnArg( 1 );
@@ -92,6 +99,8 @@ class ReviewFormTest extends TestCase {
 		$content = $this->form->append_to_content( '<p>Shared draft</p>' );
 		$this->assertStringStartsWith( '<p>Shared draft</p>', $content );
 		$this->assertSame( 1, substr_count( $content, 'id="previewshare-review-form"' ) );
+		$this->assertSame( 1, $this->request_ids_issued );
+		$this->assertSame( 4, $this->link_resolutions );
 		$this->assertSame( $content, $this->form->append_to_content( $content ) );
 		ob_start();
 		$this->form->render();

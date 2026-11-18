@@ -10,9 +10,11 @@ const requiredPaths = [
 	'license.txt',
 	'config/constants.php',
 	'src/Plugin.php',
-	'assets/dist/js/previewshare-admin.min.js',
-	'assets/dist/js/previewshare-settings.min.js',
-	'assets/dist/js/previewshare-settings.min.asset.php',
+	'assets/dist/js/previewshare-editor.js',
+	'assets/dist/js/previewshare-editor.asset.php',
+	'assets/dist/js/previewshare-settings.js',
+	'assets/dist/js/previewshare-settings.asset.php',
+	'assets/dist/js/previewshare-dataviews.abcdef01.min.js',
 	'assets/dist/js/previewshare.min.js',
 	'languages/previewshare.pot',
 	'vendor/autoload.php',
@@ -25,20 +27,29 @@ const defaultPotContent = [
 const defaultSettingsAssetContent =
 	"<?php return array('dependencies' => array('react', 'react-dom'), 'version' => 'test');";
 
-function writeFixtureZip( extraFiles, potContent, settingsAssetContent ) {
+function writeFixtureZip(
+	extraFiles,
+	potContent,
+	settingsAssetContent,
+	omit = []
+) {
 	const tempDirectory = mkdtempSync(
 		join( tmpdir(), 'previewshare-zip-test-' )
 	);
 	const pluginDirectory = join( tempDirectory, 'previewshare' );
 
-	for ( const file of [ ...requiredPaths, ...extraFiles ] ) {
+	for ( const file of [ ...requiredPaths, ...extraFiles ].filter(
+		( path ) => ! omit.includes( path )
+	) ) {
 		const path = join( pluginDirectory, file );
 		let content = '';
 
 		if ( file === 'languages/previewshare.pot' ) {
 			content = potContent ?? defaultPotContent;
+		} else if ( file === 'assets/dist/js/previewshare-settings.js' ) {
+			content = 'previewshare-dataviews.abcdef01.min.js';
 		} else if (
-			file === 'assets/dist/js/previewshare-settings.min.asset.php'
+			file === 'assets/dist/js/previewshare-settings.asset.php'
 		) {
 			content = settingsAssetContent ?? defaultSettingsAssetContent;
 		}
@@ -56,6 +67,28 @@ function writeFixtureZip( extraFiles, potContent, settingsAssetContent ) {
 }
 
 describe( 'release ZIP validation', () => {
+	test( 'rejects a package without the lazy inventory chunk', () => {
+		const { tempDirectory, zipPath } = writeFixtureZip(
+			[],
+			undefined,
+			undefined,
+			[ 'assets/dist/js/previewshare-dataviews.abcdef01.min.js' ]
+		);
+		try {
+			const result = spawnSync(
+				'bash',
+				[ 'scripts/validate-release-zip.sh', zipPath ],
+				{ cwd: process.cwd(), encoding: 'utf8' }
+			);
+			expect( result.status ).toBe( 1 );
+			expect( result.stderr ).toContain(
+				'Release zip is missing the settings inventory chunk.'
+			);
+		} finally {
+			rmSync( tempDirectory, { recursive: true, force: true } );
+		}
+	} );
+
 	test( 'requires the complete settings translation template', () => {
 		const { tempDirectory, zipPath } = writeFixtureZip( [], '' );
 
@@ -78,7 +111,12 @@ describe( 'release ZIP validation', () => {
 		}
 	} );
 
-	test.each( [ 'react-jsx-runtime', 'wp-primitives' ] )(
+	test.each( [
+		'react-jsx-runtime',
+		'wp-primitives',
+		'wp-private-apis',
+		'wp-theme',
+	] )(
 		'rejects script dependency %s missing from WordPress 5.8',
 		( dependency ) => {
 			const { tempDirectory, zipPath } = writeFixtureZip(

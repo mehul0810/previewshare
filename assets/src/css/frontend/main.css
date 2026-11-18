@@ -131,7 +131,7 @@
 	background: #194a9a;
 }
 
-.previewshare-review button[type="submit"]:disabled {
+.previewshare-review button[type="submit"][aria-disabled="true"] {
 	cursor: wait;
 	opacity: 0.65;
 }

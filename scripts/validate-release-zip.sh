@@ -38,9 +38,10 @@ required_paths=(
 	"${PLUGIN_SLUG}/license.txt"
 	"${PLUGIN_SLUG}/config/constants.php"
 	"${PLUGIN_SLUG}/src/Plugin.php"
-	"${PLUGIN_SLUG}/assets/dist/js/previewshare-admin.min.js"
-	"${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.min.js"
-	"${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.min.asset.php"
+	"${PLUGIN_SLUG}/assets/dist/js/previewshare-editor.js"
+	"${PLUGIN_SLUG}/assets/dist/js/previewshare-editor.asset.php"
+	"${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.js"
+	"${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.asset.php"
 	"${PLUGIN_SLUG}/assets/dist/js/previewshare.min.js"
 	"${PLUGIN_SLUG}/languages/previewshare.pot"
 	"${PLUGIN_SLUG}/vendor/autoload.php"
@@ -53,7 +54,13 @@ for required_path in "${required_paths[@]}"; do
 	fi
 done
 
-if unzip -p "${ZIP_PATH}" "${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.min.asset.php" | grep -Eq "'(react-jsx-runtime|wp-primitives)'"; then
+inventory_chunk="$(unzip -p "${ZIP_PATH}" "${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.js" | grep -Eo 'previewshare-dataviews\.[a-f0-9]{8}\.min\.js' | head -n 1 || true)"
+if [[ -z "${inventory_chunk}" ]] || ! grep -Fxq "${PLUGIN_SLUG}/assets/dist/js/${inventory_chunk}" "${LIST_FILE}"; then
+	echo "Release zip is missing the settings inventory chunk." >&2
+	exit 1
+fi
+
+if unzip -p "${ZIP_PATH}" "${PLUGIN_SLUG}/assets/dist/js/previewshare-settings.asset.php" | grep -Eq "'(react-jsx-runtime|wp-primitives|wp-private-apis|wp-theme)'"; then
 	echo "Settings bundle depends on a script handle that WordPress 5.8 does not register." >&2
 	exit 1
 fi

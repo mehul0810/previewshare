@@ -111,26 +111,10 @@ async function expectCellTextToFit( cells ) {
 	expect( overflowingText ).toEqual( [] );
 }
 
-async function setInventoryStatus( page, hasModernRuntime, name, checked ) {
-	if ( ! hasModernRuntime ) {
-		await page
-			.getByRole( 'checkbox', { name, exact: true } )
-			.setChecked( checked );
-		return;
-	}
-
-	// Compact modern rows retain the native DataViews filter controls.
-	await page.getByRole( 'button', { name: /^Status\b/ } ).click();
-	const options = page.getByRole( 'listbox', { name: 'List of: Status' } );
-	const option = options.getByRole( 'option', { name, exact: true } );
-	await expect( option ).toBeVisible();
-	const selection = option.locator( '.is-selected' );
-	if ( ( await selection.count() ) > 0 !== checked ) {
-		await option.click();
-	}
-	await expect( selection ).toHaveCount( checked ? 1 : 0 );
-	await page.keyboard.press( 'Escape' );
-	await expect( options ).not.toBeVisible();
+async function setInventoryStatus( page, name, checked ) {
+	await page
+		.getByRole( 'checkbox', { name, exact: true } )
+		.setChecked( checked );
 }
 
 function runWpCli( command, args ) {
@@ -667,10 +651,15 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	expect( generatedLink ).toBeDefined();
 	expect( generatedLink.status ).toBe( 'active' );
 	const previousExpiry = generatedLink.expires_at;
+	const dataViewsRequests = [];
+	page.on( 'request', ( request ) => {
+		if ( request.url().includes( 'previewshare-dataviews.' ) ) {
+			dataViewsRequests.push( request.url() );
+		}
+	} );
 	await page.getByRole( 'tab', { name: 'Preview links' } ).click();
 	const modernInventory = page.locator( '.previewshare-dataviews' );
-	// Both runtimes use compact rows at 1280px. Modern WordPress nests them
-	// inside DataViews, while the fallback renders its own toolbar and rows.
+	// Compact screens use the local search, filters and table controls.
 	const compactInventory = page.locator(
 		'.previewshare-tab-content .previewshare-legacy-inventory'
 	);
@@ -679,8 +668,9 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 		() => typeof window.wp.element.useInsertionEffect === 'function'
 	);
 	if ( hasModernRuntime ) {
-		await expect( modernInventory ).toBeVisible();
+		await expect( modernInventory ).toHaveCount( 0 );
 	}
+	expect( dataViewsRequests ).toHaveLength( 0 );
 	const inventoryTable = compactInventory;
 	const expiringStatus = inventoryTable.locator(
 		'.previewshare-status.is-expiring_soon'
@@ -720,15 +710,9 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await expect(
 		page.getByRole( 'button', { name: extendButtonName, exact: true } )
 	).toBeVisible();
-	const linkSearch = hasModernRuntime
-		? page.getByRole( 'searchbox', {
-				name: 'Search preview links',
-				exact: true,
-		  } )
-		: page.getByRole( 'textbox', {
-				name: 'Search preview links',
-				exact: true,
-		  } );
+	const linkSearch = page.getByLabel( 'Search preview links', {
+		exact: true,
+	} );
 	await expect( linkSearch ).toBeVisible();
 	await linkSearch.fill( String( generatedLink.id ) );
 	await expect( extendButton ).toHaveCount( 0 );
@@ -737,14 +721,15 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await linkSearch.fill( 'no matching preview link' );
 	await expect( extendButton ).toHaveCount( 0 );
 	await linkSearch.fill( 'E2E smoke' );
-	await setInventoryStatus( page, hasModernRuntime, 'Expired', true );
+	await setInventoryStatus( page, 'Expired', true );
 	await expect( extendButton ).toHaveCount( 0 );
-	await setInventoryStatus( page, hasModernRuntime, 'Expired', false );
-	await setInventoryStatus( page, hasModernRuntime, 'Expiring soon', true );
+	await setInventoryStatus( page, 'Expired', false );
+	await setInventoryStatus( page, 'Expiring soon', true );
 	await expect( extendButton ).toBeVisible();
 	await page.setViewportSize( { width: 1600, height: 900 } );
 	if ( hasModernRuntime ) {
 		await expect( modernInventory ).toBeVisible();
+		await expect.poll( () => dataViewsRequests.length ).toBeGreaterThan( 0 );
 		await expect(
 			modernInventory.getByText( postTitle, { exact: true } )
 		).toBeVisible();
@@ -759,16 +744,11 @@ test( 'preview link admin, editor, public, invalid, expired, revoked, and post b
 	await page.setViewportSize( { width: 1280, height: 900 } );
 	await expect( compactInventory ).toBeVisible();
 	if ( hasModernRuntime ) {
-		await expect(
-			modernInventory.getByRole( 'button', {
-				name: /^Status includes: Expiring soon$/,
-			} )
-		).toBeVisible();
-	} else {
-		await expect(
-			compactInventory.getByRole( 'checkbox', { name: 'Expiring soon' } )
-		).toBeChecked();
+		await expect( modernInventory ).toHaveCount( 0 );
 	}
+	await expect(
+		compactInventory.getByRole( 'checkbox', { name: 'Expiring soon' } )
+	).toBeChecked();
 	await page.screenshot( {
 		path: testInfo.outputPath( 'previewshare-preview-links-expiring.png' ),
 		fullPage: true,
@@ -1816,7 +1796,7 @@ test( 'uncertain reviewer submission retries its original payload before sending
 		.fill( 'Later Reviewer' );
 	await form
 		.getByRole( 'textbox', { name: 'Email' } )
-		.fill( 'later@example.test' );
+		.fill( 'unfinished email' );
 	await form.getByRole( 'radio', { name: 'Request changes' } ).check();
 	await form
 		.getByRole( 'textbox', { name: 'Comment' } )
@@ -1825,10 +1805,13 @@ test( 'uncertain reviewer submission retries its original payload before sending
 		'Try again to check the earlier response before sending your edits.'
 	);
 	retryAttempt = true;
-	const retryAction = form
-		.getByRole( 'button', { name: 'Send response' } )
-		.click();
+	const retryButton = form.getByRole( 'button', {
+		name: 'Retry earlier response',
+	} );
+	const retryAction = retryButton.press( 'Enter' );
 	await retryRequested;
+	await expect( retryButton ).toBeFocused();
+	await expect( retryButton ).toHaveAttribute( 'aria-disabled', 'true' );
 	await expect( form.getByRole( 'status' ) ).toHaveText(
 		'Checking your earlier response. Your current edits have not been sent.'
 	);
@@ -1850,6 +1833,12 @@ test( 'uncertain reviewer submission retries its original payload before sending
 	await expect( form.getByRole( 'textbox', { name: 'Name' } ) ).toHaveValue(
 		'Later Reviewer'
 	);
+	await expect( form.getByRole( 'textbox', { name: 'Email' } ) ).toHaveValue(
+		'unfinished email'
+	);
+	await expect(
+		form.getByRole( 'button', { name: 'Send response' } )
+	).toBeFocused();
 	await expect(
 		form.getByRole( 'textbox', { name: 'Comment' } )
 	).toHaveValue( 'Later typed comment.' );
@@ -1876,6 +1865,9 @@ if ( 'approve' !== get_post_meta( $reviews[0]->ID, '_previewshare_response_type'
 		page.locator( '.previewshare-panel__review-history' )
 	).toContainText( 'Original payload must be the one retried.' );
 
+	await form
+		.getByRole( 'textbox', { name: 'Email' } )
+		.fill( 'later@example.test' );
 	const [ newSubmission ] = await Promise.all( [
 		anonymous.waitForResponse( ( response ) =>
 			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )

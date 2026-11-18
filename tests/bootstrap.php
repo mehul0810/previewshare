@@ -131,6 +131,12 @@ if ( ! class_exists( 'WP_Query' ) ) {
 		/** @var int[] */
 		public static $next_posts = [];
 
+		/** @var string */
+		public $request = '';
+
+		/** @var array<string,array<int,array{callback:callable,priority:int,args:int}>> */
+		public static $test_filters = [];
+
 		/** @var int[] */
 		public $posts = [];
 
@@ -155,6 +161,15 @@ if ( ! class_exists( 'WP_Query' ) ) {
 		/** @var bool */
 		public $is_single = false;
 
+		/** @var bool */
+		public $is_feed = false;
+
+		/** @var bool */
+		public $is_embed = false;
+
+		/** @var bool */
+		public $is_trackback = false;
+
 		/** @var mixed */
 		public $queried_object;
 
@@ -173,6 +188,42 @@ if ( ! class_exists( 'WP_Query' ) ) {
 		public function __construct( array $query = [] ) {
 			$this->query_vars = $query;
 			$this->posts      = self::$next_posts;
+			if ( ! empty( $query['meta_key'] ) && '_previewshare_reviewer_email' === $query['meta_key'] ) {
+				$this->query( $query );
+			}
+		}
+
+		/**
+		 * Run the focused privacy-export test query.
+		 *
+		 * @param array<string,mixed> $query Query vars.
+		 * @return int[]|object[]
+		 */
+		public function query( array $query = [] ): array {
+			$this->query_vars = $query;
+			if ( ! empty( $query['meta_key'] ) && '_previewshare_reviewer_email' === $query['meta_key'] ) {
+				$this->request = 'SELECT previewshare privacy export';
+				$posts = null;
+				$filters       = self::$test_filters['posts_pre_query'] ?? [];
+				usort( $filters, static fn( array $left, array $right ): int => $left['priority'] <=> $right['priority'] );
+				foreach ( $filters as $filter ) {
+					$posts = ( $filter['callback'] )( $posts, $this );
+				}
+				$this->posts = $posts;
+				return null === $this->posts ? self::$next_posts : $this->posts;
+			}
+			$this->posts = self::$next_posts;
+			return $this->posts;
+		}
+
+		/**
+		 * Read one query var.
+		 *
+		 * @param string $key Query var.
+		 * @return mixed
+		 */
+		public function get( string $key ) {
+			return $this->query_vars[ $key ] ?? null;
 		}
 
 		/**
@@ -200,6 +251,9 @@ if ( ! class_exists( 'WP_Post' ) ) {
 		/** @var string */
 		public $post_status;
 
+		/** @var int */
+		public $post_parent;
+
 		/** @var string */
 		public $post_title;
 
@@ -207,18 +261,34 @@ if ( ! class_exists( 'WP_Post' ) ) {
 		public $post_content;
 
 		/** @var string */
+		public $post_date_gmt;
+
+		/** @var string */
+		public $post_date;
+
+		/** @var string */
+		public $filter;
+
+		/** @var string */
 		public $post_excerpt;
 
 		/**
-		 * @param array<string,mixed> $data Post data.
+		 * @param array<string,mixed>|object $data Post data.
 		 */
-		public function __construct( array $data = [] ) {
+		public function __construct( $data = [] ) {
+			if ( is_object( $data ) ) {
+				$data = get_object_vars( $data );
+			}
 			$this->ID          = (int) ( $data['ID'] ?? 0 );
 			$this->post_type   = (string) ( $data['post_type'] ?? 'post' );
 			$this->post_status = (string) ( $data['post_status'] ?? 'draft' );
+			$this->post_parent = (int) ( $data['post_parent'] ?? 0 );
 			$this->post_title   = (string) ( $data['post_title'] ?? '' );
 			$this->post_content = (string) ( $data['post_content'] ?? '' );
 			$this->post_excerpt = (string) ( $data['post_excerpt'] ?? '' );
+			$this->post_date_gmt = (string) ( $data['post_date_gmt'] ?? '0000-00-00 00:00:00' );
+			$this->post_date     = (string) ( $data['post_date'] ?? '0000-00-00 00:00:00' );
+			$this->filter        = (string) ( $data['filter'] ?? '' );
 		}
 	}
 }

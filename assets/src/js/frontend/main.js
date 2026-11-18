@@ -9,6 +9,7 @@ if ( form && config ) {
 	const comment = form.querySelector( '[name="comment"]' );
 	const message = document.getElementById( 'previewshare-review-message' );
 	const button = form.querySelector( '[type="submit"]' );
+	const sendLabel = button.textContent;
 	let pending = null;
 	let sending = false;
 
@@ -55,6 +56,7 @@ if ( form && config ) {
 		if ( sending ) {
 			return;
 		}
+		const retry = pending !== null;
 		if ( ! pending ) {
 			const requestId = newRequestId();
 			if ( requestId ) {
@@ -79,7 +81,7 @@ if ( form && config ) {
 
 		const submission = pending;
 		sending = true;
-		button.disabled = true;
+		button.setAttribute( 'aria-disabled', 'true' );
 		message.textContent =
 			JSON.stringify( formValues() ) ===
 			JSON.stringify( submission.values )
@@ -97,17 +99,40 @@ if ( form && config ) {
 				body: JSON.stringify( submission.payload ),
 			} );
 			const result = await response.json();
-			if ( result.code === 'review_stale_version' ) {
+			const code = result?.code;
+			if ( response.status === 409 && code === 'review_stale_version' ) {
+				if ( ! retry ) {
+					pending = null;
+				}
 				message.textContent = config.messages.stale;
 				return;
 			}
-			if ( ! response.ok && result.code !== 'review_duplicate' ) {
-				// A validation error cannot have stored this payload. Other failures may
-				// follow an earlier request whose response was lost.
-				if ( response.status === 400 ) {
+			const duplicate =
+				response.status === 409 && code === 'review_duplicate';
+			const received =
+				response.status === 201 && result?.received === true;
+			if ( ! received && ! duplicate ) {
+				// Validation only settles the current attempt. A retry's rejection
+				// does not say whether an earlier attempt committed.
+				if (
+					! retry &&
+					response.status === 400 &&
+					result?.data?.status === 400 &&
+					typeof code === 'string'
+				) {
 					pending = null;
 				}
-				throw new Error( result.message || config.messages.failed );
+				message.textContent =
+					! response.ok &&
+					typeof code === 'string' &&
+					typeof result.message === 'string' &&
+					result.message
+						? result.message
+						: config.messages.failed;
+				if ( pending ) {
+					message.textContent += ' ' + config.messages.retryOriginal;
+				}
+				return;
 			}
 
 			const edited =
@@ -116,24 +141,27 @@ if ( form && config ) {
 			if ( edited ) {
 				message.textContent = config.messages.receivedEdits;
 			} else {
-				message.textContent =
-					result.code === 'review_duplicate'
-						? config.messages.duplicate
-						: config.messages.received;
+				message.textContent = duplicate
+					? config.messages.duplicate
+					: config.messages.received;
 			}
 			if ( ! edited ) {
 				form.reset();
 				updateCommentRequirement();
 			}
 			pending = null;
-		} catch ( error ) {
-			message.textContent = error.message || config.messages.failed;
-			if ( pending ) {
-				message.textContent += ' ' + config.messages.retryOriginal;
-			}
+		} catch {
+			message.textContent =
+				config.messages.failed + ' ' + config.messages.retryOriginal;
 		} finally {
 			sending = false;
-			button.disabled = false;
+			button.removeAttribute( 'aria-disabled' );
+			// A retry sends the captured response. Current edits are validated
+			// only when the reviewer submits them as a new response.
+			button.formNoValidate = pending !== null;
+			button.textContent = pending
+				? config.messages.retryButton || sendLabel
+				: sendLabel;
 		}
 	} );
 }

@@ -2,7 +2,9 @@
 
 PreviewShare creates revocable links for reviewing unpublished WordPress content without publishing it or requiring reviewers to create accounts. Anyone holding a valid link can open it, so share it only with the intended reviewers.
 
-This README describes the 1.1.0 source candidate. See [GitHub Releases](https://github.com/mehul0810/previewshare/releases) for published versions and installable downloads.
+This README describes the 1.1.1 source candidate. See [GitHub Releases](https://github.com/mehul0810/previewshare/releases) for published versions and installable downloads.
+
+For branch strategy and the post-release synchronization process, see [RELEASE.md](RELEASE.md).
 
 ## What it does
 

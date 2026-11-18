@@ -35,6 +35,7 @@ class ReviewRateLimitWpdb {
 	public $options = 'wp_options';
 	public $posts = 'wp_posts';
 	public $postmeta = 'wp_postmeta';
+	public $insert_id = 1;
 	public $last_error = '';
 	/** @var array<string,string> */
 	public $rows = [];
@@ -64,7 +65,7 @@ class ReviewRateLimitWpdb {
 	public $recent_timestamps = [];
 
 	public function prepare( string $sql, ...$args ): ReviewRateLimitPreparedQuery {
-		return new ReviewRateLimitPreparedQuery( $sql, $args );
+		return new ReviewRateLimitPreparedQuery( $sql, is_array( $args[0] ) ? $args[0] : $args );
 	}
 
 	public function esc_like( string $text ): string {
@@ -77,6 +78,9 @@ class ReviewRateLimitWpdb {
 			return null;
 		}
 		$this->last_error = '';
+		if ( 0 === strpos( $query->sql, 'SELECT ID FROM' ) ) {
+			return (string) $query->args[0];
+		}
 		return $this->rows[ $query->args[0] ] ?? null;
 	}
 
@@ -210,6 +214,8 @@ class ReviewControllerTest extends TestCase {
 			}
 		);
 		Functions\when( 'add_action' )->justReturn( null );
+		Functions\when( 'wp_cache_delete' )->justReturn( true );
+		Functions\when( 'wp_cache_get' )->justReturn( false );
 		Functions\when( 'get_transient' )->justReturn( 0 );
 		Functions\when( 'set_transient' )->justReturn( true );
 		Functions\when( 'wp_unslash' )->returnArg( 1 );
@@ -229,6 +235,14 @@ class ReviewControllerTest extends TestCase {
 		parent::tearDown();
 	}
 
+	private function assert_submission_reservations( int $expected ): void {
+		global $wpdb;
+		$names = array_filter( array_keys( $wpdb->rows ), static function ( string $name ): bool {
+			return 0 === strpos( $name, 'previewshare_review_request_' );
+		} );
+		self::assertCount( $expected, $names );
+	}
+
 	public function test_approval_opened_on_an_older_version_is_rejected(): void {
 		$snapshot = ReviewVersion::issue_snapshot( $this->post, $this->link_hash );
 		$this->post->post_content = 'Version B';
@@ -242,12 +256,10 @@ class ReviewControllerTest extends TestCase {
 	public function test_current_version_approval_is_saved_against_the_presented_version(): void {
 		$snapshot   = ReviewVersion::issue_snapshot( $this->post, $this->link_hash );
 		$fingerprint = ReviewVersion::fingerprint( $this->post );
-		Functions\expect( 'add_option' )->once()->andReturn( true );
 		Functions\expect( 'current_time' )->once()->with( 'mysql', true )->andReturn( '2026-09-25 18:00:00' );
 		Functions\expect( 'get_date_from_gmt' )->once()->with( '2026-09-25 18:00:00' )->andReturn( '2026-09-25 23:30:00' );
 		Functions\expect( 'wp_insert_post' )->once()->andReturn( 73 );
 		Functions\expect( 'add_post_meta' )->times( 6 )->andReturn( true );
-		Functions\expect( 'update_option' )->once()->with( \Mockery::type( 'string' ), 73, false )->andReturn( true );
 		Functions\expect( 'do_action' )->once();
 
 		$response = $this->controller()->submit( $this->request( $snapshot ) );
@@ -255,6 +267,7 @@ class ReviewControllerTest extends TestCase {
 		self::assertInstanceOf( WP_REST_Response::class, $response );
 		self::assertSame( 201, $response->get_status() );
 		self::assertSame( [ 'received' => true, 'response_type' => 'approve' ], $response->get_data() );
+		$this->assert_submission_reservations( 1 );
 	}
 
 	/**
@@ -267,17 +280,16 @@ class ReviewControllerTest extends TestCase {
 		$snapshot = ReviewVersion::issue_snapshot( $this->post, $this->link_hash );
 		$request  = $this->request( $snapshot );
 		$request[ $field ] = $value;
-		Functions\expect( 'add_option' )->once()->andReturn( true );
 		Functions\expect( 'current_time' )->once()->andReturn( '2026-09-25 18:00:00' );
 		Functions\expect( 'get_date_from_gmt' )->once()->andReturn( '2026-09-25 23:30:00' );
 		Functions\expect( 'wp_insert_post' )->once()->andReturn( 73 );
 		Functions\expect( 'add_post_meta' )->times( 6 )->andReturn( true );
-		Functions\expect( 'update_option' )->once()->andReturn( true );
 		Functions\expect( 'do_action' )->once();
 
 		$response = $this->controller()->submit( $request );
 		self::assertInstanceOf( WP_REST_Response::class, $response );
 		self::assertSame( 201, $response->get_status() );
+		$this->assert_submission_reservations( 1 );
 	}
 
 	/**
@@ -313,11 +325,11 @@ class ReviewControllerTest extends TestCase {
 		$snapshot = ReviewVersion::issue_snapshot( $this->post, $this->link_hash );
 		$request  = $this->request( $snapshot );
 		$request[ $field ] = $value;
-		Functions\expect( 'add_option' )->never();
 		$response = $this->controller()->submit( $request );
 		self::assertInstanceOf( WP_Error::class, $response );
 		self::assertSame( $code, $response->get_error_code() );
 		self::assertSame( [ 'status' => 400 ], $response->get_error_data() );
+		$this->assert_submission_reservations( 0 );
 	}
 
 	/**
@@ -340,6 +352,7 @@ class ReviewControllerTest extends TestCase {
 			'malformed name' => [ 'name', "\xc3\x28", 'review_invalid_name' ],
 			'malformed comment' => [ 'comment', "\xc3\x28", 'review_invalid_comment' ],
 			'oversized raw comment' => [ 'comment', str_repeat( 'a', 20001 ), 'review_comment_too_long' ],
+			'oversized raw email' => [ 'email', str_repeat( 'a', 191 ), 'review_email_too_long' ],
 		];
 	}
 
@@ -547,7 +560,6 @@ class ReviewControllerTest extends TestCase {
 		$name          = 'previewshare_review_rate_' . substr( hash( 'sha256', $this->link_hash ), 0, 32 );
 		$wpdb->rows[ $name ] = sprintf( '%010d:', time() + 600 ) . json_encode( [ [ time(), str_repeat( 'f', 64 ) ] ] );
 		$wpdb->update_conflicts = 5;
-		Functions\expect( 'add_option' )->never();
 		Functions\expect( 'wp_insert_post' )->never();
 		$snapshot = ReviewVersion::issue_snapshot( $this->post, $this->link_hash );
 
@@ -558,6 +570,7 @@ class ReviewControllerTest extends TestCase {
 			$this->assertSame( [ 'status' => 503 ], $response->get_error_data() );
 			$this->assertSame( 'We could not accept your response right now. Please try again shortly.', $response->get_error_message() );
 			$this->assertSame( 5, $wpdb->write_attempts );
+			$this->assert_submission_reservations( 0 );
 		} finally {
 			$wpdb = $previous_wpdb;
 		}
@@ -572,7 +585,6 @@ class ReviewControllerTest extends TestCase {
 		$ip_hash = hash_hmac( 'sha256', $this->link_hash . ':' . $remote, 'test-site-secret' );
 		$name    = 'previewshare_review_rate_' . substr( hash( 'sha256', $this->link_hash ), 0, 32 );
 		$wpdb->rows[ $name ] = sprintf( '%010d:', time() + 600 ) . json_encode( array_fill( 0, 10, [ time(), $ip_hash ] ) );
-		Functions\expect( 'add_option' )->never();
 		Functions\expect( 'wp_insert_post' )->never();
 		$snapshot = ReviewVersion::issue_snapshot( $this->post, $this->link_hash );
 
@@ -582,6 +594,7 @@ class ReviewControllerTest extends TestCase {
 			$this->assertSame( 'review_rate_limited', $response->get_error_code() );
 			$this->assertSame( [ 'status' => 429 ], $response->get_error_data() );
 			$this->assertSame( 0, $wpdb->write_attempts );
+			$this->assert_submission_reservations( 0 );
 		} finally {
 			$wpdb = $previous_wpdb;
 			unset( $_SERVER['REMOTE_ADDR'] );
@@ -708,8 +721,10 @@ class ReviewControllerTest extends TestCase {
 		for ( $index = 0; $index < 100; $index++ ) {
 			$wpdb->rows[ 'previewshare_review_rate_' . sprintf( '%032d', $index ) ] = sprintf( '%010d:', time() - 1 ) . '[]';
 		}
-		Functions\expect( 'wp_next_scheduled' )->once()->with( 'previewshare_cleanup_reviews_continue' )->andReturn( false );
-		Functions\expect( 'wp_schedule_single_event' )->once()->with( \Mockery::type( 'int' ), 'previewshare_cleanup_reviews_continue' )->andReturn( true );
+		// A pending review-response retry on the shared legacy hook must not
+		// suppress the rate limiter's independent five-minute continuation.
+		Functions\expect( 'wp_next_scheduled' )->once()->with( 'previewshare_cleanup_rate_limits_continue' )->andReturn( false );
+		Functions\expect( 'wp_schedule_single_event' )->once()->with( \Mockery::type( 'int' ), 'previewshare_cleanup_rate_limits_continue' )->andReturn( true );
 		$controller = new ReviewController( \Mockery::mock( PostMetaStorage::class ), new ReviewResponseService() );
 
 		try {
@@ -734,6 +749,7 @@ class ReviewControllerTest extends TestCase {
 
 		try {
 			$controller->cleanup_rate_limits();
+			$this->assertCount( 100, $wpdb->rows );
 		} finally {
 			$wpdb = $previous_wpdb;
 		}

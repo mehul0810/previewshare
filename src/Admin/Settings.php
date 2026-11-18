@@ -60,7 +60,7 @@ class Settings {
 		\previewshare_maybe_initialize_default_settings();
 
 		$asset      = \previewshare_get_asset_metadata(
-			'assets/dist/js/previewshare-settings.min.asset.php',
+			'assets/dist/js/previewshare-settings.asset.php',
 			[ 'wp-element', 'wp-components', 'wp-i18n', 'wp-data', 'wp-date' ]
 		);
 		$plugin_url = defined( 'PREVIEWSHARE_PLUGIN_URL' ) ? (string) constant( 'PREVIEWSHARE_PLUGIN_URL' ) : '';
@@ -77,11 +77,12 @@ class Settings {
 		// Main settings app script. Built asset expected in assets/dist/js.
 		wp_enqueue_script(
 			'previewshare-settings',
-			$plugin_url . 'assets/dist/js/previewshare-settings.min.js',
-			$asset['dependencies'],
+			$plugin_url . 'assets/dist/js/previewshare-settings.js',
+			array_values( array_unique( array_merge( $asset['dependencies'], [ 'react', 'react-dom', 'wp-components', 'wp-data', 'wp-date', 'wp-element', 'wp-hooks', 'wp-i18n' ] ) ) ),
 			$asset['version'],
 			true
 		);
+		wp_set_script_translations( 'previewshare-settings', 'previewshare' );
 
 		// WordPress 5.8 exposes date settings through the experimental alias.
 		// Backfill the stable name expected by the bundled DataViews package.
@@ -96,7 +97,8 @@ class Settings {
 			'previewshare_settings',
 			[
 				// Base REST namespace for the plugin.
-				'rest_url'          => rest_url( 'previewshare/v1' ),
+				'rest_url'          => add_query_arg( '_locale', 'user', rest_url( 'previewshare/v1' ) ),
+				'asset_base'        => $plugin_url . 'assets/dist/',
 				'date_settings' => \previewshare_get_date_display_settings(),
 				'nonce'             => wp_create_nonce( 'wp_rest' ),
 				'settings'          => \previewshare_get_settings(),

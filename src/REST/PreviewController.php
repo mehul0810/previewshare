@@ -132,6 +132,10 @@ class PreviewController {
 						'required' => false,
 						'default' => 1,
 					],
+					'cursor'   => [
+						'required' => false,
+						'type'     => 'string',
+					],
 				],
 			]
 		);
@@ -244,16 +248,30 @@ class PreviewController {
 	 * List tokens callback.
 	 *
 	 * @param \WP_REST_Request $request Request.
-	 * @return \WP_REST_Response
+	 * @return \WP_REST_Response|\WP_Error
 	 */
 	public function list_tokens( $request ) {
 		$requested_per_page = absint( $request->get_param( 'per_page' ) );
 		$requested_page     = absint( $request->get_param( 'page' ) );
 		$per_page           = min( 100, $requested_per_page ? $requested_per_page : 50 );
 		$page               = $requested_page ? $requested_page : 1;
-		// Pull rows from post meta storage.
-		$rows        = $this->storage->list_tokens( $per_page, $page );
-		$total       = $this->storage->count_tokens();
+		$cursor             = $request->get_param( 'cursor' );
+		$cursor_page        = null;
+		if ( is_string( $cursor ) && '' !== $cursor ) {
+			$cursor_page = $this->storage->list_tokens_by_cursor( $per_page, $cursor );
+			if ( $cursor_page instanceof \WP_Error ) {
+				return $cursor_page;
+			}
+			$rows  = $cursor_page['items'];
+			$total = $cursor_page['total'];
+		} else {
+			$rows  = $this->storage->list_tokens( $per_page, $page );
+			$total = $this->storage->count_tokens();
+		}
+		$post_ids = array_values( array_unique( array_filter( array_map( 'intval', array_column( $rows, 'post_id' ) ) ) ) );
+		if ( $post_ids ) {
+			_prime_post_caches( $post_ids, false, false );
+		}
 		$reviews     = Container::get( 'reviews' );
 		$link_owners = [];
 		if ( $reviews instanceof ReviewResponseService ) {
@@ -273,7 +291,6 @@ class PreviewController {
 		if ( $approved_post_ids ) {
 			// Prime the saved post, metadata, and taxonomy dependencies before comparing approvals.
 			$approved_ids = array_values( $approved_post_ids );
-			_prime_post_caches( $approved_ids, false, false );
 			update_postmeta_cache( $approved_ids );
 			$post_types = array_unique( array_filter( array_map( 'get_post_type', $approved_ids ) ) );
 			update_object_term_cache( $approved_ids, $post_types );
@@ -340,13 +357,14 @@ class PreviewController {
 			]
 		);
 
-		return new \WP_REST_Response(
-			[
-				'items' => $items,
-				'total' => $total,
-			],
-			200
-		);
+		$response = [
+			'items' => $items,
+			'total' => $total,
+		];
+		if ( null !== $cursor_page ) {
+			$response['next_cursor'] = $cursor_page['next_cursor'];
+		}
+		return new \WP_REST_Response( $response, 200 );
 	}
 
 	/**
@@ -359,16 +377,16 @@ class PreviewController {
 		$id = $request->get_param( 'id' );
 
 		if ( ! is_string( $id ) || 1 !== preg_match( '/\\A[a-fA-F0-9]{64}\\z/', $id ) ) {
-			return new \WP_Error( 'invalid_id', 'Invalid token id', [ 'status' => 400 ] );
+			return new \WP_Error( 'invalid_id', __( 'Invalid token id', 'previewshare' ), [ 'status' => 400 ] );
 		}
 
 		if ( ! $this->storage->get_token_context_by_id( strtolower( $id ) ) ) {
-			return new \WP_Error( 'link_not_found', 'Preview link not found.', [ 'status' => 404 ] );
+			return new \WP_Error( 'link_not_found', __( 'Preview link not found.', 'previewshare' ), [ 'status' => 404 ] );
 		}
 
 		$revoked = $this->storage->revoke_token_by_id( strtolower( $id ) );
 		if ( ! $revoked ) {
-			return new \WP_Error( 'link_revoke_failed', 'Preview access could not be revoked.', [ 'status' => 500 ] );
+			return new \WP_Error( 'link_revoke_failed', __( 'Preview access could not be revoked.', 'previewshare' ), [ 'status' => 500 ] );
 		}
 
 		\previewshare_log(
@@ -392,7 +410,7 @@ class PreviewController {
 	public function delete_by_id( $request ) {
 		$id = $request->get_param( 'id' );
 		if ( ! is_string( $id ) || 1 !== preg_match( '/\\A[a-fA-F0-9]{64}\\z/', $id ) ) {
-			return new \WP_Error( 'invalid_id', 'Invalid token id', [ 'status' => 400 ] );
+			return new \WP_Error( 'invalid_id', __( 'Invalid token id', 'previewshare' ), [ 'status' => 400 ] );
 		}
 
 		$result = $this->storage->delete_token_by_id( strtolower( $id ) );
@@ -400,7 +418,7 @@ class PreviewController {
 			return $result;
 		}
 		if ( true !== $result ) {
-			return new \WP_Error( 'link_not_found', 'Preview link not found.', [ 'status' => 404 ] );
+			return new \WP_Error( 'link_not_found', __( 'Preview link not found.', 'previewshare' ), [ 'status' => 404 ] );
 		}
 
 		return new \WP_REST_Response(
@@ -422,7 +440,7 @@ class PreviewController {
 		$id = sanitize_key( (string) $request->get_param( 'id' ) );
 
 		if ( '' === $id ) {
-			return new \WP_Error( 'invalid_id', 'Invalid preview link.', [ 'status' => 400 ] );
+			return new \WP_Error( 'invalid_id', __( 'Invalid preview link.', 'previewshare' ), [ 'status' => 400 ] );
 		}
 
 		$result = $this->storage->extend_token_by_id( $id );
@@ -574,7 +592,7 @@ class PreviewController {
 		$token = $request->get_param( 'token' );
 
 		if ( empty( $token ) ) {
-			return new \WP_Error( 'invalid_token', 'Token is required', [ 'status' => 400 ] );
+			return new \WP_Error( 'invalid_token', __( 'Token is required', 'previewshare' ), [ 'status' => 400 ] );
 		}
 
 		// Use storage driver revoke implementation.

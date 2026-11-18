@@ -1,6 +1,6 @@
 {
   "name": "previewshare",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "PreviewShare lets you securely share preview links for draft, pending, or scheduled content without publishing it publicly.",
   "homepage": "https://github.com/mehul0810/previewshare#readme",
   "license": "GPL-3.0-or-later",
@@ -27,7 +27,8 @@
     "minimatch": "3.1.5",
     "serialize-javascript": "7.0.6",
     "uuid": "11.1.1",
-    "webpack-dev-server": "5.2.5"
+    "webpack-dev-server": "5.2.5",
+    "colord": "2.9.4"
   },
   "files": [
     "assets/dist",

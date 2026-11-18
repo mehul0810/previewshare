@@ -46,6 +46,9 @@ final class ReviewController {
 		$this->reviews = $reviews;
 		add_action( 'rest_api_init', [ $this, 'register_routes' ] );
 		add_action( 'previewshare_cleanup_reviews', [ $this, 'cleanup_rate_limits' ] );
+		// Continue rate-limit batches independently from review-response retries.
+		add_action( 'previewshare_cleanup_rate_limits_continue', [ $this, 'cleanup_rate_limits' ] );
+		// Keep processing already scheduled shared-hook events during upgrades.
 		add_action( 'previewshare_cleanup_reviews_continue', [ $this, 'cleanup_rate_limits' ] );
 	}
 
@@ -193,7 +196,6 @@ final class ReviewController {
 		$type        = sanitize_key( (string) $request->get_param( 'response_type' ) );
 		$raw_name    = (string) $request->get_param( 'name' );
 		$raw_email   = trim( (string) $request->get_param( 'email' ) );
-		$email       = sanitize_email( $raw_email );
 		$raw_comment = (string) $request->get_param( 'comment' );
 		$request_id  = (string) $request->get_param( 'request_id' );
 
@@ -203,37 +205,30 @@ final class ReviewController {
 		if ( ! preg_match( '/^[a-zA-Z0-9-]{16,80}$/', $request_id ) ) {
 			return new \WP_Error( 'review_invalid_request', __( 'Please refresh the page and try again.', 'previewshare' ), [ 'status' => 400 ] );
 		}
-		$content_fingerprint = ReviewVersion::verify_snapshot( (string) $request->get_param( 'content_snapshot' ), $hash );
-		if ( null === $content_fingerprint ) {
-			return new \WP_Error( 'review_invalid_snapshot', __( 'Please refresh the page and try again.', 'previewshare' ), [ 'status' => 400 ] );
-		}
-		if ( 'approve' === $type && ! hash_equals( $content_fingerprint, ReviewVersion::fingerprint( $post ) ) ) {
-			return new \WP_Error( 'review_stale_version', __( 'This content changed after you opened the preview. Refresh the page to review the latest version before approving.', 'previewshare' ), [ 'status' => 409 ] );
-		}
-		// HTML maxlength counts UTF-16 units. Reject malformed or oversized raw
-		// input before sanitization, then apply the visible limits to saved text.
-		if ( ! preg_match( '//u', $raw_name ) ) {
-			return new \WP_Error( 'review_invalid_name', __( 'Enter a valid name.', 'previewshare' ), [ 'status' => 400 ] );
-		}
-		if ( ! preg_match( '//u', $raw_comment ) ) {
-			return new \WP_Error( 'review_invalid_comment', __( 'Enter a valid comment.', 'previewshare' ), [ 'status' => 400 ] );
-		}
+		// Bound the raw fields before Unicode validation and normalization.
 		if ( strlen( $raw_name ) > 480 ) {
 			return new \WP_Error( 'review_name_too_long', __( 'Shorten your name and try again.', 'previewshare' ), [ 'status' => 400 ] );
 		}
 		if ( strlen( $raw_comment ) > 20000 ) {
 			return new \WP_Error( 'review_comment_too_long', __( 'Shorten your comment and try again.', 'previewshare' ), [ 'status' => 400 ] );
 		}
+		if ( strlen( $raw_email ) > 190 ) {
+			return new \WP_Error( 'review_email_too_long', __( 'Shorten your email address and try again.', 'previewshare' ), [ 'status' => 400 ] );
+		}
+		if ( ! preg_match( '//u', $raw_name ) ) {
+			return new \WP_Error( 'review_invalid_name', __( 'Enter a valid name.', 'previewshare' ), [ 'status' => 400 ] );
+		}
+		if ( ! preg_match( '//u', $raw_comment ) ) {
+			return new \WP_Error( 'review_invalid_comment', __( 'Enter a valid comment.', 'previewshare' ), [ 'status' => 400 ] );
+		}
 		$name    = sanitize_text_field( $raw_name );
 		$comment = sanitize_textarea_field( $raw_comment );
+		$email   = sanitize_email( $raw_email );
 		if ( $this->exceeds_utf16_limit( $name, 120 ) ) {
 			return new \WP_Error( 'review_name_too_long', __( 'Shorten your name and try again.', 'previewshare' ), [ 'status' => 400 ] );
 		}
 		if ( $this->exceeds_utf16_limit( $comment, 5000 ) ) {
 			return new \WP_Error( 'review_comment_too_long', __( 'Shorten your comment and try again.', 'previewshare' ), [ 'status' => 400 ] );
-		}
-		if ( strlen( $email ) > 190 ) {
-			return new \WP_Error( 'review_email_too_long', __( 'Shorten your email address and try again.', 'previewshare' ), [ 'status' => 400 ] );
 		}
 		if ( '' !== $raw_email && ( $email !== $raw_email || ! is_email( $email ) ) ) {
 			return new \WP_Error( 'review_invalid_email', __( 'Enter a valid email address.', 'previewshare' ), [ 'status' => 400 ] );
@@ -243,6 +238,14 @@ final class ReviewController {
 		}
 		if ( in_array( $type, [ 'request_changes', 'comment' ], true ) && '' === trim( $comment ) ) {
 			return new \WP_Error( 'review_comment_required', __( 'Add a comment for this response.', 'previewshare' ), [ 'status' => 400 ] );
+		}
+
+		$content_fingerprint = ReviewVersion::verify_snapshot( (string) $request->get_param( 'content_snapshot' ), $hash );
+		if ( null === $content_fingerprint ) {
+			return new \WP_Error( 'review_invalid_snapshot', __( 'Please refresh the page and try again.', 'previewshare' ), [ 'status' => 400 ] );
+		}
+		if ( 'approve' === $type && ! hash_equals( $content_fingerprint, ReviewVersion::fingerprint( $post ) ) ) {
+			return new \WP_Error( 'review_stale_version', __( 'This content changed after you opened the preview. Refresh the page to review the latest version before approving.', 'previewshare' ), [ 'status' => 409 ] );
 		}
 
 		$submission_key = hash_hmac( 'sha256', $hash . ':' . $request_id, wp_salt( 'auth' ) );
@@ -548,8 +551,8 @@ final class ReviewController {
 			}
 		}
 
-		if ( 100 === count( $rows ) && ! wp_next_scheduled( 'previewshare_cleanup_reviews_continue' ) ) {
-			wp_schedule_single_event( time() + ( 5 * MINUTE_IN_SECONDS ), 'previewshare_cleanup_reviews_continue' );
+		if ( 100 === count( $rows ) && ! wp_next_scheduled( 'previewshare_cleanup_rate_limits_continue' ) ) {
+			wp_schedule_single_event( time() + ( 5 * MINUTE_IN_SECONDS ), 'previewshare_cleanup_rate_limits_continue' );
 		}
 	}
 

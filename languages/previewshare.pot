@@ -2,7 +2,7 @@
 # This file is distributed under the GPLv3 or later.
 msgid ""
 msgstr ""
-"Project-Id-Version: PreviewShare 1.1.0\n"
+"Project-Id-Version: PreviewShare 1.1.1\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/previewshare\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -278,7 +278,7 @@ msgid "Draft preview"
 msgstr ""
 
 #: src/Admin/Actions.php:832
-msgid "This content is shared privately. Search engines are blocked from indexing this preview link."
+msgid "This content is shared privately. Search engines are asked to exclude this preview."
 msgstr ""
 
 #: src/Admin/Actions.php:929
@@ -302,7 +302,7 @@ msgid "Sending your response…"
 msgstr ""
 
 #: src/Includes/ReviewForm.php:66
-msgid "Your response could not be sent. Please try again."
+msgid "We could not confirm whether your response was saved."
 msgstr ""
 
 #: src/Includes/ReviewForm.php:143
@@ -311,6 +311,10 @@ msgstr ""
 
 #: src/Includes/ReviewForm.php:144
 msgid "Try again to check the earlier response before sending your edits."
+msgstr ""
+
+#: src/Includes/ReviewForm.php:145
+msgid "Retry earlier response"
 msgstr ""
 
 #: src/Includes/ReviewForm.php:145
@@ -487,8 +491,12 @@ msgstr ""
 msgid "PreviewShare reviews"
 msgstr ""
 
-#: src/Services/ReviewResponseService.php:96
+#: src/Services/ReviewResponseService.php:106
 msgid "This response was already received."
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:109
+msgid "We could not confirm whether your response was saved. Please retry. Before refreshing, copy your response and ask the editor whether it was saved."
 msgstr ""
 
 #: src/Services/ReviewResponseService.php:104
@@ -1128,6 +1136,10 @@ msgstr ""
 msgid "Page %1$d of %2$d"
 msgstr ""
 
+#: assets/src/js/settings.js
+msgid "Links per page"
+msgstr ""
+
 #: assets/src/js/settings.js:1793
 msgid "Previous"
 msgstr ""
@@ -1371,6 +1383,38 @@ msgstr ""
 msgid "Settings and reviewer feedback"
 msgstr ""
 
+#: assets/src/js/settings-changelog.js
+msgid "Safer reviews and faster link management"
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Fixed false success messages for reviewer responses and preserved edits when a submission needs to be retried."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Improved protection against duplicate responses and rechecked link access before accepting feedback."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Strengthened preview indexing protections, suppressed browser referrers, and updated a bundled dependency for security."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Fixed status-filtered link results and refreshed the inventory when PreviewShare detects changes during pagination."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Reduced repeated work when opening previews and browsing links, and made the link inventory lighter on narrower screens."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Improved WordPress privacy export and erasure for reviewer responses, including clearer errors and more reliable handling of large batches."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js
+msgid "Improved recovery from interrupted review writes and cleanup, and made bulk link revocation more efficient."
+msgstr ""
+
 #: assets/src/js/settings.js:2795
 msgid "WordPress compatibility"
 msgstr ""
@@ -1410,4 +1454,138 @@ msgstr ""
 
 #: assets/src/js/settings.js
 msgid "Respected WordPress date and time formats, site timezone, and locale in link history."
+msgstr ""
+
+#: assets/src/js/settings.js
+msgid "Loading preview links…"
+msgstr ""
+
+#: assets/src/js/settings.js
+msgid "Preview links changed while loading. The list was refreshed; load more to see older links."
+msgstr ""
+
+#: assets/src/js/settings.js
+msgid "The loaded list may be out of date. Refresh it before loading older links."
+msgstr ""
+
+#: assets/src/js/settings.js
+msgid "Refresh preview links"
+msgstr ""
+
+#: src/Services/LinkInventoryCursor.php
+msgid "The preview link continuation is invalid. Refresh the list."
+msgstr ""
+
+#: src/Services/LinkInventoryCursor.php
+msgid "Preview links changed while loading. Refresh the list."
+msgstr ""
+
+#: src/Services/LinkInventoryCursor.php
+msgid "Preview links could not be loaded. Please try again."
+msgstr ""
+
+#: src/Admin/Actions.php:254
+msgid "Insufficient permissions"
+msgstr ""
+
+#: src/Admin/Actions.php:259
+msgid "Cannot edit this post"
+msgstr ""
+
+#: src/Admin/Actions.php:264
+#: src/Admin/Actions.php:516
+#: src/functions.php:89
+msgid "PreviewShare is not enabled for this post type"
+msgstr ""
+
+#: src/Admin/Actions.php:511
+#: src/functions.php:85
+msgid "Invalid post ID"
+msgstr ""
+
+#: src/Admin/Actions.php:752
+msgid "Copy this preview link before leaving this page."
+msgstr ""
+
+#: src/Admin/Actions.php:755
+msgid "Back to previous page"
+msgstr ""
+
+#: src/Admin/Actions.php:759
+msgid "Preview link generated"
+msgstr ""
+
+#: src/functions.php:80
+msgid "PreviewShare services are unavailable."
+msgstr ""
+
+#: src/functions.php:93
+msgid "Post must be published, draft, pending, scheduled, or private to generate preview links"
+msgstr ""
+
+#: src/functions.php:110
+msgid "Preview token could not be generated."
+msgstr ""
+
+#: src/functions.php:114
+msgid "Preview token could not be stored."
+msgstr ""
+
+#: src/REST/PreviewController.php:380
+#: src/REST/PreviewController.php:413
+msgid "Invalid token id"
+msgstr ""
+
+#: src/REST/PreviewController.php:384
+#: src/REST/PreviewController.php:421
+#: src/Services/PostMetaStorage.php:595
+#: src/Services/PostMetaStorage.php:675
+msgid "Preview link not found."
+msgstr ""
+
+#: src/REST/PreviewController.php:389
+#: src/Services/PostMetaStorage.php:599
+msgid "Preview access could not be revoked."
+msgstr ""
+
+#: src/REST/PreviewController.php:443
+#: src/Services/PostMetaStorage.php:588
+#: src/Services/PostMetaStorage.php:670
+msgid "Invalid preview link."
+msgstr ""
+
+#: src/REST/PreviewController.php:595
+msgid "Token is required"
+msgstr ""
+
+#: src/Services/PostMetaStorage.php:500
+#: src/Services/PostMetaStorage.php:514
+msgid "Preview link inventory is temporarily unavailable."
+msgstr ""
+
+#: src/Services/PostMetaStorage.php:603
+#: src/Services/PostMetaStorage.php:609
+#: src/Services/PostMetaStorage.php:612
+#: src/Services/PostMetaStorage.php:616
+msgid "Preview link could not be removed from inventory."
+msgstr ""
+
+#: src/Services/PostMetaStorage.php:686
+msgid "Only active links expiring within 24 hours can be extended."
+msgstr ""
+
+#: src/Services/PostMetaStorage.php:694
+msgid "Preview link could not be extended."
+msgstr ""
+
+#: src/Services/ReviewResponseService.php:971
+#: src/Services/ReviewResponseService.php:985
+#: src/Services/ReviewResponseService.php:1031
+#: src/Services/ReviewResponseService.php:1034
+#: src/Services/ReviewResponseService.php:1038
+msgid "Reviewer responses could not be retrieved for export."
+msgstr ""
+
+#: assets/src/js/settings-changelog.js:43
+msgid "Added WordPress language pack support for the settings screen, editor controls, and preview link messages."
 msgstr ""

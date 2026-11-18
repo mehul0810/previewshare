@@ -1,9 +1,12 @@
 import { formatSiteDate, formatPreviewLabel } from './date-utils';
-import { DataViews, filterSortAndPaginate } from '@wordpress/dataviews/wp';
+import { loadDataViews } from './load-dataviews';
+import { useScopedNotices, NoticeRegion } from './scoped-notices';
+import { fetchInventoryBatch } from './inventory-batch';
+import { Changelog } from './settings-changelog';
+import { createSettingsApi } from './settings-api';
 import removeAccents from 'remove-accents';
 import {
 	check,
-	chevronDown,
 	copy,
 	arrowRight,
 	help,
@@ -14,15 +17,19 @@ import {
 	trash,
 } from '@wordpress/icons';
 import {
-	buildRestRequestUrl,
 	fallbackSettings,
 	getRestBase,
-	getInventoryBatchState,
 	mergeInventoryItems,
 	INVENTORY_BATCH_PAGES,
 	INVENTORY_PAGE_SIZE,
 	normalizeSettings,
 } from './settings-utils';
+
+if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
+	// Webpack uses this special assignment to locate the lazy chunk in the plugin directory.
+	// eslint-disable-next-line camelcase, no-undef
+	__webpack_public_path__ = window.previewshare_settings.asset_base;
+}
 
 ( function ( wp ) {
 	const {
@@ -46,10 +53,16 @@ import {
 	} = wp.components;
 
 	const AUTOSAVE_DELAY = 450;
+	const MAX_AUTO_REFRESH_PAGES = 10;
 	const DAY_IN_SECONDS = 24 * 60 * 60;
 	const localized = window.previewshare_settings || {};
 	const restBase = getRestBase( localized );
-	const nonce = localized.nonce || '';
+	const apiFetch = createSettingsApi( {
+		restBase,
+		nonce: localized.nonce || '',
+		origin: window.location.origin,
+		request: ( ...args ) => fetch( ...args ),
+	} );
 	const tabDefinitions = [
 		{
 			name: 'overview',
@@ -147,36 +160,6 @@ import {
 		},
 	];
 
-	function apiFetch( path, options = {} ) {
-		const requestUrl = buildRestRequestUrl(
-			restBase,
-			path,
-			window.location.origin
-		);
-		const headers = Object.assign(
-			{
-				'Content-Type': 'application/json',
-				'X-WP-Nonce': nonce,
-			},
-			options.headers || {}
-		);
-		const requestOptions = Object.assign( { headers }, options );
-
-		if ( requestOptions.body && typeof requestOptions.body !== 'string' ) {
-			requestOptions.body = JSON.stringify( requestOptions.body );
-		}
-
-		return fetch( requestUrl, requestOptions ).then( ( response ) => {
-			if ( ! response.ok ) {
-				return response
-					.json()
-					.then( ( error ) => Promise.reject( error ) );
-			}
-
-			return response.json();
-		} );
-	}
-
 	function formatDate( timestamp ) {
 		return formatSiteDate( timestamp, localized );
 	}
@@ -223,22 +206,37 @@ import {
 		);
 	}
 
+	const linkReferencesByInventory = new WeakMap();
+
 	function getUniqueLinkReference( item, inventoryItems ) {
 		const id = String( item.id );
-		let length = Math.min( 8, id.length );
-
-		while (
-			length < id.length &&
-			inventoryItems.some(
-				( other ) =>
-					other.id !== item.id &&
-					String( other.id ).startsWith( id.slice( 0, length ) )
-			)
-		) {
-			length++;
+		let references = linkReferencesByInventory.get( inventoryItems );
+		if ( ! references ) {
+			references = new Map();
+			linkReferencesByInventory.set( inventoryItems, references );
+		}
+		if ( references.has( id ) ) {
+			return references.get( id );
 		}
 
-		return id.slice( 0, length );
+		// Only resolve references for links whose Extend action is rendered.
+		let length = Math.min( 8, id.length );
+		while ( length < id.length ) {
+			const prefix = id.slice( 0, length );
+			if (
+				! inventoryItems.some(
+					( other ) =>
+						other.id !== item.id &&
+						String( other.id ).startsWith( prefix )
+				)
+			) {
+				break;
+			}
+			length++;
+		}
+		const reference = id.slice( 0, length );
+		references.set( id, reference );
+		return reference;
 	}
 
 	function extendLinkAriaLabel( item, inventoryItems ) {
@@ -536,9 +534,12 @@ import {
 		);
 		const [ settings, setSettings ] = useState( initialSettings );
 		const [ activeTab, setActiveTab ] = useState( getTabFromUrl );
+		const [ dataViewsModule, setDataViewsModule ] = useState( null );
+		const [ dataViewsFailed, setDataViewsFailed ] = useState( false );
 		const [ tokens, setTokens ] = useState( [] );
 		const [ totalTokens, setTotalTokens ] = useState( 0 );
 		const [ hasMoreTokens, setHasMoreTokens ] = useState( false );
+		const [ inventoryStale, setInventoryStale ] = useState( false );
 		const [ loadingMoreTokens, setLoadingMoreTokens ] = useState( false );
 		const [ view, setView ] = useState( {
 			type: 'table',
@@ -575,7 +576,7 @@ import {
 		const [ workingTokenId, setWorkingTokenId ] = useState( '' );
 		const [ deleteCandidate, setDeleteCandidate ] = useState( null );
 		const [ deleteError, setDeleteError ] = useState( '' );
-		const [ notice, setNotice ] = useState( null );
+		const { notices, notify, clearNotice } = useScopedNotices();
 		const persistedSettingsRef = useRef( initialSettings );
 		const latestSettingsRef = useRef( initialSettings );
 		const saveTimerRef = useRef( null );
@@ -586,8 +587,12 @@ import {
 		const resetContextRef = useRef( null );
 		const tokenRequestIdRef = useRef( 0 );
 		const tokensRef = useRef( [] );
+		const inventoryTotalRef = useRef( null );
 		const nextInventoryPageRef = useRef( 1 );
+		const nextInventoryCursorRef = useRef( 'start' );
+		const refreshInventoryPendingRef = useRef( false );
 		const mountedRef = useRef( false );
+		const inventoryStartedRef = useRef( false );
 		const tabListRef = useRef( null );
 
 		useEffect( () => {
@@ -655,7 +660,6 @@ import {
 		useEffect( () => {
 			mountedRef.current = true;
 			fetchSettings();
-			fetchTokens();
 
 			return () => {
 				mountedRef.current = false;
@@ -667,8 +671,59 @@ import {
 			// eslint-disable-next-line react-hooks/exhaustive-deps
 		}, [] );
 
-		function notify( status, message, url = '' ) {
-			setNotice( { status, message, url } );
+		useEffect( () => {
+			if (
+				! inventoryStartedRef.current &&
+				( activeTab === 'overview' || activeTab === 'previews' )
+			) {
+				inventoryStartedRef.current = true;
+				fetchTokens();
+			}
+			// Fetch once when a tab first needs the inventory.
+			// eslint-disable-next-line react-hooks/exhaustive-deps
+		}, [ activeTab ] );
+
+		useEffect( () => {
+			let cancelled = false;
+			let settled = false;
+			let timeout;
+			if (
+				activeTab === 'previews' &&
+				! compactInventory &&
+				! dataViewsModule &&
+				! dataViewsFailed &&
+				typeof wp.element.useInsertionEffect === 'function'
+			) {
+				timeout = window.setTimeout( () => {
+					settled = true;
+					if ( ! cancelled ) {
+						setDataViewsFailed( true );
+					}
+				}, 5000 );
+				loadDataViews()
+					.then( ( module ) => {
+						if ( ! cancelled && ! settled ) {
+							settled = true;
+							window.clearTimeout( timeout );
+							setDataViewsModule( module );
+						}
+					} )
+					.catch( () => {
+						if ( ! cancelled && ! settled ) {
+							settled = true;
+							window.clearTimeout( timeout );
+							setDataViewsFailed( true );
+						}
+					} );
+			}
+			return () => {
+				cancelled = true;
+				window.clearTimeout( timeout );
+			};
+		}, [ activeTab, compactInventory, dataViewsModule, dataViewsFailed ] );
+
+		function notifySettings( status, message ) {
+			notify( status, message, '', 'settings' );
 		}
 
 		function fetchSettings() {
@@ -698,62 +753,57 @@ import {
 					}
 
 					setLoadingSettings( false );
-					notify(
+					notifySettings(
 						'error',
 						__( 'Settings could not be loaded.', 'previewshare' )
 					);
 				} );
 		}
 
-		async function fetchTokens( { append = false } = {} ) {
+		async function fetchTokens( {
+			append = false,
+			refreshLoaded = false,
+			resetView = false,
+			changed = false,
+		} = {} ) {
 			const requestId = ++tokenRequestIdRef.current;
 			const firstPage = append ? nextInventoryPageRef.current : 1;
 			const existingItems = append ? tokensRef.current : [];
-			let nextPage = firstPage;
-			let reportedTotal = 0;
-			let pagesFetched = 0;
-			let hasMore = true;
-			const items = [];
-
+			const pageLimit = refreshLoaded
+				? Math.min(
+						MAX_AUTO_REFRESH_PAGES,
+						Math.max( 1, nextInventoryPageRef.current - 1 )
+				  )
+				: INVENTORY_BATCH_PAGES;
 			if ( ! append ) {
-				tokensRef.current = [];
-				setHasMoreTokens( false );
 				setLoadingTokens( true );
 			} else {
 				setLoadingMoreTokens( true );
 			}
 
 			try {
-				while ( pagesFetched < INVENTORY_BATCH_PAGES ) {
-					const data = await apiFetch(
-						'/tokens?per_page=' +
-							INVENTORY_PAGE_SIZE +
-							'&page=' +
-							nextPage,
-						{
-							method: 'GET',
-						}
-					);
-					const pageItems = Array.isArray( data.items )
-						? data.items
-						: [];
-
-					reportedTotal = Number( data.total ) || 0;
-					items.push( ...pageItems );
-					pagesFetched += 1;
-					nextPage += 1;
-					const batchState = getInventoryBatchState( {
-						existingCount: existingItems.length,
-						loadedCount: items.length,
-						pageItemsCount: pageItems.length,
-						reportedTotal,
-						pagesFetched,
-					} );
-
-					hasMore = batchState.hasMore;
-					if ( ! batchState.shouldFetchNextPage ) {
-						break;
+				const batch = await fetchInventoryBatch( {
+					apiFetch,
+					append,
+					page: firstPage,
+					cursor: append ? nextInventoryCursorRef.current : 'start',
+					pageSize: INVENTORY_PAGE_SIZE,
+					pageLimit,
+					existingCount: existingItems.length,
+					previousTotal: inventoryTotalRef.current,
+					isCurrent: () =>
+						mountedRef.current &&
+						requestId === tokenRequestIdRef.current,
+				} );
+				if ( batch.cancelled ) {
+					return;
+				}
+				if ( batch.changed ) {
+					if ( ! changed ) {
+						await fetchTokens( { resetView: true, changed: true } );
+						return;
 					}
+					throw new Error( 'Inventory changed during refresh' );
 				}
 
 				if (
@@ -763,14 +813,34 @@ import {
 					return;
 				}
 
-				const mergedItems = mergeInventoryItems( existingItems, items );
-				const total = reportedTotal || mergedItems.length;
+				const mergedItems = mergeInventoryItems(
+					existingItems,
+					batch.items
+				);
+				const total = batch.total || mergedItems.length;
 
 				tokensRef.current = mergedItems;
+				inventoryTotalRef.current = batch.total;
 				setTokens( mergedItems );
+				if ( ! append ) {
+					setInventoryStale( false );
+				}
+				if ( resetView ) {
+					setView( ( current ) => ( { ...current, page: 1 } ) );
+				}
+				if ( changed ) {
+					notify(
+						'info',
+						__(
+							'Preview links changed while loading. The list was refreshed; load more to see older links.',
+							'previewshare'
+						)
+					);
+				}
 				setTotalTokens( total );
-				setHasMoreTokens( hasMore && mergedItems.length < total );
-				nextInventoryPageRef.current = nextPage;
+				setHasMoreTokens( batch.hasMore && mergedItems.length < total );
+				nextInventoryPageRef.current = batch.nextPage;
+				nextInventoryCursorRef.current = batch.nextCursor;
 				setLoadingTokens( false );
 				setLoadingMoreTokens( false );
 			} catch {
@@ -783,10 +853,40 @@ import {
 
 				setLoadingTokens( false );
 				setLoadingMoreTokens( false );
+				if ( changed ) {
+					setInventoryStale( true );
+				}
 				notify(
 					'error',
 					__( 'Preview links could not be loaded.', 'previewshare' )
 				);
+			}
+		}
+
+		function refreshAfterMutation() {
+			if ( nextInventoryPageRef.current - 1 > MAX_AUTO_REFRESH_PAGES ) {
+				++tokenRequestIdRef.current;
+				setLoadingTokens( false );
+				setLoadingMoreTokens( false );
+				setInventoryStale( true );
+				return;
+			}
+			fetchTokens( { refreshLoaded: true } );
+		}
+
+		async function refreshInventory() {
+			if (
+				refreshInventoryPendingRef.current ||
+				loadingTokens ||
+				loadingMoreTokens
+			) {
+				return;
+			}
+			refreshInventoryPendingRef.current = true;
+			try {
+				await fetchTokens( { resetView: true } );
+			} finally {
+				refreshInventoryPendingRef.current = false;
 			}
 		}
 
@@ -873,11 +973,11 @@ import {
 					setSaveState( 'saved' );
 					if ( saveErrorRef.current ) {
 						saveErrorRef.current = false;
-						setNotice( null );
+						clearNotice( 'settings' );
 					}
 
 					if ( options.notice ) {
-						notify(
+						notifySettings(
 							'success',
 							options.message ||
 								__( 'Settings saved.', 'previewshare' )
@@ -898,7 +998,7 @@ import {
 					setSavingSettings( false );
 					setSaveState( 'error' );
 					saveErrorRef.current = true;
-					notify(
+					notifySettings(
 						'error',
 						__( 'Settings could not be saved.', 'previewshare' )
 					);
@@ -1008,9 +1108,9 @@ import {
 					setSaveState( 'saved' );
 					if ( saveErrorRef.current ) {
 						saveErrorRef.current = false;
-						setNotice( null );
+						clearNotice( 'settings' );
 					}
-					notify(
+					notifySettings(
 						'success',
 						__( 'Default settings restored.', 'previewshare' )
 					);
@@ -1036,7 +1136,7 @@ import {
 						setSavingSettings( false );
 						setSaveState( 'error' );
 						saveErrorRef.current = true;
-						notify(
+						notifySettings(
 							'error',
 							__(
 								'Default settings could not be restored.',
@@ -1052,7 +1152,7 @@ import {
 					setSavingSettings( false );
 					setSaveState( 'error' );
 					saveErrorRef.current = true;
-					notify(
+					notifySettings(
 						'error',
 						__(
 							'Default settings could not be restored.',
@@ -1122,7 +1222,7 @@ import {
 						);
 					}
 
-					fetchTokens();
+					refreshAfterMutation();
 				} )
 				.catch( () => {
 					notify(
@@ -1160,7 +1260,7 @@ import {
 						'success',
 						__( 'Preview link revoked.', 'previewshare' )
 					);
-					fetchTokens();
+					refreshAfterMutation();
 				} )
 				.catch( () => {
 					notify(
@@ -1200,7 +1300,7 @@ import {
 							'previewshare'
 						)
 					);
-					fetchTokens();
+					refreshAfterMutation();
 					window.setTimeout(
 						() =>
 							document
@@ -1334,6 +1434,17 @@ import {
 				body: { id },
 			} )
 				.then( ( data ) => {
+					tokensRef.current = tokensRef.current.map( ( item ) =>
+						item.id === id
+							? {
+									...item,
+									expires_at: data.expires_at,
+									expired: false,
+									status: 'active',
+							  }
+							: item
+					);
+					setTokens( tokensRef.current );
 					notify(
 						'success',
 						sprintf(
@@ -1345,7 +1456,7 @@ import {
 							formatDate( data.expires_at )
 						)
 					);
-					fetchTokens();
+					refreshAfterMutation();
 				} )
 				.catch( () => {
 					notify(
@@ -1357,40 +1468,6 @@ import {
 					);
 				} )
 				.finally( () => setWorkingTokenId( '' ) );
-		}
-
-		function renderNotice() {
-			if ( ! notice ) {
-				return null;
-			}
-
-			return el(
-				'div',
-				{
-					className: 'previewshare-notice-region',
-					role: 'region',
-					'aria-label': __( 'PreviewShare notices', 'previewshare' ),
-				},
-				el(
-					Notice,
-					{
-						className: 'previewshare-app-notice',
-						status: notice.status,
-						isDismissible: true,
-						onRemove: () => setNotice( null ),
-					},
-					el( 'p', null, notice.message ),
-					notice.url
-						? el( 'input', {
-								className: 'previewshare-copy-field code',
-								readOnly: true,
-								type: 'url',
-								value: notice.url,
-								onFocus: ( event ) => event.target.select(),
-						  } )
-						: null
-				)
-			);
 		}
 
 		function renderSaveState() {
@@ -1475,16 +1552,55 @@ import {
 			}
 		}
 
+		function renderInventoryStale( allowRefresh = false ) {
+			return inventoryStale || allowRefresh
+				? el(
+						'div',
+						{
+							className: 'previewshare-inventory-continuation',
+							role: inventoryStale ? 'status' : undefined,
+						},
+						inventoryStale
+							? el(
+									'p',
+									{ className: 'previewshare-inline-note' },
+									__(
+										'The loaded list may be out of date. Refresh it before loading older links.',
+										'previewshare'
+									)
+							  )
+							: null,
+						el(
+							Button,
+							{
+								variant: 'secondary',
+								isBusy: loadingTokens || loadingMoreTokens,
+								'aria-disabled':
+									loadingTokens || loadingMoreTokens,
+								onClick: refreshInventory,
+							},
+							__( 'Refresh preview links', 'previewshare' )
+						)
+				  )
+				: null;
+		}
+
 		function renderOverview() {
 			const activeTokens = tokens.filter(
 				( token ) => token.status === 'active'
 			);
 			const enabledPostTypes = settings.post_types || [];
 			const availablePostTypes = settings.available_post_types || {};
+			// Keep both gettext calls extractable from the minified bundle.
+			const activeLinkLabels = {
+				loaded: __( 'Loaded active links', 'previewshare' ),
+				total: __( 'Active links', 'previewshare' ),
+			};
 
 			return el(
 				'div',
 				{ className: 'previewshare-tab-content previewshare-overview' },
+				renderInventoryStale(),
 				el(
 					'div',
 					{ className: 'previewshare-tab-intro' },
@@ -1514,9 +1630,9 @@ import {
 					'div',
 					{ className: 'previewshare-metrics' },
 					el( MetricCard, {
-						label: hasMoreTokens
-							? __( 'Loaded active links', 'previewshare' )
-							: __( 'Active links', 'previewshare' ),
+						label: activeLinkLabels[
+							hasMoreTokens ? 'loaded' : 'total'
+						],
 						value: activeTokens.length,
 						icon: link,
 						description: __(
@@ -1855,7 +1971,7 @@ import {
 			);
 		}
 
-		function renderLegacyLinkTable( items, nativeControls = false ) {
+		function renderLegacyLinkTable( items ) {
 			const selectedStatuses = getFilterValues(
 				( view.filters || [] ).find(
 					( filter ) => filter.field === 'status'
@@ -1881,7 +1997,7 @@ import {
 
 				return 'asc' === sort.direction ? 'ascending' : 'descending';
 			};
-			if ( sortField && ! nativeControls ) {
+			if ( sortField ) {
 				sortedItems.sort( ( left, right ) => {
 					const leftValue = sortField.getValue( { item: left } );
 					const rightValue = sortField.getValue( { item: right } );
@@ -1895,6 +2011,9 @@ import {
 				} );
 			}
 			const perPage = Math.max( 1, Number( view.perPage ) || 20 );
+			const pageSizes = [ ...new Set( [ 20, 50, 100, perPage ] ) ].sort(
+				( left, right ) => left - right
+			);
 			const totalPages = Math.max(
 				1,
 				Math.ceil( sortedItems.length / perPage )
@@ -1903,180 +2022,167 @@ import {
 				Math.max( 1, Number( view.page ) || 1 ),
 				totalPages
 			);
-			const pageItems = nativeControls
-				? items
-				: sortedItems.slice(
-						( currentPage - 1 ) * perPage,
-						currentPage * perPage
-				  );
+			const pageItems = sortedItems.slice(
+				( currentPage - 1 ) * perPage,
+				currentPage * perPage
+			);
 			const renderCell = ( label, content, className ) =>
 				el( 'td', { className, 'data-label': label }, content );
 
 			return el(
 				'div',
 				{ className: 'previewshare-legacy-inventory' },
-				! nativeControls &&
+				el(
+					'div',
+					{ className: 'previewshare-legacy-toolbar' },
+					el( TextControl, {
+						label: __( 'Search preview links', 'previewshare' ),
+						value: view.search || '',
+						placeholder: __(
+							'Search by content or label',
+							'previewshare'
+						),
+						onChange: ( search ) =>
+							setView( ( current ) => ( {
+								...current,
+								search,
+								page: 1,
+							} ) ),
+					} ),
 					el(
-						'div',
-						{ className: 'previewshare-legacy-toolbar' },
-						el( TextControl, {
-							label: __( 'Search preview links', 'previewshare' ),
-							value: view.search || '',
-							placeholder: __(
-								'Search by content or label',
-								'previewshare'
-							),
-							onChange: ( search ) =>
-								setView( ( current ) => ( {
-									...current,
-									search,
-									page: 1,
-								} ) ),
-						} ),
+						'fieldset',
+						{ className: 'previewshare-status-filters' },
+						el( 'legend', null, __( 'Status', 'previewshare' ) ),
+						...[
+							{
+								label: __( 'Active', 'previewshare' ),
+								value: 'active',
+							},
+							{
+								label: __( 'Expiring soon', 'previewshare' ),
+								value: 'expiring_soon',
+							},
+							{
+								label: __( 'Expired', 'previewshare' ),
+								value: 'expired',
+							},
+							{
+								label: __( 'Revoked', 'previewshare' ),
+								value: 'revoked',
+							},
+						].map( ( option ) =>
+							el( CheckboxControl, {
+								key: option.value,
+								label: option.label,
+								checked: selectedStatuses.includes(
+									option.value
+								),
+								onChange: ( checked ) => {
+									setView( ( current ) => {
+										const currentFilters =
+											current.filters || [];
+										const statusFilter =
+											currentFilters.find(
+												( filter ) =>
+													filter.field === 'status'
+											);
+										const statuses = getFilterValues(
+											statusFilter
+										).filter(
+											( status ) =>
+												status !== option.value
+										);
+										if ( checked ) {
+											statuses.push( option.value );
+										}
+
+										return {
+											...current,
+											filters: [
+												...currentFilters.filter(
+													( filter ) =>
+														filter.field !==
+														'status'
+												),
+												...( statuses.length
+													? [
+															{
+																field: 'status',
+																operator:
+																	'isAny',
+																value: statuses,
+															},
+													  ]
+													: [] ),
+											],
+											page: 1,
+										};
+									} );
+								},
+							} )
+						)
+					),
+					el(
+						'fieldset',
+						{ className: 'previewshare-status-filters' },
 						el(
-							'fieldset',
-							{ className: 'previewshare-status-filters' },
-							el(
-								'legend',
-								null,
-								__( 'Status', 'previewshare' )
-							),
-							...[
-								{
-									label: __( 'Active', 'previewshare' ),
-									value: 'active',
-								},
-								{
-									label: __(
-										'Expiring soon',
-										'previewshare'
-									),
-									value: 'expiring_soon',
-								},
-								{
-									label: __( 'Expired', 'previewshare' ),
-									value: 'expired',
-								},
-								{
-									label: __( 'Revoked', 'previewshare' ),
-									value: 'revoked',
-								},
-							].map( ( option ) =>
+							'legend',
+							null,
+							__( 'Content type', 'previewshare' )
+						),
+						...Object.entries( availablePostTypes ).map(
+							( [ postType, label ] ) =>
 								el( CheckboxControl, {
-									key: option.value,
-									label: option.label,
-									checked: selectedStatuses.includes(
-										option.value
-									),
-									onChange: ( checked ) => {
+									key: postType,
+									label,
+									checked:
+										selectedPostTypes.includes( postType ),
+									onChange: ( checked ) =>
 										setView( ( current ) => {
 											const currentFilters =
 												current.filters || [];
-											const statusFilter =
-												currentFilters.find(
-													( filter ) =>
-														filter.field ===
-														'status'
+											const currentPostTypes =
+												getFilterValues(
+													currentFilters.find(
+														( filter ) =>
+															filter.field ===
+															'post_type'
+													)
+												).filter(
+													( value ) =>
+														value !== postType
 												);
-											const statuses = getFilterValues(
-												statusFilter
-											).filter(
-												( status ) =>
-													status !== option.value
-											);
 											if ( checked ) {
-												statuses.push( option.value );
+												currentPostTypes.push(
+													postType
+												);
 											}
-
 											return {
 												...current,
 												filters: [
 													...currentFilters.filter(
 														( filter ) =>
 															filter.field !==
-															'status'
+															'post_type'
 													),
-													...( statuses.length
+													...( currentPostTypes.length
 														? [
 																{
-																	field: 'status',
+																	field: 'post_type',
 																	operator:
 																		'isAny',
-																	value: statuses,
+																	value: currentPostTypes,
 																},
 														  ]
 														: [] ),
 												],
 												page: 1,
 											};
-										} );
-									},
+										} ),
 								} )
-							)
-						),
-						el(
-							'fieldset',
-							{ className: 'previewshare-status-filters' },
-							el(
-								'legend',
-								null,
-								__( 'Content type', 'previewshare' )
-							),
-							...Object.entries( availablePostTypes ).map(
-								( [ postType, label ] ) =>
-									el( CheckboxControl, {
-										key: postType,
-										label,
-										checked:
-											selectedPostTypes.includes(
-												postType
-											),
-										onChange: ( checked ) =>
-											setView( ( current ) => {
-												const currentFilters =
-													current.filters || [];
-												const currentPostTypes =
-													getFilterValues(
-														currentFilters.find(
-															( filter ) =>
-																filter.field ===
-																'post_type'
-														)
-													).filter(
-														( value ) =>
-															value !== postType
-													);
-												if ( checked ) {
-													currentPostTypes.push(
-														postType
-													);
-												}
-												return {
-													...current,
-													filters: [
-														...currentFilters.filter(
-															( filter ) =>
-																filter.field !==
-																'post_type'
-														),
-														...( currentPostTypes.length
-															? [
-																	{
-																		field: 'post_type',
-																		operator:
-																			'isAny',
-																		value: currentPostTypes,
-																	},
-															  ]
-															: [] ),
-													],
-													page: 1,
-												};
-											} ),
-									} )
-							)
 						)
-					),
+					)
+				),
 				loadingTokens
 					? el(
 							'div',
@@ -2398,7 +2504,7 @@ import {
 									'previewshare'
 								)
 							),
-				! nativeControls && ! loadingTokens
+				! loadingTokens
 					? el(
 							'div',
 							{ className: 'previewshare-legacy-pagination' },
@@ -2410,6 +2516,41 @@ import {
 									__( 'Page %1$d of %2$d', 'previewshare' ),
 									currentPage,
 									totalPages
+								)
+							),
+							el(
+								'label',
+								{
+									className: 'previewshare-legacy-page-size',
+								},
+								__( 'Links per page', 'previewshare' ),
+								el(
+									'select',
+									{
+										'aria-label': __(
+											'Links per page',
+											'previewshare'
+										),
+										value: String( perPage ),
+										onChange: ( event ) =>
+											setView( ( current ) => ( {
+												...current,
+												page: 1,
+												perPage: Number(
+													event.target.value
+												),
+											} ) ),
+									},
+									...pageSizes.map( ( size ) =>
+										el(
+											'option',
+											{
+												key: size,
+												value: String( size ),
+											},
+											size
+										)
+									)
 								)
 							),
 							el(
@@ -2444,6 +2585,20 @@ import {
 		}
 
 		function renderPreviews() {
+			if (
+				! compactInventory &&
+				typeof wp.element.useInsertionEffect === 'function' &&
+				! dataViewsModule &&
+				! dataViewsFailed
+			) {
+				return el(
+					'div',
+					{ className: 'previewshare-loading', role: 'status' },
+					el( Spinner ),
+					__( 'Loading preview links…', 'previewshare' )
+				);
+			}
+			const { DataViews, filterSortAndPaginate } = dataViewsModule || {};
 			const fields = getTokenFields(
 				handleExtend,
 				workingTokenId,
@@ -2451,44 +2606,51 @@ import {
 				settings.available_post_types
 			);
 			const canRenderDataViews = Boolean(
-				DataViews && typeof wp.element.useInsertionEffect === 'function'
+				DataViews &&
+					! compactInventory &&
+					typeof wp.element.useInsertionEffect === 'function'
 			);
 			const processed = canRenderDataViews
 				? filterSortAndPaginate( tokens, view, fields )
 				: null;
-			const normalizedSearch = normalizeSearchInput( view.search || '' );
-			const searchableFields = fields.filter(
-				( field ) => field.enableGlobalSearch
-			);
-			const statusFilter = ( view.filters || [] ).find(
-				( filter ) => filter.field === 'status'
-			);
-			const selectedStatuses = getFilterValues( statusFilter );
-			const selectedPostTypes = getFilterValues(
-				( view.filters || [] ).find(
-					( filter ) => filter.field === 'post_type'
-				)
-			);
-			const legacyTokens = tokens.filter( ( token ) => {
-				const actualStatus = isExpiringSoon( token )
-					? 'expiring_soon'
-					: token.status;
-				const statusMatches =
-					selectedStatuses.length === 0 ||
-					selectedStatuses.includes( actualStatus );
-				const postTypeMatches =
-					selectedPostTypes.length === 0 ||
-					selectedPostTypes.includes( token.post_type );
-				const searchMatches =
-					! normalizedSearch ||
-					searchableFields.some( ( field ) =>
-						normalizeSearchInput(
-							String( field.getValue( { item: token } ) )
-						).includes( normalizedSearch )
-					);
+			let legacyTokens = null;
+			if ( ! canRenderDataViews ) {
+				const normalizedSearch = normalizeSearchInput(
+					view.search || ''
+				);
+				const searchableFields = fields.filter(
+					( field ) => field.enableGlobalSearch
+				);
+				const statusFilter = ( view.filters || [] ).find(
+					( filter ) => filter.field === 'status'
+				);
+				const selectedStatuses = getFilterValues( statusFilter );
+				const selectedPostTypes = getFilterValues(
+					( view.filters || [] ).find(
+						( filter ) => filter.field === 'post_type'
+					)
+				);
+				legacyTokens = tokens.filter( ( token ) => {
+					const actualStatus = isExpiringSoon( token )
+						? 'expiring_soon'
+						: token.status;
+					const statusMatches =
+						selectedStatuses.length === 0 ||
+						selectedStatuses.includes( actualStatus );
+					const postTypeMatches =
+						selectedPostTypes.length === 0 ||
+						selectedPostTypes.includes( token.post_type );
+					const searchMatches =
+						! normalizedSearch ||
+						searchableFields.some( ( field ) =>
+							normalizeSearchInput(
+								String( field.getValue( { item: token } ) )
+							).includes( normalizedSearch )
+						);
 
-				return statusMatches && postTypeMatches && searchMatches;
-			} );
+					return statusMatches && postTypeMatches && searchMatches;
+				} );
+			}
 			const actions = getInventoryActions();
 
 			return el(
@@ -2501,74 +2663,42 @@ import {
 						'previewshare'
 					)
 				),
-				! canRenderDataViews
+				renderInventoryStale( true ),
+				legacyTokens
 					? renderLegacyLinkTable( legacyTokens )
 					: el(
 							'div',
 							{ className: 'previewshare-dataviews' },
-							el(
-								DataViews,
-								{
-									data: processed.data,
-									fields,
-									view,
-									onChangeView: setView,
-									paginationInfo: processed.paginationInfo,
-									defaultLayouts: { table: {} },
-									config: {
-										perPageSizes: [ 20, 50, 100 ],
-									},
-									actions,
-									isLoading:
-										loadingTokens || loadingMoreTokens,
-									getItemId: ( item ) => item.id,
-									searchLabel: __(
-										'Search preview links',
-										'previewshare'
-									),
-									empty: el(
-										'p',
-										{
-											className:
-												'previewshare-empty-state',
-										},
-										__(
-											'No preview links match this view.',
-											'previewshare'
-										)
-									),
+							el( DataViews, {
+								data: processed.data,
+								fields,
+								view,
+								onChangeView: setView,
+								paginationInfo: processed.paginationInfo,
+								defaultLayouts: { table: {} },
+								config: {
+									perPageSizes: [ 20, 50, 100 ],
 								},
-								compactInventory
-									? el(
-											wp.element.Fragment,
-											null,
-											el(
-												'div',
-												{
-													className:
-														'dataviews__view-actions',
-												},
-												el( DataViews.Search, {
-													label: __(
-														'Search preview links',
-														'previewshare'
-													),
-												} )
-											),
-											el( DataViews.Filters, {
-												className:
-													'dataviews-filters__container',
-											} ),
-											renderLegacyLinkTable(
-												processed.data,
-												true
-											),
-											el( DataViews.Pagination )
-									  )
-									: undefined
-							)
+								actions,
+								isLoading: loadingTokens || loadingMoreTokens,
+								getItemId: ( item ) => item.id,
+								searchLabel: __(
+									'Search preview links',
+									'previewshare'
+								),
+								empty: el(
+									'p',
+									{
+										className: 'previewshare-empty-state',
+									},
+									__(
+										'No preview links match this view.',
+										'previewshare'
+									)
+								),
+							} )
 					  ),
-				hasMoreTokens
+				hasMoreTokens && ! inventoryStale
 					? el(
 							'div',
 							{
@@ -2593,7 +2723,8 @@ import {
 								{
 									variant: 'secondary',
 									isBusy: loadingMoreTokens,
-									disabled: loadingMoreTokens,
+									disabled:
+										loadingMoreTokens || loadingTokens,
 									onClick: () =>
 										fetchTokens( { append: true } ),
 								},
@@ -2758,224 +2889,6 @@ import {
 			);
 		}
 
-		function renderChangelog() {
-			const entries = [
-				{
-					version: '1.1.0',
-					summary: __(
-						'Settings and reviewer feedback',
-						'previewshare'
-					),
-					items: [
-						__(
-							'Redesigned the settings workspace across all five tabs.',
-							'previewshare'
-						),
-						__(
-							'Polished the admin header, plugin links, Changelog, content-type controls, and preview inventory.',
-							'previewshare'
-						),
-						__(
-							'Respected WordPress date and time formats, site timezone, and locale in link history.',
-							'previewshare'
-						),
-						__(
-							'Improved preview-link inventory filters, descriptions, dates, and content IDs.',
-							'previewshare'
-						),
-						__(
-							'Added row actions to revoke access or revoke and delete a preview-link entry, with confirmation before deletion.',
-							'previewshare'
-						),
-						__(
-							'Added retries for concurrent revocation updates and clearer errors when preview links could not all be revoked.',
-							'previewshare'
-						),
-						__(
-							'Simplified content type selection with autosaving checkboxes and kept the selected settings tab after refresh.',
-							'previewshare'
-						),
-						__(
-							'Made release notes easier to scan with version summaries, latest and installed-version labels, and expandable older entries.',
-							'previewshare'
-						),
-						__(
-							'Added expiring-link status and a fixed 24-hour extension action.',
-							'previewshare'
-						),
-						__(
-							'Added verified plugin cards in More plugins.',
-							'previewshare'
-						),
-						__(
-							'Added optional reviewer responses with approval tracking, retries that preserve edits, multilingual feedback limits, and 90-day retention.',
-							'previewshare'
-						),
-						__(
-							'Improved preview-link security by keeping concurrently generated links visible and revocable and avoiding temporary storage of generated Classic Editor and post-list URLs.',
-							'previewshare'
-						),
-						__(
-							'Kept preview sharing controls available when Classic Editor is selected for an individual post.',
-							'previewshare'
-						),
-					],
-				},
-				{
-					version: '1.0.2',
-					summary: __( 'WordPress compatibility', 'previewshare' ),
-					items: [
-						__(
-							'Validated preview-link editor and admin workflows with WordPress 7.1.',
-							'previewshare'
-						),
-						__(
-							'Prepared editor controls for the WordPress 7.1 component API.',
-							'previewshare'
-						),
-					],
-				},
-				{
-					version: '1.0.1',
-					summary: __(
-						'Diagnostics and maintenance',
-						'previewshare'
-					),
-					items: [
-						__(
-							'Improved diagnostics, dependency audit coverage, and release automation.',
-							'previewshare'
-						),
-						__(
-							'Refined WordPress.org metadata and plugin discoverability copy.',
-							'previewshare'
-						),
-					],
-				},
-				{
-					version: '1.0.0',
-					summary: __( 'First release', 'previewshare' ),
-					items: [
-						__(
-							'Added secure preview links for draft, pending, and scheduled content.',
-							'previewshare'
-						),
-						__(
-							'Added editor controls, multiple links, views, noindex directives, and revocation.',
-							'previewshare'
-						),
-						__(
-							'Added global settings and hashed token storage in post meta.',
-							'previewshare'
-						),
-					],
-				},
-			];
-			const installedVersion = localized.version;
-			const hasInstalledEntry = entries.some(
-				( entry ) => entry.version === installedVersion
-			);
-
-			return el(
-				'div',
-				{ className: 'previewshare-tab-content' },
-				renderTabIntro(
-					__( 'Changelog', 'previewshare' ),
-					__(
-						'Updates, improvements, and fixes in each version.',
-						'previewshare'
-					)
-				),
-				el(
-					'div',
-					{ className: 'previewshare-changelog' },
-					entries.map( ( entry, index ) =>
-						el(
-							'details',
-							{
-								className: 'previewshare-changelog-entry',
-								key: entry.version,
-								open:
-									entry.version === installedVersion ||
-									( ! hasInstalledEntry && index === 0 ),
-							},
-							el(
-								'summary',
-								null,
-								el(
-									'h3',
-									null,
-									el(
-										'span',
-										{
-											className:
-												'previewshare-release-heading',
-										},
-										el(
-											'span',
-											{
-												className:
-													'previewshare-release-version',
-											},
-											'v' + entry.version,
-											index === 0
-												? el(
-														'span',
-														{
-															className:
-																'previewshare-release-latest',
-														},
-														__(
-															'Latest',
-															'previewshare'
-														)
-												  )
-												: null,
-											entry.version === installedVersion
-												? el(
-														'span',
-														{
-															className:
-																'previewshare-release-installed',
-														},
-														__(
-															'Installed',
-															'previewshare'
-														)
-												  )
-												: null
-										),
-										el(
-											'span',
-											{
-												className:
-													'previewshare-release-summary',
-											},
-											entry.summary
-										)
-									),
-									el( Icon, {
-										icon: chevronDown,
-										size: 20,
-										className:
-											'previewshare-release-chevron',
-										'aria-hidden': true,
-									} )
-								)
-							),
-							el(
-								'ul',
-								null,
-								entry.items.map( ( item ) =>
-									el( 'li', { key: item }, item )
-								)
-							)
-						)
-					)
-				)
-			);
-		}
-
 		function renderTabPanel() {
 			let content = renderOverview();
 
@@ -2984,7 +2897,17 @@ import {
 			} else if ( activeTab === 'content-types' ) {
 				content = renderContentTypes();
 			} else if ( activeTab === 'changelog' ) {
-				content = renderChangelog();
+				content = el( Changelog, {
+					wp,
+					installedVersion: localized.version,
+					intro: renderTabIntro(
+						__( 'Changelog', 'previewshare' ),
+						__(
+							'Updates, improvements, and fixes in each version.',
+							'previewshare'
+						)
+					),
+				} );
 			} else if ( activeTab === 'more-plugins' ) {
 				content = renderMorePlugins();
 			}
@@ -3122,7 +3045,7 @@ import {
 					)
 				)
 			),
-			renderNotice(),
+			el( NoticeRegion, { notices, clearNotice, Notice } ),
 			loadingSettings
 				? el(
 						'div',

@@ -1,5 +1,12 @@
 import * as element from '@wordpress/element';
 import * as date from '@wordpress/date';
+import { loadDataViews } from './load-dataviews';
+
+jest.mock( './load-dataviews', () => ( {
+	loadDataViews: jest.fn( () =>
+		Promise.resolve( require( '@wordpress/dataviews/wp' ) )
+	),
+} ) );
 
 // eslint-disable-next-line import/no-extraneous-dependencies
 const { Simulate } = require( 'react-dom/test-utils' );
@@ -105,16 +112,17 @@ function setupWordPressMocks() {
 		children,
 		onClick,
 		disabled,
-		isBusy,
 		'aria-label': ariaLabel,
+		'aria-disabled': ariaDisabled,
 	} ) =>
 		createElement(
 			'button',
 			{
 				type: 'button',
 				onClick,
-				disabled: disabled || isBusy,
+				disabled,
 				'aria-label': ariaLabel,
+				'aria-disabled': ariaDisabled,
 			},
 			children
 		);
@@ -290,7 +298,7 @@ function setupFetch( settingsOverride = null, initialItems = [] ) {
 async function mountSettingsApp( initialSettings, dateSettings = {} ) {
 	document.body.innerHTML = '<div id="previewshare-settings-app"></div>';
 	Object.assign( window.previewshare_settings, {
-		version: '1.1.0',
+		version: '1.1.1',
 		plugin_icons_url:
 			'/wp-content/plugins/previewshare/assets/images/plugins/',
 		rest_url: '/wp-json/previewshare/v1',
@@ -319,7 +327,7 @@ beforeAll( () => {
 	setupWordPressMocks();
 	globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 	window.previewshare_settings = {
-		version: '1.1.0',
+		version: '1.1.1',
 		plugin_icons_url:
 			'/wp-content/plugins/previewshare/assets/images/plugins/',
 		rest_url: '/wp-json/previewshare/v1',
@@ -354,6 +362,602 @@ afterEach( () => {
 } );
 
 describe( 'PreviewShare responsive inventory', () => {
+	it( 'refreshes an already complete inventory on demand', async () => {
+		window.wp.element.useInsertionEffect = undefined;
+		const { initialSettings } = setupFetch();
+		const fallbackFetch = window.fetch;
+		let status = 'active';
+		window.fetch = jest.fn( ( url, options ) => {
+			if ( String( url ).includes( '/tokens?' ) ) {
+				return Promise.resolve(
+					response( {
+						items: [
+							{
+								id: 'one',
+								post_type: 'post',
+								post_title: 'Example',
+								status,
+							},
+						],
+						total: 1,
+						next_cursor: null,
+					} )
+				);
+			}
+			return fallbackFetch( url, options );
+		} );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		expect( document.body.textContent ).toContain( 'Active' );
+		status = 'revoked';
+		await act( async () => {
+			findButton( 'Refresh preview links' ).click();
+			await flushPromises();
+		} );
+		expect( document.body.textContent ).toContain( 'Revoked' );
+	} );
+
+	it( 'keeps focus on refresh and prevents duplicate requests while loading', async () => {
+		window.wp.element.useInsertionEffect = undefined;
+		const { initialSettings } = setupFetch();
+		const fallbackFetch = window.fetch;
+		const pending = deferred();
+		let requests = 0;
+		window.fetch = jest.fn( ( url, options ) => {
+			if ( String( url ).includes( '/tokens?' ) ) {
+				requests++;
+				return 1 === requests
+					? Promise.resolve(
+							response( {
+								items: [],
+								total: 0,
+								next_cursor: null,
+							} )
+					  )
+					: pending.promise;
+			}
+			return fallbackFetch( url, options );
+		} );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		const button = findButton( 'Refresh preview links' );
+		button.focus();
+		await act( async () => {
+			button.click();
+			button.click();
+			await flushPromises();
+		} );
+		expect( requests ).toBe( 2 );
+		expect( document.activeElement ).toBe( button );
+		expect( button.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
+		await act( async () => {
+			pending.resolve(
+				response( { items: [], total: 0, next_cursor: null } )
+			);
+			await flushPromises();
+		} );
+		expect( document.activeElement ).toBe( button );
+		expect( button.getAttribute( 'aria-disabled' ) ).toBe( 'false' );
+	} );
+
+	it( 'keeps a stale warning and refresh action after repeated inventory conflicts', async () => {
+		window.wp.element.useInsertionEffect = undefined;
+		const { initialSettings } = setupFetch();
+		const fallbackFetch = window.fetch;
+		let conflict = false;
+		let conflictOnContinuation = true;
+		window.fetch = jest.fn( ( url, options ) => {
+			if ( String( url ).includes( '/tokens?' ) ) {
+				const cursor = new URL(
+					url,
+					'https://example.test'
+				).searchParams.get( 'cursor' );
+				if ( cursor !== 'start' && conflictOnContinuation ) {
+					conflict = true;
+				}
+				if ( conflict ) {
+					return Promise.resolve(
+						response(
+							{ code: 'previewshare_inventory_changed' },
+							false
+						)
+					);
+				}
+				return Promise.resolve(
+					response( {
+						items: Array.from( { length: 100 }, ( _, index ) => ( {
+							id: 'link-' + index,
+							post_type: 'post',
+							post_title: 'Post ' + index,
+							status: 'active',
+						} ) ),
+						total: 150,
+						next_cursor: 'cursor-one',
+					} )
+				);
+			}
+			return fallbackFetch( url, options );
+		} );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		await act( async () => {
+			findButton( 'Load more links' ).click();
+			await flushPromises();
+			await flushPromises();
+		} );
+		expect( document.body.textContent ).toContain(
+			'The loaded list may be out of date'
+		);
+		expect( findButton( 'Load more links' ) ).toBeUndefined();
+		conflict = false;
+		conflictOnContinuation = false;
+		await act( async () => {
+			findButton( 'Refresh preview links' ).click();
+			await flushPromises();
+		} );
+		expect( document.body.textContent ).not.toContain(
+			'The loaded list may be out of date'
+		);
+		expect( findButton( 'Load more links' ) ).toBeDefined();
+	} );
+
+	it( 'restarts when the server detects an equal-total inventory replacement', async () => {
+		window.wp.element.useInsertionEffect = undefined;
+		const { initialSettings } = setupFetch();
+		const fallbackFetch = window.fetch;
+		let changed = false;
+		const before = Array.from( { length: 100 }, ( _, index ) => ( {
+			id: 'old-' + index,
+			post_type: 'post',
+			post_title: 'Old ' + index,
+			status: 'active',
+		} ) );
+		const after = Array.from( { length: 100 }, ( _, index ) => ( {
+			id: 'new-' + index,
+			post_type: 'post',
+			post_title: 'New ' + index,
+			status: 'active',
+		} ) );
+		window.fetch = jest.fn( ( url, options ) => {
+			if ( String( url ).includes( '/tokens?' ) ) {
+				const cursor = new URL(
+					url,
+					'https://example.test'
+				).searchParams.get( 'cursor' );
+				if ( cursor !== 'start' ) {
+					changed = true;
+					return Promise.resolve(
+						response(
+							{ code: 'previewshare_inventory_changed' },
+							false
+						)
+					);
+				}
+				return Promise.resolve(
+					response( {
+						items: changed ? after : before,
+						total: 150,
+						next_cursor: 'cursor-one',
+					} )
+				);
+			}
+			return fallbackFetch( url, options );
+		} );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		await act( async () => {
+			findButton( 'Load more links' ).click();
+			await flushPromises();
+			await flushPromises();
+		} );
+		expect(
+			window.fetch.mock.calls.some( ( [ url ] ) =>
+				String( url ).includes( 'cursor=cursor-one' )
+			)
+		).toBe( true );
+		expect( document.body.textContent ).toContain(
+			'The list was refreshed'
+		);
+		expect( document.body.textContent ).toContain( 'New 0' );
+		expect( document.body.textContent ).not.toContain( 'Old 0' );
+	} );
+
+	it( 'returns a modern inventory to page one after a count-change restart', async () => {
+		const { initialSettings } = setupFetch();
+		const defaultFetch = window.fetch;
+		const inventory = Array.from( { length: 250 }, ( _, index ) => ( {
+			id: 'link-' + index,
+			post_type: 'post',
+			post_title: 'Post ' + index,
+			status: 'active',
+			created_at: 250 - index,
+		} ) );
+		window.fetch = jest.fn( ( url, options ) => {
+			if ( String( url ).includes( '/tokens?' ) ) {
+				const page = Number(
+					new URL( url, 'https://example.test' ).searchParams.get(
+						'page'
+					)
+				);
+				return Promise.resolve(
+					response( {
+						items: inventory.slice(
+							( page - 1 ) * 100,
+							page * 100
+						),
+						total: inventory.length,
+					} )
+				);
+			}
+			return defaultFetch( url, options );
+		} );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		await act( async () => {
+			findButton( 'Load more links' ).click();
+			await flushPromises();
+		} );
+		await act( async () => {
+			window.__previewshareDataViewsProps.onChangeView( {
+				...window.__previewshareDataViewsProps.view,
+				page: 10,
+			} );
+			await flushPromises();
+		} );
+		inventory.shift();
+		await act( async () => {
+			findButton( 'Load more links' ).click();
+			await flushPromises();
+			await flushPromises();
+		} );
+		expect( window.__previewshareDataViewsProps.view.page ).toBe( 1 );
+		expect(
+			window.__previewshareDataViewsProps.data.length
+		).toBeGreaterThan( 0 );
+		expect( document.body.textContent ).toContain(
+			'The list was refreshed'
+		);
+	} );
+
+	it( 'bounds action refreshes for a large loaded inventory and offers an explicit refresh', async () => {
+		const { initialSettings } = setupFetch();
+		const defaultFetch = window.fetch;
+		const inventory = Array.from( { length: 1200 }, ( _, index ) => ( {
+			id: 'link-' + index,
+			post_type: 'post',
+			post_id: index + 1,
+			post_title: 'Post ' + index,
+			status: 'active',
+			created_at: 1200 - index,
+		} ) );
+		window.fetch = jest.fn( ( url, options = {} ) => {
+			if ( String( url ).endsWith( '/tokens/revoke' ) ) {
+				return Promise.resolve( response( { revoked: true } ) );
+			}
+			if ( String( url ).includes( '/tokens?' ) ) {
+				const page = Number(
+					new URL( url, 'https://example.test' ).searchParams.get(
+						'page'
+					)
+				);
+				return Promise.resolve(
+					response( {
+						items: inventory.slice(
+							( page - 1 ) * 100,
+							page * 100
+						),
+						total: inventory.length,
+					} )
+				);
+			}
+			return defaultFetch( url, options );
+		} );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		for ( let page = 2; page <= 11; page++ ) {
+			await act( async () => {
+				findButton( 'Load more links' ).click();
+				await flushPromises();
+			} );
+		}
+		const tokenRequests = () =>
+			window.fetch.mock.calls.filter( ( [ url ] ) =>
+				String( url ).includes( '/tokens?' )
+			).length;
+		expect( tokenRequests() ).toBe( 11 );
+		const selected = window.__previewshareDataViewsProps.data[ 0 ];
+		await act( async () => {
+			window.__previewshareDataViewsProps.actions
+				.find( ( action ) => action.id === 'revoke' )
+				.callback( [ selected ] );
+			await flushPromises();
+		} );
+		expect( tokenRequests() ).toBe( 11 );
+		expect(
+			window.__previewshareDataViewsProps.data.find(
+				( item ) => item.id === selected.id
+			).status
+		).toBe( 'revoked' );
+		expect( document.body.textContent ).toContain(
+			'The loaded list may be out of date'
+		);
+		expect( findButton( 'Load more links' ) ).toBeUndefined();
+		await act( async () => {
+			findButton( 'Refresh preview links' ).click();
+			await flushPromises();
+		} );
+		expect( tokenRequests() ).toBe( 12 );
+		expect( document.body.textContent ).not.toContain(
+			'The loaded list may be out of date'
+		);
+	} );
+
+	it( 'stays on the fallback when a stalled DataViews download later finishes', async () => {
+		const request = deferred();
+		loadDataViews.mockImplementationOnce( () => request.promise );
+		const { initialSettings } = setupFetch();
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		await act( async () => {
+			jest.advanceTimersByTime( 5000 );
+			await flushPromises();
+		} );
+		expect(
+			document.querySelector( '.previewshare-legacy-toolbar' )
+		).not.toBeNull();
+		await act( async () => {
+			request.resolve( require( '@wordpress/dataviews/wp' ) );
+			await flushPromises();
+		} );
+		expect(
+			document.querySelector( '.previewshare-legacy-toolbar' )
+		).not.toBeNull();
+		expect(
+			document.querySelector( '.previewshare-dataviews' )
+		).toBeNull();
+	} );
+
+	it( 'refreshes from the first page when the inventory changes between pages', async () => {
+		window.wp.element.useInsertionEffect = undefined;
+		const { initialSettings } = setupFetch();
+		const defaultFetch = window.fetch;
+		const inventory = Array.from( { length: 150 }, ( _, index ) => ( {
+			id: 'link-' + index,
+			post_type: 'post',
+			post_title: 'Post ' + index,
+			status: 'active',
+		} ) );
+		window.fetch = jest.fn( ( url, options ) => {
+			if ( String( url ).includes( '/tokens?' ) ) {
+				const page = Number(
+					new URL( url, 'https://example.test' ).searchParams.get(
+						'page'
+					)
+				);
+				return Promise.resolve(
+					response( {
+						items: inventory.slice(
+							( page - 1 ) * 100,
+							page * 100
+						),
+						total: inventory.length,
+					} )
+				);
+			}
+			return defaultFetch( url, options );
+		} );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		inventory.shift();
+		await act( async () => {
+			findButton( 'Load more links' ).click();
+			await flushPromises();
+			await flushPromises();
+		} );
+		expect( document.body.textContent ).toContain(
+			'Preview links changed while loading.'
+		);
+		expect( document.body.textContent ).toContain(
+			'100 of 149 links loaded'
+		);
+		expect( document.body.textContent ).not.toContain( 'Post 0' );
+	} );
+
+	it( 'keeps a loaded older link visible after it is revoked', async () => {
+		const { initialSettings } = setupFetch();
+		const defaultFetch = window.fetch;
+		const inventory = Array.from( { length: 150 }, ( _, index ) => ( {
+			id: 'link-' + index,
+			post_type: 'post',
+			post_id: index + 1,
+			post_title: 'Post ' + index,
+			status: 'active',
+			revoked: false,
+			created_at: 150 - index,
+		} ) );
+		window.fetch = jest.fn( ( url, options = {} ) => {
+			if ( String( url ).endsWith( '/tokens/revoke' ) ) {
+				inventory[ 101 ].status = 'revoked';
+				inventory[ 101 ].revoked = true;
+				return Promise.resolve( response( { revoked: true } ) );
+			}
+			if ( String( url ).includes( '/tokens?' ) ) {
+				const page = Number(
+					new URL( url, 'https://example.test' ).searchParams.get(
+						'page'
+					)
+				);
+				return Promise.resolve(
+					response( {
+						items: inventory.slice(
+							( page - 1 ) * 100,
+							page * 100
+						),
+						total: inventory.length,
+					} )
+				);
+			}
+			return defaultFetch( url, options );
+		} );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		await act( async () => {
+			findButton( 'Load more links' ).click();
+			await flushPromises();
+		} );
+		await act( async () => {
+			window.__previewshareDataViewsProps.onChangeView( {
+				...window.__previewshareDataViewsProps.view,
+				search: 'Post 101',
+			} );
+			await flushPromises();
+		} );
+		const selected = window.__previewshareDataViewsProps.data.find(
+			( item ) => item.id === 'link-101'
+		);
+		expect( selected ).toBeDefined();
+		await act( async () => {
+			window.__previewshareDataViewsProps.actions
+				.find( ( action ) => action.id === 'revoke' )
+				.callback( [ selected ] );
+			await flushPromises();
+			await flushPromises();
+		} );
+		expect(
+			window.__previewshareDataViewsProps.data.find(
+				( item ) => item.id === 'link-101'
+			).status
+		).toBe( 'revoked' );
+	} );
+
+	it( 'keeps controls out of view while DataViews loads, then offers a stable fallback on failure', async () => {
+		const request = deferred();
+		loadDataViews.mockImplementationOnce( () => request.promise );
+		const { initialSettings } = setupFetch();
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		expect(
+			document.querySelector( '[role="status"]' ).textContent
+		).toContain( 'Loading preview links' );
+		expect(
+			document.querySelector( '.previewshare-legacy-toolbar' )
+		).toBeNull();
+		await act( async () => {
+			request.reject( new Error( 'chunk unavailable' ) );
+			await flushPromises();
+		} );
+		expect(
+			document.querySelector( '.previewshare-legacy-toolbar' )
+		).not.toBeNull();
+		expect( document.body.textContent ).not.toContain(
+			'Loading preview links'
+		);
+	} );
+
+	it( 'loads one inventory page at a time and exposes older links on request', async () => {
+		window.wp.element.useInsertionEffect = undefined;
+		const { initialSettings } = setupFetch();
+		const defaultFetch = window.fetch;
+		const inventory = Array.from( { length: 150 }, ( _, index ) => ( {
+			id: 'link-' + index,
+			post_type: 'post',
+			post_title: 'Post ' + index,
+			status: 'active',
+		} ) );
+		window.fetch = jest.fn( ( url, options ) => {
+			if ( String( url ).includes( '/tokens?' ) ) {
+				const page = Number(
+					new URL( url, 'https://example.test' ).searchParams.get(
+						'page'
+					)
+				);
+				return Promise.resolve(
+					response( {
+						items: inventory.slice(
+							( page - 1 ) * 100,
+							page * 100
+						),
+						total: inventory.length,
+					} )
+				);
+			}
+			return defaultFetch( url, options );
+		} );
+		await mountSettingsApp( initialSettings );
+		expect(
+			window.fetch.mock.calls.filter( ( [ url ] ) =>
+				String( url ).includes( '/tokens?' )
+			)
+		).toHaveLength( 1 );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		expect( document.body.textContent ).toContain(
+			'100 of 150 links loaded'
+		);
+		await act( async () => {
+			findButton( 'Load more links' ).click();
+			await flushPromises();
+		} );
+		expect(
+			window.fetch.mock.calls.filter( ( [ url ] ) =>
+				String( url ).includes( '/tokens?' )
+			)
+		).toHaveLength( 2 );
+		expect( document.body.textContent ).not.toContain( 'Load more links' );
+	} );
+
+	it( 'does not fetch inventory when opened directly on another tab', async () => {
+		window.history.replaceState( null, '', '/?tab=changelog' );
+		const { initialSettings } = setupFetch();
+		await mountSettingsApp( initialSettings );
+		expect(
+			window.fetch.mock.calls.some( ( [ url ] ) =>
+				String( url ).includes( '/tokens?' )
+			)
+		).toBe( false );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		expect(
+			window.fetch.mock.calls.filter( ( [ url ] ) =>
+				String( url ).includes( '/tokens?' )
+			)
+		).toHaveLength( 1 );
+	} );
+
 	it( 'combines and clears status, content type, and search in the older runtime fallback', async () => {
 		window.wp.element.useInsertionEffect = undefined;
 		const expiresAt = Math.floor( Date.now() / 1000 ) + 100000;
@@ -452,13 +1056,16 @@ describe( 'PreviewShare responsive inventory', () => {
 	} );
 
 	it.each( [ false, true ] )(
-		'combines native status and content-type filters in compact mode %s',
+		'combines status and content-type filters in compact mode %s',
 		async ( compact ) => {
 			window.matchMedia = jest.fn( () => ( {
 				matches: compact,
 				addEventListener: jest.fn(),
 				removeEventListener: jest.fn(),
 			} ) );
+			if ( compact ) {
+				loadDataViews.mockClear();
+			}
 			const expiresAt = Math.floor( Date.now() / 1000 ) + 3600;
 			const { initialSettings } = setupFetch( null, [
 				{
@@ -491,39 +1098,72 @@ describe( 'PreviewShare responsive inventory', () => {
 				findButton( 'Preview links' ).click();
 				await flushPromises();
 			} );
-			const statusField = window.__previewshareDataViewsProps.fields.find(
-				( field ) => field.id === 'status'
-			);
-			expect( statusField.filterBy ).toEqual( {
-				operators: [ 'isAny' ],
-				isPrimary: true,
-			} );
-			expect(
-				statusField.elements.map( ( option ) => option.value )
-			).toEqual( [ 'active', 'expiring_soon', 'expired', 'revoked' ] );
-			await act( async () => {
-				window.__previewshareDataViewsProps.onChangeView( {
-					...window.__previewshareDataViewsProps.view,
-					filters: [
-						{
-							field: 'status',
-							operator: 'isAny',
-							value: [ 'expiring_soon' ],
-						},
-						{
-							field: 'post_type',
-							operator: 'isAny',
-							value: [ 'page' ],
-						},
-					],
+			const verifyDesktopFilters = () => {
+				const statusField =
+					window.__previewshareDataViewsProps.fields.find(
+						( field ) => field.id === 'status'
+					);
+				expect( statusField.filterBy ).toEqual( {
+					operators: [ 'isAny' ],
+					isPrimary: true,
 				} );
-				await flushPromises();
-			} );
-			expect(
-				window.__previewshareDataViewsProps.data.map(
-					( item ) => item.id
-				)
-			).toEqual( [ 'page-link' ] );
+				expect(
+					statusField.elements.map( ( option ) => option.value )
+				).toEqual( [
+					'active',
+					'expiring_soon',
+					'expired',
+					'revoked',
+				] );
+			};
+			const verifyCompactDoesNotLoadDataViews = () => {
+				expect( loadDataViews ).not.toHaveBeenCalled();
+			};
+			if ( compact ) {
+				const filterInput = ( group, label ) => {
+					const fieldset = Array.from(
+						document.querySelectorAll(
+							'.previewshare-legacy-toolbar fieldset'
+						)
+					).find(
+						( item ) =>
+							item.querySelector( 'legend' ).textContent === group
+					);
+					return fieldset.querySelector(
+						'input[aria-label="' + label + '"]'
+					);
+				};
+				await act( async () => {
+					Simulate.change( filterInput( 'Status', 'Expiring soon' ), {
+						target: { checked: true },
+					} );
+					Simulate.change( filterInput( 'Content type', 'Page' ), {
+						target: { checked: true },
+					} );
+					await flushPromises();
+				} );
+				verifyCompactDoesNotLoadDataViews();
+			} else {
+				verifyDesktopFilters();
+				await act( async () => {
+					window.__previewshareDataViewsProps.onChangeView( {
+						...window.__previewshareDataViewsProps.view,
+						filters: [
+							{
+								field: 'status',
+								operator: 'isAny',
+								value: [ 'expiring_soon' ],
+							},
+							{
+								field: 'post_type',
+								operator: 'isAny',
+								value: [ 'page' ],
+							},
+						],
+					} );
+					await flushPromises();
+				} );
+			}
 			expect( document.body.textContent ).toContain( 'Page review' );
 			expect( document.body.textContent ).toContain( '#43' );
 			expect( document.body.textContent ).not.toContain( 'Post review' );
@@ -613,15 +1253,20 @@ describe( 'PreviewShare responsive inventory', () => {
 				findButton( 'Preview links' ).click();
 				await flushPromises();
 			} );
+			const verifyCreatedTimestamp = ( expected ) => {
+				const created = window.__previewshareDataViewsProps.fields.find(
+					( field ) => field.id === 'created_at'
+				);
+				expect(
+					created.render( { item: { created_at: 1700000000 } } )
+				).toBe( expected );
+			};
 			expect( document.body.textContent ).toContain( viewed );
 			expect( document.body.textContent ).toContain( expires );
 			expect( document.body.textContent ).toContain( '#42' );
-			const created = window.__previewshareDataViewsProps.fields.find(
-				( field ) => field.id === 'created_at'
-			);
-			expect(
-				created.render( { item: { created_at: 1700000000 } } )
-			).toBe( viewed );
+			if ( ! compact ) {
+				verifyCreatedTimestamp( viewed );
+			}
 		}
 	);
 
@@ -686,13 +1331,13 @@ describe( 'PreviewShare responsive inventory', () => {
 		} );
 		expect(
 			document.querySelector( '.previewshare-dataviews' )
-		).not.toBeNull();
+		).toBeNull();
 		expect(
 			document.querySelector( '[data-testid="native-filters"]' )
-		).not.toBeNull();
+		).toBeNull();
 		expect(
 			document.querySelector( '.previewshare-legacy-toolbar' )
-		).toBeNull();
+		).not.toBeNull();
 		const row = document.querySelector(
 			'.previewshare-legacy-link-table tbody tr'
 		);
@@ -815,11 +1460,18 @@ describe( 'PreviewShare responsive inventory', () => {
 		expect(
 			window.__previewshareDataViewsProps.view.filters[ 0 ].value
 		).toEqual( [ 'expired', 'revoked' ] );
+		expect(
+			document.querySelector(
+				'.previewshare-legacy-toolbar input[aria-label="Expired"]'
+			).checked
+		).toBe( true );
+		expect(
+			document.querySelector(
+				'.previewshare-legacy-toolbar input[aria-label="Revoked"]'
+			).checked
+		).toBe( true );
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				page: 2,
-			} );
+			findButton( 'Next' ).click();
 			await flushPromises();
 		} );
 		expect(
@@ -928,7 +1580,7 @@ describe( 'PreviewShare responsive inventory', () => {
 		] );
 	} );
 
-	it( 'uses DataViews global-search fields and accent normalization in compact mode', async () => {
+	it( 'uses compact search without loading DataViews and keeps search across resize', async () => {
 		let narrow = true;
 		let onViewportChange;
 		window.matchMedia = jest.fn( () => ( {
@@ -942,6 +1594,7 @@ describe( 'PreviewShare responsive inventory', () => {
 			},
 			removeEventListener: jest.fn(),
 		} ) );
+		loadDataViews.mockClear();
 		const { initialSettings } = setupFetch( null, [
 			{
 				id: 'token-id-search-must-not-match',
@@ -957,10 +1610,13 @@ describe( 'PreviewShare responsive inventory', () => {
 			findButton( 'Preview links' ).click();
 			await flushPromises();
 		} );
+		expect( loadDataViews ).not.toHaveBeenCalled();
+		expect(
+			document.querySelector( '.previewshare-dataviews' )
+		).toBeNull();
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				search: 'token-id-search-must-not-match',
+			Simulate.change( findInput( 'Search preview links' ), {
+				target: { value: 'token-id-search-must-not-match' },
 			} );
 			await flushPromises();
 		} );
@@ -970,9 +1626,8 @@ describe( 'PreviewShare responsive inventory', () => {
 			)
 		).toHaveLength( 0 );
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				search: 'soren',
+			Simulate.change( findInput( 'Search preview links' ), {
+				target: { value: 'soren' },
 			} );
 			await flushPromises();
 		} );
@@ -985,9 +1640,78 @@ describe( 'PreviewShare responsive inventory', () => {
 			onViewportChange();
 			await flushPromises();
 		} );
+		expect( loadDataViews ).toHaveBeenCalledTimes( 1 );
+		expect(
+			document.querySelector( '.previewshare-dataviews' )
+		).not.toBeNull();
 		expect( window.__previewshareDataViewsProps.view.search ).toBe(
 			'soren'
 		);
+	} );
+
+	it( 'keeps page-size and pagination controls in compact mode without loading DataViews', async () => {
+		let narrow = true;
+		let onViewportChange;
+		window.matchMedia = jest.fn( () => ( {
+			get matches() {
+				return narrow;
+			},
+			addEventListener: ( type, callback ) => {
+				if ( type === 'change' ) {
+					onViewportChange = callback;
+				}
+			},
+			removeEventListener: jest.fn(),
+		} ) );
+		loadDataViews.mockClear();
+		const items = Array.from( { length: 55 }, ( _, index ) => ( {
+			id: 'link-' + index,
+			post_id: index + 1,
+			post_title: 'Preview ' + index,
+			post_type: 'post',
+			status: 'active',
+			expires_at: Math.floor( Date.now() / 1000 ) + 86400,
+		} ) );
+		const { initialSettings } = setupFetch( null, items );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+
+		expect( loadDataViews ).not.toHaveBeenCalled();
+		const rows = () =>
+			document.querySelectorAll(
+				'.previewshare-legacy-link-table tbody tr'
+			);
+		expect( rows() ).toHaveLength( 20 );
+		const pageSize = document.querySelector(
+			'select[aria-label="Links per page"]'
+		);
+		expect( pageSize ).not.toBeNull();
+		pageSize.focus();
+		expect( pageSize ).toBe( document.activeElement );
+		await act( async () => {
+			Simulate.change( pageSize, { target: { value: '50' } } );
+			await flushPromises();
+		} );
+		expect( rows() ).toHaveLength( 50 );
+		expect( pageSize.value ).toBe( '50' );
+		await act( async () => {
+			findButton( 'Next' ).click();
+			await flushPromises();
+		} );
+		expect( rows() ).toHaveLength( 5 );
+		expect( document.body.textContent ).toContain( 'Page 2 of 2' );
+
+		await act( async () => {
+			narrow = false;
+			onViewportChange();
+			await flushPromises();
+		} );
+		expect( loadDataViews ).toHaveBeenCalledTimes( 1 );
+		expect( window.__previewshareDataViewsProps.view.perPage ).toBe( 50 );
+		expect( window.__previewshareDataViewsProps.view.page ).toBe( 2 );
 	} );
 } );
 
@@ -1041,24 +1765,78 @@ describe( 'PreviewShare inventory row actions', () => {
 			await flushPromises();
 		} );
 	}
+	function expectCompactRevokedState() {
+		const rows = Array.from(
+			document.querySelectorAll(
+				'.previewshare-legacy-link-table tbody tr'
+			)
+		);
+		expect( rows ).toHaveLength( 2 );
+		expect(
+			rows.find( ( row ) => row.textContent.includes( 'Client review' ) )
+				.textContent
+		).toContain( 'Revoked' );
+		expect(
+			rows.find( ( row ) => row.textContent.includes( 'Legal approval' ) )
+				.textContent
+		).toContain( 'Active' );
+	}
+	function expectDesktopRevokedState() {
+		const data = window.__previewshareDataViewsProps.data;
+		expect( data ).toHaveLength( 2 );
+		expect(
+			data.find( ( item ) => item.id === 'selected-link' ).status
+		).toBe( 'revoked' );
+		expect(
+			data.find( ( item ) => item.id === 'sibling-link' ).status
+		).toBe( 'active' );
+	}
+	function expectRevokeEligibility() {
+		const revoke = window.__previewshareDataViewsProps.actions.find(
+			( action ) => action.id === 'revoke'
+		);
+		expect( revoke.isEligible( links()[ 0 ] ) ).toBe( true );
+		expect( revoke.isEligible( { status: 'revoked' } ) ).toBe( false );
+	}
+	function expectCompactEntryCount( count ) {
+		expect(
+			document.querySelectorAll(
+				'.previewshare-legacy-link-table tbody tr'
+			)
+		).toHaveLength( count );
+	}
+	function expectDesktopEntryCount( count ) {
+		expect( window.__previewshareDataViewsProps.data ).toHaveLength(
+			count
+		);
+	}
+	function expectCompactDeletedState() {
+		const rows = document.querySelectorAll(
+			'.previewshare-legacy-link-table tbody tr'
+		);
+		expect( rows ).toHaveLength( 1 );
+		expect( rows[ 0 ].textContent ).toContain( 'Legal approval' );
+		expect( rows[ 0 ].textContent ).not.toContain( 'Client review' );
+	}
+	function expectDesktopDeletedState() {
+		expect(
+			window.__previewshareDataViewsProps.data.map( ( item ) => item.id )
+		).toEqual( [ 'sibling-link' ] );
+		expect( window.__previewshareDataViewsProps.view.page ).toBe( 1 );
+	}
 	it.each( [ false, true ] )(
 		'revokes the selected expired link and retains its entry in compact mode %s',
 		async ( compact ) => {
 			await openInventory( compact );
-			const revoke = window.__previewshareDataViewsProps.actions.find(
-				( action ) => action.id === 'revoke'
-			);
-			expect( revoke.isEligible( links()[ 0 ] ) ).toBe( true );
-			expect( revoke.isEligible( { status: 'revoked' } ) ).toBe( false );
+			if ( ! compact ) {
+				expectRevokeEligibility();
+			}
 			await invokeAction( 'revoke', compact );
-			const data = window.__previewshareDataViewsProps.data;
-			expect( data ).toHaveLength( 2 );
-			expect(
-				data.find( ( item ) => item.id === 'selected-link' ).status
-			).toBe( 'revoked' );
-			expect(
-				data.find( ( item ) => item.id === 'sibling-link' ).status
-			).toBe( 'active' );
+			if ( compact ) {
+				expectCompactRevokedState();
+			} else {
+				expectDesktopRevokedState();
+			}
 			const request = window.fetch.mock.calls.find( ( [ url ] ) =>
 				String( url ).endsWith( '/tokens/revoke' )
 			);
@@ -1089,21 +1867,22 @@ describe( 'PreviewShare inventory row actions', () => {
 				await flushPromises();
 			} );
 			expect( document.querySelector( '[role="dialog"]' ) ).toBeNull();
-			expect( window.__previewshareDataViewsProps.data ).toHaveLength(
-				2
-			);
+			if ( compact ) {
+				expectCompactEntryCount( 2 );
+			} else {
+				expectDesktopEntryCount( 2 );
+			}
 			await invokeAction( 'delete', compact );
 			await act( async () => {
 				dialogButton( 'Delete link' ).click();
 				await flushPromises();
 			} );
 			expect( document.querySelector( '[role="dialog"]' ) ).toBeNull();
-			expect(
-				window.__previewshareDataViewsProps.data.map(
-					( item ) => item.id
-				)
-			).toEqual( [ 'sibling-link' ] );
-			expect( window.__previewshareDataViewsProps.view.page ).toBe( 1 );
+			if ( compact ) {
+				expectCompactDeletedState();
+			} else {
+				expectDesktopDeletedState();
+			}
 			const request = window.fetch.mock.calls.find( ( [ url ] ) =>
 				String( url ).endsWith( '/tokens/delete' )
 			);
@@ -1352,6 +2131,59 @@ describe( 'PreviewShare content type checklist', () => {
 } );
 
 describe( 'PreviewShare settings autosave', () => {
+	it( 'keeps a later inventory error visible when a failed settings save recovers', async () => {
+		const { posts, initialSettings } = setupFetch();
+		const previousFetch = window.fetch;
+		const inventory = deferred();
+		window.fetch = jest.fn( ( url, options ) =>
+			String( url ).includes( '/tokens?' )
+				? inventory.promise
+				: previousFetch( url, options )
+		);
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			Simulate.change( findInput( 'Enable diagnostic logging' ), {
+				target: { checked: true },
+			} );
+			jest.advanceTimersByTime( 450 );
+			await flushPromises();
+		} );
+		await act( async () => {
+			posts[ 0 ].request.reject( new Error( 'save failure' ) );
+			await flushPromises();
+		} );
+		await act( async () => {
+			inventory.reject( new Error( 'inventory failure' ) );
+			await flushPromises();
+		} );
+		expect( document.body.textContent ).toContain(
+			'Preview links could not be loaded.'
+		);
+		await act( async () => {
+			Simulate.change( findInput( 'Enable token lookup caching' ), {
+				target: { checked: false },
+			} );
+			jest.advanceTimersByTime( 450 );
+			await flushPromises();
+		} );
+		await act( async () => {
+			posts[ 1 ].request.resolve(
+				response( {
+					...initialSettings,
+					enable_logging: true,
+					enable_caching: false,
+				} )
+			);
+			await flushPromises();
+		} );
+		expect( document.body.textContent ).toContain(
+			'Preview links could not be loaded.'
+		);
+		expect( document.body.textContent ).not.toContain(
+			'Settings could not be saved.'
+		);
+	} );
+
 	it( 'keeps the global restore action on Overview', async () => {
 		const { initialSettings } = setupFetch();
 		await mountSettingsApp( initialSettings );
@@ -1698,6 +2530,25 @@ describe( 'PreviewShare settings autosave', () => {
 } );
 
 describe( 'PreviewShare settings navigation', () => {
+	it( 'keeps the installed release open and older changelog entries available', async () => {
+		const { initialSettings } = setupFetch();
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Changelog' ).click();
+			await flushPromises();
+		} );
+		const entries = Array.from(
+			document.querySelectorAll( '.previewshare-changelog-entry' )
+		);
+		expect( entries ).toHaveLength( 5 );
+		expect( entries[ 0 ].open ).toBe( true );
+		expect( entries[ 0 ].textContent ).toContain( 'v1.1.1' );
+		expect( entries[ 0 ].textContent ).toContain( 'Latest' );
+		expect( entries[ 0 ].textContent ).toContain( 'Installed' );
+		expect( entries[ 1 ].open ).toBe( false );
+		expect( entries[ 1 ].textContent ).toContain( 'v1.1.0' );
+	} );
+
 	it( 'keeps diagnostics logging in Overview without a diagnostics tab', async () => {
 		const { initialSettings } = setupFetch();
 		await mountSettingsApp( initialSettings );
@@ -1870,35 +2721,28 @@ describe( 'PreviewShare expiring-link management', () => {
 			'.previewshare-legacy-link-table button[aria-label^="Extend"]';
 		expectExtendNames( compactSelector );
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				search: 'Other draft',
-				page: 1,
+			Simulate.change( findInput( 'Search preview links' ), {
+				target: { value: 'Other draft' },
 			} );
 			await flushPromises();
 		} );
 		expectExtendNames( compactSelector, [ expectedNames[ 2 ] ] );
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				search: '',
-				page: 1,
+			Simulate.change( findInput( 'Search preview links' ), {
+				target: { value: '' },
 			} );
 			await flushPromises();
 		} );
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				perPage: 1,
-			} );
+			Simulate.change(
+				document.querySelector( 'select[aria-label="Links per page"]' ),
+				{ target: { value: '1' } }
+			);
 			await flushPromises();
 		} );
 		expectExtendNames( compactSelector, [ expectedNames[ 0 ] ] );
 		await act( async () => {
-			window.__previewshareDataViewsProps.onChangeView( {
-				...window.__previewshareDataViewsProps.view,
-				page: 2,
-			} );
+			findButton( 'Next' ).click();
 			await flushPromises();
 		} );
 		expectExtendNames( compactSelector, [ expectedNames[ 1 ] ] );

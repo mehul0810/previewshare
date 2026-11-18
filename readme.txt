@@ -4,7 +4,7 @@ Tags: preview, draft preview, preview link, share draft, public preview
 Requires at least: 5.8
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -97,7 +97,7 @@ Yes. PreviewShare supports multiple labeled preview links, so you can create sep
 
 = Will preview links be indexed by search engines? =
 
-PreviewShare adds robots directives to preview requests, including `noindex` and `nofollow`, and displays a preview banner on shared preview pages. Treat preview URLs as private links and share them only with intended reviewers.
+PreviewShare sends `noindex` and `nofollow` on preview responses and removes WordPress discovery links from preview pages. Search engines that support `noindex` must be able to read the response for the directive to take effect. Share preview URLs only with intended reviewers.
 
 = Where are preview tokens stored? =
 
@@ -135,6 +135,16 @@ Production ZIP files are built from the source repository with:
 The release artifact includes compiled assets, Composer autoload files, `composer.json`, plugin PHP, languages, readme, and license files. Development files such as `node_modules`, source assets, CI configuration, tests, and build tooling are excluded from production ZIP files.
 
 == Changelog ==
+
+= 1.1.1 =
+* Fixed false success messages for reviewer responses and preserved edits when a submission needs to be retried.
+* Improved protection against duplicate responses and rechecked link access before accepting feedback.
+* Strengthened preview indexing protections, suppressed browser referrers, and updated a bundled dependency for security.
+* Fixed status-filtered link results and refreshed the inventory when PreviewShare detects changes during pagination.
+* Reduced repeated work when opening previews and browsing links, and made the link inventory lighter on narrower screens.
+* Improved WordPress privacy export and erasure for reviewer responses, including clearer errors and more reliable handling of large batches.
+* Improved recovery from interrupted review writes and cleanup, and made bulk link revocation more efficient.
+* Added WordPress language pack support for the settings screen, editor controls, and preview link messages.
 
 = 1.1.0 =
 * Redesigned the PreviewShare settings workspace across Overview, Preview Links, Content Types, Changelog, and More plugins.

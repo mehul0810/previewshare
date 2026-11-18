@@ -13,7 +13,7 @@ import {
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { Fragment, useState, useEffect } from '@wordpress/element';
 import { useSelect, useDispatch } from '@wordpress/data';
-import { Button, ToggleControl, TextControl } from '@wordpress/components';
+import { Button, ToggleControl, TextControl } from './wp-components';
 import { copy } from '@wordpress/icons';
 import {
 	canGeneratePreview as canGeneratePreviewForState,

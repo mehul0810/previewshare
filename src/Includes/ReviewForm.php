@@ -105,13 +105,13 @@ final class ReviewForm {
 			return $content;
 		}
 
-		$context = $this->current_link();
+		$context = $this->current_link( true, true );
 		if ( ! $context || (int) $context['post_id'] !== get_the_ID() ) {
 			return $content;
 		}
 
 		ob_start();
-		$this->render();
+		$this->render_form( $context );
 		return $content . ob_get_clean();
 	}
 
@@ -139,9 +139,10 @@ final class ReviewForm {
 				'messages' => [
 					'unavailable' => __( 'This browser cannot send a response securely.', 'previewshare' ),
 					'sending'     => __( 'Sending your response…', 'previewshare' ),
-					'failed'      => __( 'Your response could not be sent. Please try again.', 'previewshare' ),
+					'failed'      => __( 'We could not confirm whether your response was saved.', 'previewshare' ),
 					'retrying'    => __( 'Checking your earlier response. Your current edits have not been sent.', 'previewshare' ),
 					'retryOriginal' => __( 'Try again to check the earlier response before sending your edits.', 'previewshare' ),
+					'retryButton' => __( 'Retry earlier response', 'previewshare' ),
 					'receivedEdits' => __( 'Your earlier response was received. Your current edits have not been sent; send again to submit them.', 'previewshare' ),
 					'stale'       => __( 'This content changed after you opened the preview. Refresh the page to review the latest version before approving.', 'previewshare' ),
 					'duplicate'   => __( 'Your response was already received.', 'previewshare' ),
@@ -161,8 +162,22 @@ final class ReviewForm {
 			return;
 		}
 
-		$context = $this->current_link();
+		$context = $this->current_link( true, true );
 		if ( ! $context ) {
+			return;
+		}
+
+		$this->render_form( $context );
+	}
+
+	/**
+	 * Print a form from a link context validated by the caller.
+	 *
+	 * @param array{token:string,post_id:int,link:array<string,mixed>,content_snapshot:string,request_id:string} $context Validated preview context.
+	 * @return void
+	 */
+	private function render_form( array $context ): void {
+		if ( $this->rendered ) {
 			return;
 		}
 
@@ -210,9 +225,10 @@ final class ReviewForm {
 	 * Resolve the current opted-in preview without exposing response data.
 	 *
 	 * @param bool $responses_required Whether this link must accept responses.
+	 * @param bool $include_snapshot Whether to prepare a signed response form.
 	 * @return array{token:string,post_id:int,link:array<string,mixed>,content_snapshot?:string,request_id?:string}|null
 	 */
-	private function current_link( bool $responses_required = true ): ?array {
+	private function current_link( bool $responses_required = true, bool $include_snapshot = false ): ?array {
 		$token = (string) get_query_var( 'previewshare_token' );
 		if ( '' === $token ) {
 			return null;
@@ -242,7 +258,7 @@ final class ReviewForm {
 			'post_id'          => $post_id,
 			'link'             => $context['link'],
 		];
-		if ( $responses_required ) {
+		if ( $include_snapshot ) {
 			$result['content_snapshot'] = ReviewVersion::issue_snapshot( $post, $context['hash'] );
 			$result['request_id']       = wp_generate_uuid4();
 		}

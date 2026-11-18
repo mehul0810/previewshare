@@ -25,6 +25,23 @@ final class ReviewResponseService {
 	private const CLEANUP_LIMIT      = 2000;
 	private const CLEANUP_BATCH_SIZE = 100;
 	private const ERASER_BATCH_SIZE  = 100;
+	private const NOT_DELETED        = 0;
+	private const DELETED            = 1;
+	private const MARKER_RETAINED    = 2;
+
+	/**
+	 * Submission marker persistence.
+	 *
+	 * @var ReviewSubmissionStore
+	 */
+	private $submissions;
+
+	/**
+	 * Initialize the review service.
+	 */
+	public function __construct() {
+		$this->submissions = new ReviewSubmissionStore();
+	}
 
 	/**
 	 * Register lifecycle and privacy hooks.
@@ -36,7 +53,7 @@ final class ReviewResponseService {
 		add_action( 'init', [ $this, 'schedule_cleanup' ], 21 );
 		add_action( self::CLEANUP_HOOK, [ $this, 'purge_expired' ] );
 		add_action( self::CONTINUE_HOOK, [ $this, 'purge_expired' ] );
-		add_action( 'before_delete_post', [ $this, 'delete_for_post' ] );
+		add_action( 'deleted_post', [ $this, 'delete_for_post' ], 10, 2 );
 		add_filter( 'wp_privacy_personal_data_exporters', [ $this, 'register_exporter' ] );
 		add_filter( 'wp_privacy_personal_data_erasers', [ $this, 'register_eraser' ] );
 	}
@@ -99,9 +116,54 @@ final class ReviewResponseService {
 	 * @return int|\WP_Error Created row ID or error.
 	 */
 	public function create_response( int $post_id, string $link_hash, string $content_hash, string $response_type, string $name, string $email, string $comment, string $submission_key ) {
-		$option_name = 'previewshare_review_request_' . $submission_key;
-		if ( ! add_option( $option_name, 0, '', false ) ) {
-			return new \WP_Error( 'review_duplicate', __( 'This response was already received.', 'previewshare' ), [ 'status' => 409 ] );
+		$option_name = ReviewSubmissionStore::PREFIX . $submission_key;
+		$meta        = [
+			'_previewshare_link_hash'         => $link_hash,
+			'_previewshare_content_hash'      => $content_hash,
+			'_previewshare_response_type'     => $response_type,
+			'_previewshare_reviewer_name'     => $name,
+			'_previewshare_reviewer_email'    => $email,
+			ReviewSubmissionStore::META_KEY  => $option_name,
+		];
+
+		try {
+			$review_id = ( new ReviewWriteStore() )->save( $option_name, $post_id, $comment, $meta );
+		} catch ( \RuntimeException $error ) {
+			// The database may have committed before losing the connection.
+			return $this->unconfirmed_submission();
+		}
+		if ( null === $review_id ) {
+			$review_id = $this->create_legacy_response( $post_id, $link_hash, $comment, $option_name, $meta );
+		} elseif ( 0 === $review_id ) {
+			return $this->confirm_existing_response( $option_name, $post_id, $link_hash, true );
+		} elseif ( is_string( $review_id ) ) {
+			return ReviewSubmissionAccess::error( $review_id );
+		} else {
+			$this->refresh_review_caches( $option_name, $review_id );
+		}
+
+		if ( is_int( $review_id ) ) {
+			do_action( 'previewshare_review_response_accepted', $review_id, $post_id, $link_hash, $response_type );
+		}
+		return $review_id;
+	}
+
+	/**
+	 * Preserve the existing write path on unsupported database adapters.
+	 *
+	 * @param int                  $post_id Owning post ID.
+	 * @param string               $link_hash Link identifier.
+	 * @param string               $comment Plain-text response.
+	 * @param string               $option_name Request receipt key.
+	 * @param array<string,string> $meta Required response metadata.
+	 * @return int|\WP_Error Created row ID or error.
+	 */
+	private function create_legacy_response( int $post_id, string $link_hash, string $comment, string $option_name, array $meta ) {
+		$reservation_id = $this->submissions->reserve( $option_name );
+		if ( ! $reservation_id ) {
+			return 0 === $reservation_id
+				? $this->confirm_existing_response( $option_name, $post_id, $link_hash )
+				: $this->unconfirmed_submission();
 		}
 
 		$created_gmt = current_time( 'mysql', true );
@@ -121,29 +183,118 @@ final class ReviewResponseService {
 		);
 
 		if ( is_wp_error( $review_id ) || ! $review_id ) {
-			delete_option( $option_name );
-			return new \WP_Error( 'review_storage_failed', __( 'The response could not be saved. Please try again.', 'previewshare' ), [ 'status' => 500 ] );
+			if ( ! $this->submissions->release( $option_name, $reservation_id ) ) {
+				return $this->unconfirmed_submission();
+			}
+			return $this->storage_failure();
 		}
 
-		$meta = [
-			'_previewshare_link_hash'         => $link_hash,
-			'_previewshare_content_hash'      => $content_hash,
-			'_previewshare_response_type'     => $response_type,
-			'_previewshare_reviewer_name'     => $name,
-			'_previewshare_reviewer_email'    => $email,
-			'_previewshare_submission_option' => $option_name,
-		];
+		$review_id = (int) $review_id;
+		// Record the ID before metadata hooks can write to a concurrently deleted
+		// review. The parent delete hook can also finish before the child is inserted.
+		if ( ! $this->submissions->track_review( $option_name, $reservation_id, $review_id ) || true !== $this->submissions->post_exists( $post_id ) ) {
+			return $this->rollback_response( $review_id, $option_name, $reservation_id );
+		}
+
 		foreach ( $meta as $key => $value ) {
-			if ( ! add_post_meta( (int) $review_id, $key, $value, true ) ) {
-				wp_delete_post( (int) $review_id, true );
-				delete_option( $option_name );
-				return new \WP_Error( 'review_storage_failed', __( 'The response could not be saved. Please try again.', 'previewshare' ), [ 'status' => 500 ] );
+			if ( ReviewSubmissionStore::META_KEY === $key ) {
+				// A complete metadata set can be reconciled by a retry. Check
+				// current access before making it eligible for reconciliation.
+				try {
+					$denial = ReviewSubmissionAccess::seal_legacy_response( $post_id, $review_id, $link_hash, $meta );
+				} catch ( \RuntimeException $error ) {
+					return $this->rollback_response( $review_id, $option_name, $reservation_id );
+				}
+				if ( '' !== $denial ) {
+					return $this->rollback_response( $review_id, $option_name, $reservation_id, ReviewSubmissionAccess::error( $denial ) );
+				}
+			} elseif ( ! add_post_meta( $review_id, $key, $value, true ) ) {
+				return $this->rollback_response( $review_id, $option_name, $reservation_id );
 			}
 		}
 
-		update_option( $option_name, (int) $review_id, false );
-		do_action( 'previewshare_review_response_accepted', (int) $review_id, $post_id, $link_hash, $response_type );
-		return (int) $review_id;
+		if ( ! $this->submissions->commit( $option_name, $review_id, $post_id, $reservation_id ) ) {
+			if ( false === $this->submissions->post_exists( $post_id ) && true === $this->submissions->post_exists( $review_id ) ) {
+				$this->delete_response( $review_id );
+			}
+			if ( null === $this->submissions->clear_deleted_response( $review_id, $option_name, $reservation_id ) ) {
+				$this->schedule_cleanup_continuation( HOUR_IN_SECONDS );
+			}
+			return $this->unconfirmed_submission();
+		}
+		return $review_id;
+	}
+
+	/**
+	 * Confirm a prior submission only when its durable record is complete.
+	 *
+	 * @param string $option_name Request receipt key.
+	 * @param int    $post_id Owning post ID.
+	 * @param string $link_hash Link identifier.
+	 * @param bool   $refresh_caches Whether the original transaction may have stopped before clearing caches.
+	 * @return \WP_Error Duplicate acknowledgement or unconfirmed outcome.
+	 */
+	private function confirm_existing_response( string $option_name, int $post_id, string $link_hash, bool $refresh_caches = false ): \WP_Error {
+		$review_id = $this->submissions->confirmed_response_id( $option_name, $post_id, $link_hash );
+		if ( $review_id ) {
+			if ( $refresh_caches ) {
+				$this->refresh_review_caches( $option_name, $review_id );
+			}
+			return new \WP_Error( 'review_duplicate', __( 'This response was already received.', 'previewshare' ), [ 'status' => 409 ] );
+		}
+		return $this->unconfirmed_submission();
+	}
+
+	/**
+	 * Invalidate the caches that Core would clear after a post and receipt write.
+	 *
+	 * @param string $option_name Request receipt key.
+	 * @param int    $review_id Confirmed review ID.
+	 * @return void
+	 */
+	private function refresh_review_caches( string $option_name, int $review_id ): void {
+		$this->submissions->flush_option_cache( $option_name );
+		clean_post_cache( $review_id );
+	}
+
+	/**
+	 * Delete an unsuccessful response and clear any metadata left behind.
+	 *
+	 * @param int            $review_id Review record ID.
+	 * @param string         $option_name Private request option.
+	 * @param int            $reservation_id Option row ID of the writer.
+	 * @param \WP_Error|null $reason Error to report after successful rollback.
+	 * @return \WP_Error Storage failure, denial or unconfirmed outcome.
+	 */
+	private function rollback_response( int $review_id, string $option_name, int $reservation_id, ?\WP_Error $reason = null ): \WP_Error {
+		if ( ! $this->submissions->finish_rollback( $option_name, $reservation_id, $review_id ) ) {
+			return $this->unconfirmed_submission();
+		}
+
+		wp_delete_post( $review_id, true );
+		$cleared = $this->submissions->clear_deleted_response( $review_id, $option_name, $reservation_id );
+		if ( null === $cleared ) {
+			$this->schedule_cleanup_continuation( HOUR_IN_SECONDS );
+		}
+		return true === $cleared ? ( $reason ?? $this->storage_failure() ) : $this->unconfirmed_submission();
+	}
+
+	/**
+	 * Report an unsuccessful review write with a known outcome.
+	 *
+	 * @return \WP_Error
+	 */
+	private function storage_failure(): \WP_Error {
+		return new \WP_Error( 'review_storage_failed', __( 'The response could not be saved. Please try again.', 'previewshare' ), [ 'status' => 500 ] );
+	}
+
+	/**
+	 * Report a response whose durable state could not be confirmed.
+	 *
+	 * @return \WP_Error
+	 */
+	private function unconfirmed_submission(): \WP_Error {
+		return new \WP_Error( 'review_unconfirmed', __( 'We could not confirm whether your response was saved. Please retry. Before refreshing, copy your response and ask the editor whether it was saved.', 'previewshare' ), [ 'status' => 409 ] );
 	}
 
 	/**
@@ -368,7 +519,7 @@ final class ReviewResponseService {
 			foreach ( $ids as $id ) {
 				$id     = (int) $id;
 				$cursor = $id;
-				if ( ! $this->delete_response( $id ) ) {
+				if ( self::DELETED !== $this->delete_response( $id ) ) {
 					$had_failures = true;
 					update_option( self::CLEANUP_FAILED, true, false );
 				}
@@ -395,8 +546,9 @@ final class ReviewResponseService {
 
 		delete_option( self::CLEANUP_CURSOR );
 		delete_option( self::CLEANUP_FAILED );
-		if ( $had_failures ) {
-			$this->schedule_cleanup_continuation( HOUR_IN_SECONDS );
+		$markers = $this->submissions->purge_orphans( self::CLEANUP_BATCH_SIZE, self::CLEANUP_LIMIT );
+		if ( $had_failures || false !== $markers ) {
+			$this->schedule_cleanup_continuation( true === $markers ? 5 * MINUTE_IN_SECONDS : HOUR_IN_SECONDS );
 			return;
 		}
 
@@ -406,25 +558,32 @@ final class ReviewResponseService {
 	/**
 	 * Remove child review records when their owning post is deleted.
 	 *
-	 * @param int $post_id Post being deleted.
+	 * @param int           $post_id Deleted post ID.
+	 * @param \WP_Post|null $post Deleted post passed by WordPress.
 	 * @return void
 	 */
-	public function delete_for_post( int $post_id ): void {
-		if ( self::POST_TYPE === get_post_type( $post_id ) ) {
+	public function delete_for_post( int $post_id, ?\WP_Post $post = null ): void {
+		if ( in_array( $post ? $post->post_type : get_post_type( $post_id ), [ self::POST_TYPE, 'attachment' ], true ) ) {
 			return;
 		}
-		$ids = get_posts(
-			[
-				'post_type'      => self::POST_TYPE,
-				'post_status'    => 'private',
-				'post_parent'    => $post_id,
-				'posts_per_page' => -1,
-				'fields'         => 'ids',
-				'no_found_rows'  => true,
-			]
-		);
-		foreach ( $ids as $id ) {
-			$this->delete_response( (int) $id );
+		$cursor = 0;
+		$failed = false;
+		do {
+			$ids = $this->query_review_ids( $cursor, self::CLEANUP_BATCH_SIZE, null, null, $post_id );
+			if ( null === $ids ) {
+				$failed = true;
+				break;
+			}
+			$count = count( $ids );
+			foreach ( $ids as $id ) {
+				$cursor  = $id;
+				$deleted = $this->delete_response( $id );
+				$failed  = $failed || self::NOT_DELETED === $deleted;
+			}
+		} while ( self::CLEANUP_BATCH_SIZE === $count );
+		if ( $failed ) {
+			update_option( self::CLEANUP_FAILED, true, false );
+			$this->schedule_cleanup_continuation( HOUR_IN_SECONDS );
 		}
 	}
 
@@ -461,9 +620,9 @@ final class ReviewResponseService {
 	 *
 	 * @param string $email_address Requested email.
 	 * @param int    $page One-based page number.
-	 * @return array<string,mixed>
+	 * @return array<string,mixed>|\WP_Error
 	 */
-	public function export_by_email( string $email_address, int $page = 1 ): array {
+	public function export_by_email( string $email_address, int $page = 1 ) {
 		$email = sanitize_email( $email_address );
 		if ( '' === $email ) {
 			return [
@@ -471,45 +630,55 @@ final class ReviewResponseService {
 				'done' => true,
 			];
 		}
-		$posts = $this->posts_for_email( $email, max( 1, $page ) );
-		$data  = [];
-		foreach ( $posts as $post ) {
-			$response = $this->format_response( $post );
-			$data[]   = [
+		$rows = $this->export_rows_for_email( $email, max( 1, $page ) );
+		if ( is_wp_error( $rows ) ) {
+			return $rows;
+		}
+		$data = [];
+		foreach ( $rows as $row ) {
+			$post       = $row->_previewshare_export_post ?? new \WP_Post(
+				(object) [
+					'ID'            => (int) $row->ID,
+					'post_date_gmt' => (string) $row->post_date_gmt,
+					'filter'        => 'raw',
+				]
+			);
+			$created_at = (int) get_post_time( 'U', true, $post );
+			$data[]     = [
 				'group_id'    => 'previewshare-reviews',
 				'group_label' => __( 'PreviewShare reviewer responses', 'previewshare' ),
-				'item_id'     => 'previewshare-review-' . $post->ID,
+				'item_id'     => 'previewshare-review-' . $row->ID,
 				'data'        => [
 					[
 						'name' => __( 'Post ID', 'previewshare' ),
-						'value' => (string) $post->post_parent,
+						'value' => (string) $row->post_parent,
 					],
 					[
 						'name' => __( 'Response', 'previewshare' ),
-						'value' => (string) $response['response_type'],
+						'value' => $this->export_meta_value( (int) $row->ID, '_previewshare_response_type', $row->response_type ),
 					],
 					[
 						'name' => __( 'Name', 'previewshare' ),
-						'value' => (string) $response['reviewer_name'],
+						'value' => $this->export_meta_value( (int) $row->ID, '_previewshare_reviewer_name', $row->reviewer_name ),
 					],
 					[
 						'name' => __( 'Email', 'previewshare' ),
-						'value' => (string) $response['reviewer_email'],
+						'value' => $this->export_meta_value( (int) $row->ID, '_previewshare_reviewer_email', $row->reviewer_email ),
 					],
 					[
 						'name' => __( 'Comment', 'previewshare' ),
-						'value' => (string) $response['comment'],
+						'value' => (string) $row->post_content,
 					],
 					[
 						'name' => __( 'Submitted (UTC)', 'previewshare' ),
-						'value' => gmdate( 'c', (int) $response['created_at'] ),
+						'value' => gmdate( 'c', $created_at ),
 					],
 				],
 			];
 		}
 		return [
 			'data' => $data,
-			'done' => count( $posts ) < 100,
+			'done' => count( $rows ) < 100,
 		];
 	}
 
@@ -551,13 +720,11 @@ final class ReviewResponseService {
 			return new \WP_Error( 'review_eraser_query_failed', __( 'PreviewShare could not check for responses to erase. Please try the erasure request again.', 'previewshare' ) );
 		}
 		foreach ( $ids as $id ) {
-			$id     = (int) $id;
-			$cursor = $id;
-			if ( $this->delete_response( $id ) ) {
-				$state['items_removed'] = true;
-			} else {
-				$state['items_retained'] = true;
-			}
+			$id                      = (int) $id;
+			$cursor                  = $id;
+			$deletion                = $this->delete_response( $id );
+			$state['items_removed']  = $state['items_removed'] || self::NOT_DELETED !== $deletion;
+			$state['items_retained'] = $state['items_retained'] || self::DELETED !== $deletion;
 		}
 		$more = false;
 		if ( '' !== $email ) {
@@ -622,10 +789,11 @@ final class ReviewResponseService {
 	 * @param int         $after_id Exclusive ID lower bound.
 	 * @param int         $limit Maximum rows.
 	 * @param string|null $email Optional exact reviewer email.
-	 * @param string|null $cutoff Optional exclusive GMT creation-time upper bound.
+	 * @param string|null $cutoff Optional GMT cutoff for reviews whose parent still exists.
+	 * @param int|null    $parent_id Optional owning post ID.
 	 * @return array<int,int>|null Null when the database query fails.
 	 */
-	private function query_review_ids( int $after_id, int $limit, ?string $email = null, ?string $cutoff = null ): ?array {
+	private function query_review_ids( int $after_id, int $limit, ?string $email = null, ?string $cutoff = null, ?int $parent_id = null ): ?array {
 		global $wpdb;
 
 		$sql       = "SELECT reviews.ID FROM {$wpdb->posts} AS reviews";
@@ -637,8 +805,14 @@ final class ReviewResponseService {
 			$arguments = array_merge( $arguments, [ '_previewshare_reviewer_email', $email ] );
 		}
 		if ( null !== $cutoff ) {
-			$sql        .= ' AND reviews.post_date_gmt < %s';
+			// Retry a failed parent cascade at the next bounded pass without shortening
+			// retention for reviews whose owning post still exists.
+			$sql        .= " AND (reviews.post_date_gmt < %s OR (reviews.post_parent > 0 AND NOT EXISTS (SELECT 1 FROM {$wpdb->posts} AS owners WHERE owners.ID = reviews.post_parent)))";
 			$arguments[] = $cutoff;
+		}
+		if ( null !== $parent_id ) {
+			$sql        .= ' AND reviews.post_parent = %d';
+			$arguments[] = $parent_id;
 		}
 		$sql        .= ' ORDER BY reviews.ID ASC LIMIT %d';
 		$arguments[] = $limit;
@@ -671,43 +845,245 @@ final class ReviewResponseService {
 	}
 
 	/**
-	 * Query a bounded privacy page by exact reviewer email.
+	 * Query one bounded privacy export page without WordPress's cached empty-query behavior.
 	 *
 	 * @param string $email Sanitized email.
 	 * @param int    $page One-based page number.
-	 * @return array<int,\WP_Post>
+	 * @return array<int,object>|\WP_Error
 	 */
-	private function posts_for_email( string $email, int $page ): array {
-		$posts = get_posts(
-			[
-				'post_type'      => self::POST_TYPE,
-				'post_status'    => 'private',
-				'posts_per_page' => 100,
-				'paged'          => $page,
-				'no_found_rows'  => true,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Privacy export and erasure must find exact reviewer email.
-				'meta_key'       => '_previewshare_reviewer_email',
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Privacy export and erasure must find exact reviewer email.
-				'meta_value'     => $email,
-			]
+	private function export_rows_for_email( string $email, int $page ) {
+		global $wpdb;
+		$selection      = new \WP_Query();
+		$failed         = false;
+		$projected_rows = null;
+		$pre_query      = function ( $posts, $current_query ) use ( &$failed, &$projected_rows, $selection, $wpdb, $email ) {
+			if ( $current_query !== $selection ) {
+				return $posts;
+			}
+			$current_query->set( 'cache_results', false );
+			$current_query->set( 'update_post_meta_cache', false );
+			$current_query->set( 'update_post_term_cache', false );
+			$current_query->set( 'lazy_load_term_meta', false );
+			$source_posts = [];
+			if ( null === $posts ) {
+				if (
+					( function_exists( 'has_filter' ) && ( false !== has_filter( 'posts_request_ids' ) || false !== has_filter( 'split_the_query' ) ) )
+					|| 100 !== (int) $current_query->get( 'posts_per_page' )
+					|| $current_query->get( 'nopaging' )
+					|| 'all' !== $current_query->get( 'fields' )
+					|| ! is_string( $current_query->request )
+					|| '' === $current_query->request
+				) {
+					$failed = true;
+					return [];
+				}
+					// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared -- Executes the exact Core-compiled and posts_request-filtered query once.
+					$result = $wpdb->query( $current_query->request );
+					$rows   = $wpdb->last_result ?? null;
+				if ( false === $result || ! is_int( $result ) || ! is_array( $rows ) || count( $rows ) !== $result ) {
+					$failed = true;
+					return [];
+				}
+					$ids = [];
+				foreach ( $rows as $row ) {
+					$ids[] = is_object( $row ) && property_exists( $row, 'ID' ) ? (int) $row->ID : 0;
+				}
+			} else {
+				if ( ! is_array( $posts ) ) {
+					$failed = true;
+					return [];
+				}
+				$ids = [];
+				foreach ( $posts as $post ) {
+					$id = is_object( $post ) && property_exists( $post, 'ID' ) ? (int) $post->ID : ( is_numeric( $post ) ? (int) $post : 0 );
+					if ( $id < 1 ) {
+						$failed = true;
+						return [];
+					}
+					$ids[] = $id;
+					if ( $post instanceof \WP_Post ) {
+						$source_posts[ $id ] = $post;
+					}
+				}
+			}
+			$ids = array_values( array_unique( $ids ) );
+			if ( count( $ids ) > 100 || count( $ids ) !== ( null === $posts ? count( $rows ) : count( $posts ) ) || in_array( 0, $ids, true ) ) {
+				$failed = true;
+				return [];
+			}
+			if ( [] === $ids ) {
+				$projected_rows = [];
+				return [];
+			}
+			$projected_rows = $this->project_export_rows( $ids, $email );
+			if ( is_wp_error( $projected_rows ) ) {
+				$failed = true;
+				return [];
+			}
+			$result_posts = [];
+			foreach ( $projected_rows as $row ) {
+				$id       = (int) $row->ID;
+				$post_row = clone $row;
+				unset( $post_row->response_type, $post_row->reviewer_name, $post_row->reviewer_email );
+				unset( $post_row->filter );
+				$post_row->ID          = (int) $post_row->ID;
+				$post_row->post_parent = (int) $post_row->post_parent;
+				$post_row->menu_order  = (int) ( $post_row->menu_order ?? 0 );
+				$post                  = new \WP_Post( $post_row );
+				$post->filter          = 'raw';
+				if ( isset( $source_posts[ $id ] ) ) {
+					$post = clone $source_posts[ $id ];
+				}
+				$result_posts[] = $post;
+			}
+			return $result_posts;
+		};
+		add_filter( 'posts_pre_query', $pre_query, PHP_INT_MAX, 2 );
+		try {
+			$selection->query(
+				[
+					'post_type'              => self::POST_TYPE,
+					'post_status'            => 'private',
+					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Required exact-email query for the private privacy export.
+					'meta_key'               => '_previewshare_reviewer_email',
+					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Required exact-email query for the private privacy export.
+					'meta_value'             => $email,
+					'orderby'                => [
+						'date' => 'DESC',
+						'ID' => 'DESC',
+					],
+					'posts_per_page'         => 100,
+					'paged'                  => $page,
+					'nopaging'               => false,
+					'fields'                 => 'all',
+					'ignore_sticky_posts'    => true,
+					'no_found_rows'          => true,
+					'cache_results'          => false,
+					'suppress_filters'       => true,
+					'update_post_meta_cache' => false,
+					'update_post_term_cache' => false,
+				]
+			);
+		} finally {
+			remove_filter( 'posts_pre_query', $pre_query, PHP_INT_MAX );
+		}
+		if ( $failed || ! is_array( $projected_rows ) || ! is_array( $selection->posts ) ) {
+			return new \WP_Error( 'review_export_query_failed', __( 'Reviewer responses could not be retrieved for export.', 'previewshare' ) );
+		}
+		if ( [] === $selection->posts && [] === $projected_rows ) {
+			return [];
+		}
+		$rows_by_id = [];
+		foreach ( $projected_rows as $row ) {
+			$rows_by_id[ (int) $row->ID ] = $row;
+		}
+		$rows     = [];
+		$seen_ids = [];
+		foreach ( $selection->posts as $post ) {
+			$id = $post instanceof \WP_Post ? (int) $post->ID : 0;
+			if ( $id < 1 || isset( $seen_ids[ $id ] ) || ! isset( $rows_by_id[ $id ] ) ) {
+				return new \WP_Error( 'review_export_query_failed', __( 'Reviewer responses could not be retrieved for export.', 'previewshare' ) );
+			}
+			$seen_ids[ $id ]                = true;
+			$row                            = clone $rows_by_id[ $id ];
+			$row->post_parent               = (int) $post->post_parent;
+			$row->post_content              = (string) $post->post_content;
+			$row->post_date_gmt             = (string) $post->post_date_gmt;
+			$row->_previewshare_export_post = $post;
+			$rows[]                         = $row;
+		}
+		return $rows;
+	}
+
+	/**
+	 * Project private response metadata for a bounded, validated ID list.
+	 *
+	 * @param int[]  $ids Selected review IDs.
+	 * @param string $email Sanitized reviewer email.
+	 * @return array<int,object>|\WP_Error
+	 */
+	private function project_export_rows( array $ids, string $email ) {
+		global $wpdb;
+		$id_placeholders = implode( ', ', array_fill( 0, count( $ids ), '%d' ) );
+		$sql             = "SELECT reviews.*,
+			(SELECT meta_value FROM {$wpdb->postmeta} WHERE post_id = reviews.ID AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) ORDER BY meta_id ASC LIMIT 1) AS response_type,
+			(SELECT meta_value FROM {$wpdb->postmeta} WHERE post_id = reviews.ID AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) ORDER BY meta_id ASC LIMIT 1) AS reviewer_name,
+			(SELECT meta_value FROM {$wpdb->postmeta} WHERE post_id = reviews.ID AND CAST(meta_key AS BINARY) = CAST(%s AS BINARY) ORDER BY meta_id ASC LIMIT 1) AS reviewer_email
+			FROM {$wpdb->posts} AS reviews
+			WHERE reviews.post_type = %s AND reviews.post_status = %s AND reviews.ID IN ($id_placeholders)
+			AND EXISTS (SELECT 1 FROM {$wpdb->postmeta} AS email_meta WHERE email_meta.post_id = reviews.ID AND email_meta.meta_key = %s AND email_meta.meta_value = %s)
+			ORDER BY FIELD(reviews.ID, $id_placeholders)";
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- The SQL string is a fixed template and all variable values are placeholders passed to prepare.
+		$prepared = $wpdb->prepare(
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- The SQL string is fixed and values are bound below.
+			$sql,
+			array_merge(
+				[ '_previewshare_response_type', '_previewshare_reviewer_name', '_previewshare_reviewer_email', self::POST_TYPE, 'private' ],
+				$ids,
+				[ '_previewshare_reviewer_email', $email ],
+				$ids
+			)
 		);
-		return is_array( $posts ) ? $posts : [];
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared -- Export is a bounded, uncached query and checks execution before reading rows.
+		$result = $wpdb->query( $prepared );
+		$rows   = $wpdb->last_result ?? null;
+		if ( false === $result || ! is_array( $rows ) || count( $rows ) !== $result ) {
+			return new \WP_Error( 'review_export_query_failed', __( 'Reviewer responses could not be retrieved for export.', 'previewshare' ) );
+		}
+		if ( count( $rows ) !== count( $ids ) ) {
+			return new \WP_Error( 'review_export_query_failed', __( 'Reviewer responses could not be retrieved for export.', 'previewshare' ) );
+		}
+		foreach ( $rows as $row ) {
+			if ( ! is_object( $row ) || ! property_exists( $row, 'ID' ) || ! in_array( (int) $row->ID, $ids, true ) ) {
+				return new \WP_Error( 'review_export_query_failed', __( 'Reviewer responses could not be retrieved for export.', 'previewshare' ) );
+			}
+			$row->filter = 'raw';
+		}
+		return $rows;
+	}
+
+	/**
+	 * Resolve one projected metadata value with Core's short-circuit and default filters.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $meta_key Exact metadata key.
+	 * @param mixed  $stored_value Raw projected database value, or null if absent.
+	 * @return string
+	 */
+	private function export_meta_value( int $post_id, string $meta_key, $stored_value ): string {
+		$value = apply_filters( 'get_post_metadata', null, $post_id, $meta_key, true, 'post' );
+		if ( null !== $value ) {
+			$value = is_array( $value ) ? ( $value[0] ?? null ) : $value;
+		} else {
+			$value = null === $stored_value ? null : maybe_unserialize( $stored_value );
+		}
+
+		if ( null === $value ) {
+			$value = get_metadata_default( 'post', $post_id, $meta_key, true );
+		}
+
+		return (string) $value;
 	}
 
 	/**
 	 * Delete a record and its idempotency marker together.
 	 *
 	 * @param int $review_id Review record ID.
-	 * @return bool Whether the post and idempotency marker were removed.
+	 * @return int Outcome of deleting the response and marker.
 	 */
-	private function delete_response( int $review_id ): bool {
-		$option_name = (string) get_post_meta( $review_id, '_previewshare_submission_option', true );
+	private function delete_response( int $review_id ): int {
+		$option_name = get_post_meta( $review_id, ReviewSubmissionStore::META_KEY, true );
+		$has_marker  = is_string( $option_name ) && 0 === strpos( $option_name, ReviewSubmissionStore::PREFIX );
+		if ( $has_marker && ! $this->submissions->prepare_review_deletion( $option_name, $review_id ) ) {
+			return self::NOT_DELETED;
+		}
 		if ( ! wp_delete_post( $review_id, true ) ) {
-			return false;
+			return self::NOT_DELETED;
 		}
-		if ( 0 === strpos( $option_name, 'previewshare_review_request_' ) ) {
-			delete_option( $option_name );
+		if ( $has_marker && ! $this->submissions->remove_orphan( $option_name, $review_id ) ) {
+			$this->schedule_cleanup_continuation( HOUR_IN_SECONDS );
+			return self::MARKER_RETAINED;
 		}
-		return true;
+		return self::DELETED;
 	}
 }
