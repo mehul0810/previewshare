@@ -1816,7 +1816,7 @@ test( 'uncertain reviewer submission retries its original payload before sending
 		.fill( 'Later Reviewer' );
 	await form
 		.getByRole( 'textbox', { name: 'Email' } )
-		.fill( 'later@example.test' );
+		.fill( 'unfinished email' );
 	await form.getByRole( 'radio', { name: 'Request changes' } ).check();
 	await form
 		.getByRole( 'textbox', { name: 'Comment' } )
@@ -1825,10 +1825,13 @@ test( 'uncertain reviewer submission retries its original payload before sending
 		'Try again to check the earlier response before sending your edits.'
 	);
 	retryAttempt = true;
-	const retryAction = form
-		.getByRole( 'button', { name: 'Send response' } )
-		.click();
+	const retryButton = form.getByRole( 'button', {
+		name: 'Retry earlier response',
+	} );
+	const retryAction = retryButton.press( 'Enter' );
 	await retryRequested;
+	await expect( retryButton ).toBeFocused();
+	await expect( retryButton ).toHaveAttribute( 'aria-disabled', 'true' );
 	await expect( form.getByRole( 'status' ) ).toHaveText(
 		'Checking your earlier response. Your current edits have not been sent.'
 	);
@@ -1850,6 +1853,12 @@ test( 'uncertain reviewer submission retries its original payload before sending
 	await expect( form.getByRole( 'textbox', { name: 'Name' } ) ).toHaveValue(
 		'Later Reviewer'
 	);
+	await expect( form.getByRole( 'textbox', { name: 'Email' } ) ).toHaveValue(
+		'unfinished email'
+	);
+	await expect(
+		form.getByRole( 'button', { name: 'Send response' } )
+	).toBeFocused();
 	await expect(
 		form.getByRole( 'textbox', { name: 'Comment' } )
 	).toHaveValue( 'Later typed comment.' );
@@ -1876,6 +1885,9 @@ if ( 'approve' !== get_post_meta( $reviews[0]->ID, '_previewshare_response_type'
 		page.locator( '.previewshare-panel__review-history' )
 	).toContainText( 'Original payload must be the one retried.' );
 
+	await form
+		.getByRole( 'textbox', { name: 'Email' } )
+		.fill( 'later@example.test' );
 	const [ newSubmission ] = await Promise.all( [
 		anonymous.waitForResponse( ( response ) =>
 			responseMatchesRoute( response, '/previewshare/v1/reviews/submit' )

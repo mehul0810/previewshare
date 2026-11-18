@@ -139,9 +139,10 @@ final class ReviewForm {
 				'messages' => [
 					'unavailable' => __( 'This browser cannot send a response securely.', 'previewshare' ),
 					'sending'     => __( 'Sending your response…', 'previewshare' ),
-					'failed'      => __( 'Your response could not be sent. Please try again.', 'previewshare' ),
+					'failed'      => __( 'We could not confirm whether your response was saved.', 'previewshare' ),
 					'retrying'    => __( 'Checking your earlier response. Your current edits have not been sent.', 'previewshare' ),
 					'retryOriginal' => __( 'Try again to check the earlier response before sending your edits.', 'previewshare' ),
+					'retryButton' => __( 'Retry earlier response', 'previewshare' ),
 					'receivedEdits' => __( 'Your earlier response was received. Your current edits have not been sent; send again to submit them.', 'previewshare' ),
 					'stale'       => __( 'This content changed after you opened the preview. Refresh the page to review the latest version before approving.', 'previewshare' ),
 					'duplicate'   => __( 'Your response was already received.', 'previewshare' ),

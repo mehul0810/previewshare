@@ -112,16 +112,17 @@ function setupWordPressMocks() {
 		children,
 		onClick,
 		disabled,
-		isBusy,
 		'aria-label': ariaLabel,
+		'aria-disabled': ariaDisabled,
 	} ) =>
 		createElement(
 			'button',
 			{
 				type: 'button',
 				onClick,
-				disabled: disabled || isBusy,
+				disabled,
 				'aria-label': ariaLabel,
+				'aria-disabled': ariaDisabled,
 			},
 			children
 		);
@@ -361,6 +362,154 @@ afterEach( () => {
 } );
 
 describe( 'PreviewShare responsive inventory', () => {
+	it( 'refreshes an already complete inventory on demand', async () => {
+		window.wp.element.useInsertionEffect = undefined;
+		const { initialSettings } = setupFetch();
+		const fallbackFetch = window.fetch;
+		let status = 'active';
+		window.fetch = jest.fn( ( url, options ) => {
+			if ( String( url ).includes( '/tokens?' ) ) {
+				return Promise.resolve(
+					response( {
+						items: [
+							{
+								id: 'one',
+								post_type: 'post',
+								post_title: 'Example',
+								status,
+							},
+						],
+						total: 1,
+						next_cursor: null,
+					} )
+				);
+			}
+			return fallbackFetch( url, options );
+		} );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		expect( document.body.textContent ).toContain( 'Active' );
+		status = 'revoked';
+		await act( async () => {
+			findButton( 'Refresh preview links' ).click();
+			await flushPromises();
+		} );
+		expect( document.body.textContent ).toContain( 'Revoked' );
+	} );
+
+	it( 'keeps focus on refresh and prevents duplicate requests while loading', async () => {
+		window.wp.element.useInsertionEffect = undefined;
+		const { initialSettings } = setupFetch();
+		const fallbackFetch = window.fetch;
+		const pending = deferred();
+		let requests = 0;
+		window.fetch = jest.fn( ( url, options ) => {
+			if ( String( url ).includes( '/tokens?' ) ) {
+				requests++;
+				return 1 === requests
+					? Promise.resolve(
+							response( {
+								items: [],
+								total: 0,
+								next_cursor: null,
+							} )
+					  )
+					: pending.promise;
+			}
+			return fallbackFetch( url, options );
+		} );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		const button = findButton( 'Refresh preview links' );
+		button.focus();
+		await act( async () => {
+			button.click();
+			button.click();
+			await flushPromises();
+		} );
+		expect( requests ).toBe( 2 );
+		expect( document.activeElement ).toBe( button );
+		expect( button.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
+		await act( async () => {
+			pending.resolve(
+				response( { items: [], total: 0, next_cursor: null } )
+			);
+			await flushPromises();
+		} );
+		expect( document.activeElement ).toBe( button );
+		expect( button.getAttribute( 'aria-disabled' ) ).toBe( 'false' );
+	} );
+
+	it( 'keeps a stale warning and refresh action after repeated inventory conflicts', async () => {
+		window.wp.element.useInsertionEffect = undefined;
+		const { initialSettings } = setupFetch();
+		const fallbackFetch = window.fetch;
+		let conflict = false;
+		let conflictOnContinuation = true;
+		window.fetch = jest.fn( ( url, options ) => {
+			if ( String( url ).includes( '/tokens?' ) ) {
+				const cursor = new URL(
+					url,
+					'https://example.test'
+				).searchParams.get( 'cursor' );
+				if ( cursor !== 'start' && conflictOnContinuation ) {
+					conflict = true;
+				}
+				if ( conflict ) {
+					return Promise.resolve(
+						response(
+							{ code: 'previewshare_inventory_changed' },
+							false
+						)
+					);
+				}
+				return Promise.resolve(
+					response( {
+						items: Array.from( { length: 100 }, ( _, index ) => ( {
+							id: 'link-' + index,
+							post_type: 'post',
+							post_title: 'Post ' + index,
+							status: 'active',
+						} ) ),
+						total: 150,
+						next_cursor: 'cursor-one',
+					} )
+				);
+			}
+			return fallbackFetch( url, options );
+		} );
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Preview links' ).click();
+			await flushPromises();
+		} );
+		await act( async () => {
+			findButton( 'Load more links' ).click();
+			await flushPromises();
+			await flushPromises();
+		} );
+		expect( document.body.textContent ).toContain(
+			'The loaded list may be out of date'
+		);
+		expect( findButton( 'Load more links' ) ).toBeUndefined();
+		conflict = false;
+		conflictOnContinuation = false;
+		await act( async () => {
+			findButton( 'Refresh preview links' ).click();
+			await flushPromises();
+		} );
+		expect( document.body.textContent ).not.toContain(
+			'The loaded list may be out of date'
+		);
+		expect( findButton( 'Load more links' ) ).toBeDefined();
+	} );
+
 	it( 'restarts when the server detects an equal-total inventory replacement', async () => {
 		window.wp.element.useInsertionEffect = undefined;
 		const { initialSettings } = setupFetch();
@@ -2206,6 +2355,25 @@ describe( 'PreviewShare settings autosave', () => {
 } );
 
 describe( 'PreviewShare settings navigation', () => {
+	it( 'keeps the installed release open and older changelog entries available', async () => {
+		const { initialSettings } = setupFetch();
+		await mountSettingsApp( initialSettings );
+		await act( async () => {
+			findButton( 'Changelog' ).click();
+			await flushPromises();
+		} );
+		const entries = Array.from(
+			document.querySelectorAll( '.previewshare-changelog-entry' )
+		);
+		expect( entries ).toHaveLength( 4 );
+		expect( entries[ 0 ].open ).toBe( true );
+		expect( entries[ 0 ].textContent ).toContain( 'v1.1.0' );
+		expect( entries[ 0 ].textContent ).toContain( 'Latest' );
+		expect( entries[ 0 ].textContent ).toContain( 'Installed' );
+		expect( entries[ 1 ].open ).toBe( false );
+		expect( entries[ 1 ].textContent ).toContain( 'v1.0.2' );
+	} );
+
 	it( 'keeps diagnostics logging in Overview without a diagnostics tab', async () => {
 		const { initialSettings } = setupFetch();
 		await mountSettingsApp( initialSettings );

@@ -57,6 +57,23 @@ const config = {
 			// Bundle them so the settings app supports the declared minimum version.
 			useDefaults: false,
 			requestToExternal( request ) {
+				// DataViews' ESM build uses newer package internals. Bundle those
+				// dependencies in its lazy chunk while retaining stable core globals.
+				if (
+					[
+						'@wordpress/private-apis',
+						'@wordpress/theme',
+						'@wordpress/components',
+						'@wordpress/compose',
+						'@wordpress/a11y',
+						'@wordpress/deprecated',
+						'@wordpress/keycodes',
+						'@wordpress/is-shallow-equal',
+						'@wordpress/warning',
+					].includes( request )
+				) {
+					return undefined;
+				}
 				if (
 					request === 'react/jsx-runtime' ||
 					request === 'react/jsx-dev-runtime' ||

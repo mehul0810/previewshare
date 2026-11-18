@@ -110,7 +110,12 @@ describe( 'release ZIP validation', () => {
 		}
 	} );
 
-	test.each( [ 'react-jsx-runtime', 'wp-primitives' ] )(
+	test.each( [
+		'react-jsx-runtime',
+		'wp-primitives',
+		'wp-private-apis',
+		'wp-theme',
+	] )(
 		'rejects script dependency %s missing from WordPress 5.8',
 		( dependency ) => {
 			const { tempDirectory, zipPath } = writeFixtureZip(

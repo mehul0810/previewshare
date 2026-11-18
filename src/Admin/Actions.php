@@ -99,7 +99,7 @@ class Actions {
 			'assets/dist/js/previewshare-admin.min.asset.php',
 			[ 'wp-api-fetch', 'wp-edit-post' ]
 		);
-		$dependencies = array_values( array_unique( array_merge( $asset['dependencies'], [ 'wp-edit-post' ] ) ) );
+		$dependencies = array_values( array_unique( array_merge( $asset['dependencies'], [ 'wp-edit-post', 'wp-components' ] ) ) );
 
 		wp_enqueue_script(
 			'previewshare-editor',

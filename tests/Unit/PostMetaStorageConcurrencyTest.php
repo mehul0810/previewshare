@@ -34,6 +34,7 @@ class PostMetaStorageConcurrencyTest extends TestCase {
 		Functions\when( 'get_current_user_id' )->justReturn( 7 );
 		Functions\when( 'get_object_subtype' )->justReturn( 'post' );
 		Functions\when( 'sanitize_meta' )->returnArg( 2 );
+		Functions\when( 'wp_unslash' )->returnArg( 1 );
 		Functions\when( 'get_option' )->alias( function( string $key, $default = false ) { return 'previewshare_enable_caching' === $key ? $this->caching_enabled : $default; } );
 		Functions\when( 'get_post_meta' )->alias( function( int $post_id, string $key = '', bool $single = false ) {
 			if ( self::POST_ID !== $post_id ) { return ''; }
@@ -328,6 +329,96 @@ class PostMetaStorageConcurrencyTest extends TestCase {
 		$this->assertSame( 2, $this->storage->get_link_by_token( 'shared' )['link']['view_count'] );
 	}
 
+	public function test_concurrent_view_preserves_policy_edit_revision(): void {
+		$hash = $this->hash( 'shared' );
+		$key  = '_previewshare_token:' . $hash;
+		$this->assertTrue( $this->storage->store_token( self::POST_ID, 'shared', 0 ) );
+		$original_revision = $this->meta[ $key ]['inventory_revision'];
+
+		$this->before_cas = function () use ( $hash ): void {
+			$this->before_cas = null;
+			$this->assertTrue( $this->storage->set_review_policy_by_id( $hash, true, true ) );
+		};
+		$this->assertTrue( $this->storage->record_token_view( 'shared' ) );
+		$this->assertSame( 1, $this->meta[ $key ]['view_count'] );
+		$this->assertTrue( $this->meta[ $key ]['identity_required'] );
+		$updated_revision = $this->meta[ $key ]['inventory_revision'];
+		$this->assertNotSame( $original_revision, $updated_revision );
+
+		$this->assertTrue( $this->storage->set_review_policy_by_id( $hash, true, true ) );
+		$this->assertSame( $updated_revision, $this->meta[ $key ]['inventory_revision'] );
+		$this->assertTrue( $this->storage->set_review_policy_by_id( $hash, false, true ) );
+		$this->assertSame( $original_revision, $this->meta[ $key ]['inventory_revision'] );
+		$this->assertArrayNotHasKey( 'inventory_revision', $this->meta['_previewshare_links'][ $hash ] );
+		$this->assertArrayNotHasKey( 'inventory_revision', $this->storage->get_link_by_token( 'shared' )['link'] );
+	}
+
+	public function test_reusing_an_existing_token_changes_the_stored_revision(): void {
+		$hash = $this->hash( 'shared' );
+		$key = '_previewshare_token:' . $hash;
+		$this->assertTrue( $this->storage->store_token( self::POST_ID, 'shared', 0, 'Initial' ) );
+		$this->assertTrue( $this->storage->store_token( self::POST_ID, 'sibling', 0, 'Sibling' ) );
+		$this->meta['_previewshare_token_rev:' . $hash] = '1';
+		$first_revision = $this->meta[ $key ]['inventory_revision'];
+
+		$this->assertTrue( $this->storage->store_token( self::POST_ID, 'shared', 2, 'Updated', true, true ) );
+		$this->assertSame( 'Updated', $this->meta[ $key ]['label'] );
+		$this->assertNotSame( $first_revision, $this->meta[ $key ]['inventory_revision'] );
+		$this->assertSame( 2, $this->storage->count_tokens() );
+		$this->assertSame( $hash, $this->meta['_previewshare_token_hash'] );
+		$this->assertSame( '1', $this->meta['_previewshare_token_rev:' . $hash] );
+		$this->assertArrayNotHasKey( 'inventory_revision', $this->meta['_previewshare_links'][ $hash ] );
+	}
+
+	public function test_reusing_a_revoked_token_never_reactivates_it(): void {
+		$this->assertTrue( $this->storage->store_token( self::POST_ID, 'shared', 0, 'Initial' ) );
+		$this->assertTrue( $this->storage->revoke_token( 'shared' ) );
+		$revoked = $this->meta;
+		$this->assertFalse( $this->storage->store_token( self::POST_ID, 'shared', 2, 'Unexpected' ) );
+		$this->assertSame( $revoked, $this->meta );
+		$this->assertNull( $this->storage->get_link_by_token( 'shared' ) );
+	}
+
+	public function test_failed_reuse_keeps_old_detail_lookup_and_pointer(): void {
+		$this->assertTrue( $this->storage->store_token( self::POST_ID, 'shared', 0, 'Initial' ) );
+		$this->assertTrue( $this->storage->store_token( self::POST_ID, 'sibling', 0, 'Sibling' ) );
+		$previous = $this->meta;
+		$GLOBALS['wpdb']->fail_cas = true;
+		$this->assertFalse( $this->storage->store_token( self::POST_ID, 'shared', 2, 'Unexpected' ) );
+		$this->assertSame( $previous, $this->meta );
+	}
+
+	public function test_reuse_rejects_metadata_filter_success_without_the_requested_write(): void {
+		$this->assertTrue( $this->storage->store_token( self::POST_ID, 'shared', 0, 'Initial' ) );
+		$this->assertTrue( $this->storage->store_token( self::POST_ID, 'sibling', 0, 'Sibling' ) );
+		$previous = $this->meta;
+		$detail_key = '_previewshare_token:' . $this->hash( 'shared' );
+		Functions\when( 'apply_filters' )->alias(
+			static fn( string $hook, $check, ...$args ) => 'update_post_metadata' === $hook && $detail_key === ( $args[1] ?? null ) ? true : $check
+		);
+
+		$this->assertFalse( $this->storage->store_token( self::POST_ID, 'shared', 2, 'Unexpected' ) );
+		$this->assertSame( $previous, $this->meta );
+	}
+
+	public function test_reuse_loses_to_concurrent_revocation_without_removing_either_lookup(): void {
+		$hash = $this->hash( 'shared' );
+		$this->assertTrue( $this->storage->store_token( self::POST_ID, 'shared', 0, 'Initial' ) );
+		$this->assertTrue( $this->storage->store_token( self::POST_ID, 'sibling', 0, 'Sibling' ) );
+		$this->before_cas = function (): void {
+			$this->before_cas = null;
+			$this->assertTrue( $this->storage->revoke_token( 'shared' ) );
+		};
+
+		$this->assertFalse( $this->storage->store_token( self::POST_ID, 'shared', 2, 'Unexpected' ) );
+		$this->assertNull( $this->storage->get_link_by_token( 'shared' ) );
+		$this->assertSame( 'Initial', $this->meta['_previewshare_token:' . $hash]['label'] );
+		$this->assertSame( 1, $this->meta['_previewshare_token:' . $hash]['revoked'] );
+		$this->assertSame( 1, $this->meta['_previewshare_token_rev:' . $hash] );
+		$this->assertSame( $this->hash( 'sibling' ), $this->meta['_previewshare_token_hash'] );
+		$this->assertNotNull( $this->storage->get_link_by_token( 'sibling' ) );
+	}
+
 	public function test_generation_with_stale_projection_does_not_restore_a_concurrently_revoked_detail(): void {
 		$this->assertTrue( $this->storage->store_token( self::POST_ID, 'old', 0 ) );
 		$this->before_update = function( string $key ): void {
@@ -382,6 +473,7 @@ class PostMetaStorageConcurrencyTest extends TestCase {
 /** In-memory database for existing-row CAS and detail inventory queries. */
 class StorageConcurrencyDatabase {
 	public $col_reads = 0;
+	public $fail_cas = false;
 	public $postmeta = 'wp_postmeta';
 	public $posts = 'wp_posts';
 	private $meta;
@@ -401,6 +493,9 @@ class StorageConcurrencyDatabase {
 		[ $sql, $args ] = unserialize( $prepared );
 		if ( str_contains( $sql, 'SET sharing.meta_value' ) ) {
 			return $this->disable_sharing( $sql, $args );
+		}
+		if ( $this->fail_cas ) {
+			return false;
 		}
 		if ( $this->before_cas ) { ( $this->before_cas )( $args ); }
 		[ $value, $post_id, $key, $previous ] = $args;

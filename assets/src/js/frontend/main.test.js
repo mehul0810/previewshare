@@ -7,6 +7,7 @@ const messages = {
 	sending: 'Sending',
 	retrying: 'Checking earlier response',
 	retryOriginal: 'Retry earlier response first',
+	retryButton: 'Retry earlier response',
 	failed: 'Failed',
 	stale: 'Stale',
 	duplicate: 'Already received',
@@ -156,6 +157,7 @@ test( 'definite validation errors keep input and permit a corrected new request'
 		response( 400, {
 			code: 'review_invalid_name',
 			message: 'Enter a valid name.',
+			data: { status: 400 },
 		} )
 	);
 	submit();
@@ -168,6 +170,77 @@ test( 'definite validation errors keep input and permit a corrected new request'
 	await flush();
 	expect( sent( 1 ).name ).toBe( 'Corrected' );
 	expect( sent( 1 ).request_id ).not.toBe( first.request_id );
+} );
+
+test( 'an unexpected success body leaves the form available to retry', async () => {
+	const comment = document.querySelector( '[name="comment"]' );
+	const button = document.querySelector( '[type="submit"]' );
+	comment.value = 'Keep this response';
+	window.fetch.mockResolvedValueOnce( response( 201, { received: false } ) );
+	submit();
+	await flush();
+
+	expect( comment.value ).toBe( 'Keep this response' );
+	expect( button.textContent ).toBe( messages.retryButton );
+	expect( button.formNoValidate ).toBe( true );
+	expect(
+		document.getElementById( 'previewshare-review-message' ).textContent
+	).not.toBe( messages.received );
+
+	window.fetch.mockResolvedValueOnce(
+		response( 409, { code: 'review_duplicate' } )
+	);
+	submit();
+	await flush();
+	expect( sent( 1 ) ).toEqual( sent( 0 ) );
+	expect( button.formNoValidate ).toBe( false );
+	expect( button.textContent ).toBe( 'Send' );
+} );
+
+test( 'validation after an uncertain write does not discard the original request', async () => {
+	const email = document.querySelector( '[name="email"]' );
+	window.fetch.mockRejectedValueOnce( new Error( 'Lost connection' ) );
+	submit();
+	await flush();
+	email.value = 'current edits';
+	window.fetch.mockResolvedValueOnce(
+		response( 400, {
+			code: 'review_identity_required',
+			message: 'Enter your identity.',
+			data: { status: 400 },
+		} )
+	);
+	submit();
+	await flush();
+	window.fetch.mockResolvedValueOnce(
+		response( 409, { code: 'review_duplicate' } )
+	);
+	submit();
+	await flush();
+	expect( sent( 1 ) ).toEqual( sent( 0 ) );
+	expect( sent( 2 ) ).toEqual( sent( 0 ) );
+	expect( email.value ).toBe( 'current edits' );
+} );
+
+test( 'the submit button keeps focus while duplicate activation is ignored', async () => {
+	let finish;
+	window.fetch.mockImplementationOnce(
+		() =>
+			new Promise( ( resolve ) => {
+				finish = resolve;
+			} )
+	);
+	const button = document.querySelector( '[type="submit"]' );
+	button.focus();
+	submit();
+	submit();
+	expect( window.fetch ).toHaveBeenCalledTimes( 1 );
+	expect( button.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
+	expect( document.activeElement ).toBe( button );
+	finish( response( 201, { received: true } ) );
+	await flush();
+	expect( button.hasAttribute( 'aria-disabled' ) ).toBe( false );
+	expect( document.activeElement ).toBe( button );
 } );
 
 test( 'an unchanged successful response clears the form and starts a new request', async () => {

@@ -43,6 +43,22 @@ class LinkStatusInventoryTest extends TestCase {
 		$result = LinkStatusInventory::fallback_if_needed( '_previewshare_token:', 'active', 10, 0, static function ( array $rows ): array { return $rows; } );
 		self::assertSame( 'previewshare_inventory_unavailable', $result->get_error_code() );
 	}
+
+	public function test_aborted_fallback_query_is_not_reported_as_an_empty_success(): void {
+		$db = $GLOBALS['wpdb'];
+		$db->unknown = 1;
+		$db->abort_fallback = true;
+		$db->last_result = [ (object) [ 'meta_id' => 500, 'post_id' => 1, 'meta_key' => '_previewshare_token:stale', 'meta_value' => '' ] ];
+		$result = LinkStatusInventory::fallback_if_needed( '_previewshare_token:', 'active', 10, 0, static function ( array $rows ): array { return $rows; } );
+		self::assertSame( 'previewshare_inventory_unavailable', $result->get_error_code() );
+	}
+
+	public function test_successful_empty_fallback_scan_remains_a_valid_empty_result(): void {
+		$db = $GLOBALS['wpdb'];
+		$db->unknown = 1;
+		$result = LinkStatusInventory::fallback_if_needed( '_previewshare_token:', 'active', 10, 0, static function ( array $rows ): array { return $rows; } );
+		self::assertSame( [ 'items' => [], 'total' => 0 ], $result );
+	}
 }
 
 class StatusInventoryFixtureDatabase {
@@ -53,14 +69,21 @@ class StatusInventoryFixtureDatabase {
 	public $rows = [];
 	public $batches = 0;
 	public $fail = false;
+	public $abort_fallback = false;
+	public $last_result = [];
 	public function esc_like( string $value ): string { return addcslashes( $value, '_%\\' ); }
 	public function prepare( string $sql, ...$args ): string { return serialize( [ $sql, $args ] ); }
-	public function get_var( string $query ) { return $this->unknown; }
-	public function get_results( string $query, string $output ): array {
-		if ( $this->fail ) { $this->last_error = 'query failed'; return []; }
+	public function query( string $query ) {
 		[ $sql, $args ] = unserialize( $query );
+		if ( false !== strpos( $sql, 'SELECT pm.meta_id FROM' ) ) {
+			$this->last_result = null === $this->unknown ? [] : [ (object) [ 'meta_id' => $this->unknown ] ];
+			return null === $this->unknown ? 0 : 1;
+		}
 		++$this->batches;
+		if ( $this->fail || $this->abort_fallback ) { return false; }
 		$rows = array_filter( $this->rows, static function ( array $row ) use ( $args ): bool { return $row['meta_id'] < $args[2]; } );
-		return array_slice( array_values( $rows ), 0, $args[3] );
+		$rows = array_slice( array_values( $rows ), 0, $args[3] );
+		$this->last_result = array_map( static fn( array $row ): object => (object) $row, $rows );
+		return count( $rows );
 	}
 }

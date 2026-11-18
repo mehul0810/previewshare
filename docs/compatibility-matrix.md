@@ -83,8 +83,41 @@ candidate outside approved proof channels.
 - The repository includes an owned `wp-env` and Playwright browser harness. Run
   it with `npm run test:e2e`; it supplies isolated smoke proof, while the site-
   level protocol above remains necessary for theme and integration coverage.
-- The administrative global link inventory uses page/total pagination. Large
-  inventories need a separately scoped cursor or data-access redesign.
+- The administrative link inventory loads in pages. Its continuation detects
+  additions, removals, and link-configuration edits made through PreviewShare.
+  It does not detect direct database or other metadata writes that bypass the
+  link revision, view-count updates, expiry caused by time passing, or changes
+  to related posts and reviews. Use **Refresh preview links** to reload current
+  data. The page/total API remains available for existing integrations.
+
+## Reviewer submission writes
+
+On supported transactional connections, new reviewer submissions save the
+private review, its metadata, and its request receipt together. An interrupted
+transaction can be retried with the same request ID. If the transaction already
+committed, the retry confirms the existing response.
+
+The transaction path supports standard WordPress using MySQL or MariaDB with
+`mysqlnd` and InnoDB for the posts, post metadata, and options tables. It also
+supports the official WordPress SQLite Database Integration drop-in when it
+can verify the on-disk database and rollback-capable journal. Unsupported
+database configurations use the existing WordPress save path. A connection
+failure or uncertain transaction does not switch to that path.
+
+Generic WordPress post and metadata save hooks do not run for the
+transactional write. Integrations that decide whether to accept a review can
+use `previewshare_review_submission_allowed`. Integrations that consume
+saved reviews can use `previewshare_review_response_accepted`, which runs
+after the commit is confirmed. This action is not replayed if a PHP worker
+stops after committing and before delivering it.
+
+The reviewer write owns a separate database connection. Transactions opened
+by other integrations on the regular WordPress connection do not wrap it.
+
+An older reservation may still belong to a worker running the old write path.
+Incomplete legacy reservations are not automatically reclaimed. The existing
+private post and metadata format, export and erasure tools, and retention rules
+apply to both write paths.
 
 ## Release Readiness
 

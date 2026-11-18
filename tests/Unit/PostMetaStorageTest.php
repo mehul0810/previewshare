@@ -56,6 +56,7 @@ class PostMetaStorageTest extends TestCase {
 		parent::setUp();
 		Functions\when( 'get_object_subtype' )->justReturn( 'post' );
 		Functions\when( 'sanitize_meta' )->returnArg( 2 );
+		Functions\when( 'wp_unslash' )->returnArg( 1 );
 	}
 
 	public function test_store_token_persists_hashed_link_and_cache_entry(): void {
@@ -400,6 +401,8 @@ class PostMetaStorageTest extends TestCase {
 		$this->assertSame( 1, $meta[ '_previewshare_token:' . $hashes[0] ]['revoked'] );
 		$this->assertSame( 1, $meta[ '_previewshare_token:' . $hashes[1] ]['revoked'] );
 		$this->assertSame( 1, $meta[ '_previewshare_token:' . $hashes[1] ]['view_count'] );
+		$this->assertMatchesRegularExpression( '/^[0-9]{32}$/D', $meta[ '_previewshare_token:' . $hashes[0] ]['inventory_revision'] );
+		$this->assertMatchesRegularExpression( '/^[0-9]{32}$/D', $meta[ '_previewshare_token:' . $hashes[1] ]['inventory_revision'] );
 
 		// Keep one active detail and force every bounded CAS attempt to lose.
 		$meta[ '_previewshare_token:' . $hashes[1] ]['revoked'] = 0;
@@ -727,12 +730,65 @@ class PostMetaStorageTest extends TestCase {
 		$this->assertSame( 'expired', $expired['items'][0]['status'] );
 		$this->assertSame( 1, $revoked['total'] );
 		$this->assertSame( 'revoked', $revoked['items'][0]['status'] );
-		$this->assertSame( 2, $fake_wpdb->get_results_calls );
-		$this->assertSame( 4, $fake_wpdb->get_var_calls );
+		$this->assertSame( 0, $fake_wpdb->get_results_calls );
+		$this->assertSame( 0, $fake_wpdb->get_var_calls );
 		$this->assertStringContainsString( 'INSTR(REVERSE(pm.meta_value)', $fake_wpdb->last_result_query );
 		$this->assertStringContainsString( 'SUBSTR(pm.meta_value', $fake_wpdb->last_result_query );
 		$this->assertStringContainsString( 'SUBSTR(pm.meta_value, 1 - INSTR(REVERSE(pm.meta_value)', $fake_wpdb->last_result_query );
 		$this->assertStringContainsString( 'created_by', $fake_wpdb->last_result_query );
+	}
+
+	public function test_status_filtered_inventory_returns_error_when_count_query_fails(): void {
+		global $wpdb;
+
+		Functions\when( '__' )->returnArg( 1 );
+		$previous_wpdb = $wpdb ?? null;
+		$fake_wpdb = new FakePreviewShareWpdb( [] );
+		$fake_wpdb->fail_count = true;
+		$wpdb = $fake_wpdb;
+		try {
+			$result = $this->make_storage()->list_tokens_by_status( 'active' );
+		} finally {
+			$wpdb = $previous_wpdb;
+		}
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'previewshare_inventory_unavailable', $result->get_error_code() );
+		$this->assertSame( 0, $fake_wpdb->fast_list_calls );
+	}
+
+	public function test_status_filtered_inventory_returns_error_when_list_query_fails(): void {
+		global $wpdb;
+
+		Functions\when( '__' )->returnArg( 1 );
+		$previous_wpdb = $wpdb ?? null;
+		$fake_wpdb = new FakePreviewShareWpdb( [] );
+		$fake_wpdb->fail_list = true;
+		$wpdb = $fake_wpdb;
+		try {
+			$result = $this->make_storage()->list_tokens_by_status( 'active' );
+		} finally {
+			$wpdb = $previous_wpdb;
+		}
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'previewshare_inventory_unavailable', $result->get_error_code() );
+		$this->assertSame( 1, $fake_wpdb->fast_list_calls );
+	}
+
+	public function test_status_filtered_inventory_keeps_valid_zero_and_out_of_range_results(): void {
+		global $wpdb;
+
+		Functions\when( '__' )->returnArg( 1 );
+		$previous_wpdb = $wpdb ?? null;
+		$wpdb = new FakePreviewShareWpdb( [] );
+		try {
+			$empty = $this->make_storage()->list_tokens_by_status( 'active', 1, 1 );
+			$wpdb = new FakePreviewShareWpdb( [ $this->make_link_row( 0 ) ] );
+			$out_of_range = $this->make_storage()->list_tokens_by_status( 'active', 1, 2 );
+		} finally {
+			$wpdb = $previous_wpdb;
+		}
+		$this->assertSame( [ 'items' => [], 'total' => 0 ], $empty );
+		$this->assertSame( [ 'items' => [], 'total' => 1 ], $out_of_range );
 	}
 
 	public function test_extend_token_by_id_adds_twenty_four_hours_and_preserves_the_link(): void {
@@ -768,7 +824,9 @@ class PostMetaStorageTest extends TestCase {
 		$this->assertSame( [ 'expires_at' => $expires + DAY_IN_SECONDS ], $result );
 		$this->assertSame( $expires + DAY_IN_SECONDS, $meta[ '_previewshare_token:' . $hash ]['expires_at'] );
 		$this->assertSame( 7, $meta[ '_previewshare_token:' . $hash ]['view_count'] );
+		$this->assertMatchesRegularExpression( '/^[0-9]{32}$/D', $meta[ '_previewshare_token:' . $hash ]['inventory_revision'] );
 		$this->assertSame( $expires + DAY_IN_SECONDS, $meta['_previewshare_links'][ $hash ]['expires_at'] );
+		$this->assertArrayNotHasKey( 'inventory_revision', $meta['_previewshare_links'][ $hash ] );
 		if ( null === $previous_db ) { unset( $GLOBALS['wpdb'] ); } else { $GLOBALS['wpdb'] = $previous_db; }
 	}
 
@@ -923,6 +981,21 @@ class PostMetaStorageTest extends TestCase {
 
 class FakePreviewShareWpdb {
 	/** @var string */
+	public $last_error = '';
+
+	/** @var list<object> */
+	public $last_result = [];
+
+	/** @var bool */
+	public $fail_count = false;
+
+	/** @var bool */
+	public $fail_list = false;
+
+	/** @var int */
+	public $fast_list_calls = 0;
+
+	/** @var string */
 	public $postmeta = 'wp_postmeta';
 
 	/** @var string */
@@ -969,6 +1042,37 @@ class FakePreviewShareWpdb {
 		return $query;
 	}
 
+	public function query( string $query ) {
+		$this->last_result_query = $query;
+		$this->last_var_query = '';
+		if ( false !== strpos( $query, 'SELECT pm.meta_id FROM' ) ) {
+			$this->last_result = [];
+			return 0;
+		}
+		if ( false !== strpos( $query, 'SELECT COUNT(*) AS total' ) ) {
+			if ( $this->fail_count ) {
+				$this->last_result = [ (object) [ 'total' => 97 ] ];
+				return false;
+			}
+			$this->last_result = [ (object) [ 'total' => count( $this->matching_rows() ) ] ];
+			return 1;
+		}
+		if ( false !== strpos( $query, 'SELECT pm.post_id, pm.meta_key, pm.meta_value' ) ) {
+			++$this->fast_list_calls;
+			if ( $this->fail_list ) {
+				$this->last_result = [ (object) [ 'post_id' => 999, 'meta_key' => '_previewshare_token:stale', 'meta_value' => '' ] ];
+				return false;
+			}
+			$pagination_index = count( $this->last_prepare_args ) - 2;
+			$per_page = (int) ( $this->last_prepare_args[ $pagination_index ] ?? 50 );
+			$offset = (int) ( $this->last_prepare_args[ $pagination_index + 1 ] ?? 0 );
+			$rows = array_slice( $this->matching_rows(), $offset, $per_page );
+			$this->last_result = array_map( static fn( array $row ): object => (object) $row, $rows );
+			return count( $rows );
+		}
+		return false;
+	}
+
 	/**
 	 * @return list<array<string,mixed>>
 	 */
@@ -979,6 +1083,7 @@ class FakePreviewShareWpdb {
 		$this->last_result_query = $query;
 		$this->last_var_query    = '';
 		$this->last_result_args = $this->last_prepare_args;
+		if ( $this->fail_list ) { $this->last_error = 'simulated list query failure'; return []; }
 
 		$pagination_index = false !== strpos( $query, '<= %d' ) || false !== strpos( $query, '> %d' ) ? 3 : 2;
 		$per_page         = isset( $this->last_prepare_args[ $pagination_index ] ) ? (int) $this->last_prepare_args[ $pagination_index ] : 50;
@@ -992,6 +1097,7 @@ class FakePreviewShareWpdb {
 		$this->last_var_query = $query;
 		$this->last_result_query = '';
 		$this->last_var_args = $this->last_prepare_args;
+		if ( $this->fail_count && ! str_contains( $query, 'NOT COALESCE' ) ) { $this->last_error = 'simulated count query failure'; return null; }
 		if ( str_contains( $query, 'NOT COALESCE' ) ) {
 			return null;
 		}
@@ -1014,7 +1120,7 @@ class FakePreviewShareWpdb {
 			)
 		);
 
-		if ( false === strpos( $this->last_result_query . $this->last_var_query, 'CAST(SUBSTR' ) ) {
+		if ( false === strpos( $this->last_result_query . $this->last_var_query, 'CAST(SUBSTRING' ) ) {
 			return $rows;
 		}
 

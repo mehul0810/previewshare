@@ -67,6 +67,7 @@ class PostMetaStorage {
 		$links                 = $this->get_links_for_post( $post_id );
 		$current_user          = get_current_user_id();
 		$previous_current_hash = get_post_meta( $post_id, self::CURRENT_HASH_META_KEY, true );
+		$already_exists        = isset( $links[ $hash ] );
 
 		$links[ $hash ] = $this->normalize_link_record(
 			[
@@ -84,6 +85,10 @@ class PostMetaStorage {
 			$hash
 		);
 
+		if ( $already_exists ) {
+			return $this->reissue_active_link( $post_id, $hash, $links[ $hash ], is_string( $previous_current_hash ) ? $previous_current_hash : '' );
+		}
+
 		$result = is_array( $stored_links )
 			? update_post_meta( $post_id, self::LINKS_META_KEY, $links, $stored_links )
 			: update_post_meta( $post_id, self::LINKS_META_KEY, $links );
@@ -94,7 +99,7 @@ class PostMetaStorage {
 
 		if (
 			! $this->update_required_post_meta( $post_id, self::CURRENT_HASH_META_KEY, $hash )
-			|| ! $this->update_required_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $links[ $hash ] )
+			|| ! $this->update_required_post_meta( $post_id, self::DETAIL_META_PREFIX . $hash, PostMetaRow::stamp_new_link( $post_id, $links[ $hash ] ) )
 			|| ! $this->update_required_post_meta( $post_id, self::REVERSE_META_PREFIX . $hash, 1 )
 		) {
 			$this->remove_aggregate_link( $post_id, $hash );
@@ -125,6 +130,57 @@ class PostMetaStorage {
 			wp_cache_set( $hash, (int) $post_id, self::CACHE_GROUP, HOUR_IN_SECONDS );
 		}
 
+		return true;
+	}
+
+	/**
+	 * Replace an existing active token without running fresh-token rollback.
+	 *
+	 * @param int    $post_id The post that owns the link.
+	 * @param string $hash The token hash.
+	 * @param array  $link New normalized values.
+	 * @param string $previous_current_hash The legacy pointer read before the write.
+	 * @phpstan-param LinkRecord $link
+	 * @return bool True when the active authoritative detail was replaced.
+	 */
+	private function reissue_active_link( int $post_id, string $hash, array $link, string $previous_current_hash ): bool {
+		$key      = self::DETAIL_META_PREFIX . $hash;
+		$previous = get_post_meta( $post_id, $key, true );
+		$lookup   = get_post_meta( $post_id, self::REVERSE_META_PREFIX . $hash, true );
+		if ( ! is_array( $previous ) || ! $this->is_link_active( $this->normalize_link_record( $previous, $hash ) ) || ! in_array( $lookup, [ '1', 1 ], true ) ) {
+			return false;
+		}
+
+		$value     = wp_unslash( PostMetaRow::stamp_new_link( $post_id, $link ) );
+		$committed = false;
+		$changed   = ExistingPostMetaUpdate::apply(
+			$post_id,
+			$key,
+			$value,
+			$previous,
+			static function ( $sanitized, array $ids ) use ( $post_id, $key, $previous, &$committed ): ?bool {
+				$result    = PostMetaRow::compare_and_swap( $post_id, $key, $previous, $sanitized, $ids );
+				$committed = true === $result;
+				return $result;
+			}
+		);
+		if ( null === $changed ) {
+			return false;
+		}
+		if ( ! $this->post_meta_value_matches( get_post_meta( $post_id, $key, true ), $value ) ) {
+			// A later writer may supersede a real commit. A filter alone cannot confirm a write.
+			return $committed;
+		}
+		// Compatibility metadata follows the committed detail. Leave a newer pointer alone.
+		if ( $previous_current_hash !== $hash ) {
+			if ( '' === $previous_current_hash ) {
+				add_post_meta( $post_id, self::CURRENT_HASH_META_KEY, $hash, true );
+			} else {
+				update_post_meta( $post_id, self::CURRENT_HASH_META_KEY, $hash, $previous_current_hash );
+			}
+		}
+		$this->update_existing_aggregate_link( $post_id, $hash, $link );
+		$this->delete_cache( $hash );
 		return true;
 	}
 
@@ -280,7 +336,10 @@ class PostMetaStorage {
 		$key = self::DETAIL_META_PREFIX . $hash;
 		for ( $attempt = 0; $attempt < 3; $attempt++ ) {
 			$stored_link = get_post_meta( $post_id, $key, true );
-			$link        = is_array( $stored_link ) ? $this->normalize_link_record( $stored_link, $hash ) : null;
+			if ( ! is_array( $stored_link ) ) {
+				return false;
+			}
+			$link = $this->normalize_link_record( $stored_link, $hash );
 			if ( ! $this->is_link_active( $link ) ) {
 				return false;
 			}
@@ -288,7 +347,7 @@ class PostMetaStorage {
 			$link['last_viewed_at'] = time();
 			++$link['view_count'];
 			// An identical replacement may have been written by another view in this second.
-			$changed = PostMetaRow::compare_and_swap( $post_id, $key, $stored_link, $link );
+			$changed = PostMetaRow::compare_and_swap( $post_id, $key, $stored_link, PostMetaRow::with_inventory_revision( $post_id, $stored_link, $link, false ) );
 			if ( false !== $changed ) {
 				return true === $changed;
 			}
@@ -405,9 +464,14 @@ class PostMetaStorage {
 				AND p.post_type <> %s
 				AND ($status_where)";
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- The fixed status clause is generated above; values are passed as placeholders.
-		$count_sql = $wpdb->prepare( "SELECT COUNT(*) $base", ...array_merge( [ $like, 'revision' ], $status_args ) );
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter -- SQL fragments are fixed local expressions and all variable values are passed through $wpdb->prepare; exact status count returns one scalar.
-		$total = max( 0, (int) $wpdb->get_var( $count_sql ) );
+		$count_sql = $wpdb->prepare( "SELECT COUNT(*) AS total $base", ...array_merge( [ $like, 'revision' ], $status_args ) );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter -- SQL fragments are fixed local expressions and all variable values are passed through $wpdb->prepare; the scalar query is checked before its result is read.
+		$count_result = $wpdb->query( $count_sql );
+		$count_rows   = $wpdb->last_result ?? null;
+		if ( false === $count_result || 1 !== $count_result || ! is_array( $count_rows ) || ! isset( $count_rows[0]->total ) ) {
+			return new \WP_Error( 'previewshare_inventory_unavailable', __( 'Preview link inventory is temporarily unavailable.', 'previewshare' ), [ 'status' => 500 ] );
+		}
+		$total = max( 0, (int) $count_rows[0]->total );
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare,WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- The fixed status clause is generated above; values are passed as placeholders.
 		$list_sql = $wpdb->prepare(
@@ -416,10 +480,14 @@ class PostMetaStorage {
 			...array_merge( [ $like, 'revision' ], $status_args, [ $per_page, $offset ] )
 		);
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared,PluginCheck.Security.DirectDB.UnescapedDBParameter -- SQL fragments are fixed local expressions and all variable values are passed through $wpdb->prepare; the page is bounded.
-		$rows = $wpdb->get_results( $list_sql, ARRAY_A );
+		$list_result = $wpdb->query( $list_sql );
+		$rows        = $wpdb->last_result ?? null;
+		if ( false === $list_result || ! is_array( $rows ) ) {
+			return new \WP_Error( 'previewshare_inventory_unavailable', __( 'Preview link inventory is temporarily unavailable.', 'previewshare' ), [ 'status' => 500 ] );
+		}
 
 		return [
-			'items' => is_array( $rows ) ? $this->format_link_rows( $rows ) : [],
+			'items' => $this->format_link_rows( array_map( static fn( $row ): array => (array) $row, $rows ) ),
 			'total' => $total,
 		];
 	}
@@ -624,12 +692,13 @@ class PostMetaStorage {
 		if ( ! is_array( $stored_detail ) ) {
 			return false;
 		}
-		$updated                      = $this->normalize_link_record( $stored_detail, $hash );
-		$updated['responses_enabled'] = $enabled;
-		$updated['identity_required'] = $enabled && $identity_required;
-		$detail                       = $updated;
+		$detail                      = $this->normalize_link_record( $stored_detail, $hash );
+		$required                    = $enabled && $identity_required;
+		$edited                      = $detail['responses_enabled'] !== $enabled || $detail['identity_required'] !== $required;
+		$detail['responses_enabled'] = $enabled;
+		$detail['identity_required'] = $required;
 
-		if ( ! $this->compare_and_swap_existing_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $stored_detail, $detail ) ) {
+		if ( ! $this->compare_and_swap_existing_meta( $post_id, self::DETAIL_META_PREFIX . $hash, $stored_detail, $detail, $edited ) ) {
 			return false;
 		}
 		$this->update_existing_aggregate_link( $post_id, $hash, $detail );
@@ -839,13 +908,15 @@ class PostMetaStorage {
 	 * Replace an existing metadata row only if its previous value still matches.
 	 * This intentionally avoids update_post_meta(), which inserts a missing row.
 	 *
-	 * @param int    $post_id Post ID.
-	 * @param string $key Meta key.
-	 * @param mixed  $previous Existing value.
-	 * @param mixed  $value Replacement value.
+	 * @param int                 $post_id Post ID.
+	 * @param string              $key Meta key.
+	 * @param array<string,mixed> $previous Existing raw link detail.
+	 * @param array<string,mixed> $value Normalized replacement link detail.
+	 * @param bool                $edited Whether the link's policy, expiry or revocation changed.
 	 * @return bool
 	 */
-	private function compare_and_swap_existing_meta( int $post_id, string $key, $previous, $value ): bool {
+	private function compare_and_swap_existing_meta( int $post_id, string $key, array $previous, array $value, bool $edited = true ): bool {
+		$value   = PostMetaRow::with_inventory_revision( $post_id, $previous, $value, $edited );
 		$changed = PostMetaRow::compare_and_swap( $post_id, $key, $previous, $value );
 		return true === $changed || ( false === $changed && $this->post_meta_value_matches( get_post_meta( $post_id, $key, true ), $value ) );
 	}

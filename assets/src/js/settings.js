@@ -2,10 +2,11 @@ import { formatSiteDate, formatPreviewLabel } from './date-utils';
 import { loadDataViews } from './load-dataviews';
 import { useScopedNotices, NoticeRegion } from './scoped-notices';
 import { fetchInventoryBatch } from './inventory-batch';
+import { Changelog } from './settings-changelog';
+import { createSettingsApi } from './settings-api';
 import removeAccents from 'remove-accents';
 import {
 	check,
-	chevronDown,
 	copy,
 	arrowRight,
 	help,
@@ -16,7 +17,6 @@ import {
 	trash,
 } from '@wordpress/icons';
 import {
-	buildRestRequestUrl,
 	fallbackSettings,
 	getRestBase,
 	mergeInventoryItems,
@@ -57,7 +57,12 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 	const DAY_IN_SECONDS = 24 * 60 * 60;
 	const localized = window.previewshare_settings || {};
 	const restBase = getRestBase( localized );
-	const nonce = localized.nonce || '';
+	const apiFetch = createSettingsApi( {
+		restBase,
+		nonce: localized.nonce || '',
+		origin: window.location.origin,
+		request: ( ...args ) => fetch( ...args ),
+	} );
 	const tabDefinitions = [
 		{
 			name: 'overview',
@@ -154,36 +159,6 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 			url: 'https://onecaptchawp.com/',
 		},
 	];
-
-	function apiFetch( path, options = {} ) {
-		const requestUrl = buildRestRequestUrl(
-			restBase,
-			path,
-			window.location.origin
-		);
-		const headers = Object.assign(
-			{
-				'Content-Type': 'application/json',
-				'X-WP-Nonce': nonce,
-			},
-			options.headers || {}
-		);
-		const requestOptions = Object.assign( { headers }, options );
-
-		if ( requestOptions.body && typeof requestOptions.body !== 'string' ) {
-			requestOptions.body = JSON.stringify( requestOptions.body );
-		}
-
-		return fetch( requestUrl, requestOptions ).then( ( response ) => {
-			if ( ! response.ok ) {
-				return response
-					.json()
-					.then( ( error ) => Promise.reject( error ) );
-			}
-
-			return response.json();
-		} );
-	}
 
 	function formatDate( timestamp ) {
 		return formatSiteDate( timestamp, localized );
@@ -600,6 +575,7 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 		const inventoryTotalRef = useRef( null );
 		const nextInventoryPageRef = useRef( 1 );
 		const nextInventoryCursorRef = useRef( 'start' );
+		const refreshInventoryPendingRef = useRef( false );
 		const mountedRef = useRef( false );
 		const inventoryStartedRef = useRef( false );
 		const tabListRef = useRef( null );
@@ -861,6 +837,9 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 
 				setLoadingTokens( false );
 				setLoadingMoreTokens( false );
+				if ( changed ) {
+					setInventoryStale( true );
+				}
 				notify(
 					'error',
 					__( 'Preview links could not be loaded.', 'previewshare' )
@@ -877,6 +856,22 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 				return;
 			}
 			fetchTokens( { refreshLoaded: true } );
+		}
+
+		async function refreshInventory() {
+			if (
+				refreshInventoryPendingRef.current ||
+				loadingTokens ||
+				loadingMoreTokens
+			) {
+				return;
+			}
+			refreshInventoryPendingRef.current = true;
+			try {
+				await fetchTokens( { resetView: true } );
+			} finally {
+				refreshInventoryPendingRef.current = false;
+			}
 		}
 
 		function scheduleAutoSave( nextSettings, revision ) {
@@ -1541,30 +1536,32 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 			}
 		}
 
-		function renderInventoryStale() {
-			return inventoryStale
+		function renderInventoryStale( allowRefresh = false ) {
+			return inventoryStale || allowRefresh
 				? el(
 						'div',
 						{
 							className: 'previewshare-inventory-continuation',
-							role: 'status',
+							role: inventoryStale ? 'status' : undefined,
 						},
-						el(
-							'p',
-							{ className: 'previewshare-inline-note' },
-							__(
-								'The loaded list may be out of date. Refresh it before loading older links.',
-								'previewshare'
-							)
-						),
+						inventoryStale
+							? el(
+									'p',
+									{ className: 'previewshare-inline-note' },
+									__(
+										'The loaded list may be out of date. Refresh it before loading older links.',
+										'previewshare'
+									)
+							  )
+							: null,
 						el(
 							Button,
 							{
 								variant: 'secondary',
-								isBusy: loadingTokens,
-								disabled: loadingTokens,
-								onClick: () =>
-									fetchTokens( { resetView: true } ),
+								isBusy: loadingTokens || loadingMoreTokens,
+								'aria-disabled':
+									loadingTokens || loadingMoreTokens,
+								onClick: refreshInventory,
 							},
 							__( 'Refresh preview links', 'previewshare' )
 						)
@@ -2612,7 +2609,7 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 						'previewshare'
 					)
 				),
-				renderInventoryStale(),
+				renderInventoryStale( true ),
 				! canRenderDataViews
 					? renderLegacyLinkTable( legacyTokens )
 					: el(
@@ -2871,224 +2868,6 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 			);
 		}
 
-		function renderChangelog() {
-			const entries = [
-				{
-					version: '1.1.0',
-					summary: __(
-						'Settings and reviewer feedback',
-						'previewshare'
-					),
-					items: [
-						__(
-							'Redesigned the settings workspace across all five tabs.',
-							'previewshare'
-						),
-						__(
-							'Polished the admin header, plugin links, Changelog, content-type controls, and preview inventory.',
-							'previewshare'
-						),
-						__(
-							'Respected WordPress date and time formats, site timezone, and locale in link history.',
-							'previewshare'
-						),
-						__(
-							'Improved preview-link inventory filters, descriptions, dates, and content IDs.',
-							'previewshare'
-						),
-						__(
-							'Added row actions to revoke access or revoke and delete a preview-link entry, with confirmation before deletion.',
-							'previewshare'
-						),
-						__(
-							'Added retries for concurrent revocation updates and clearer errors when preview links could not all be revoked.',
-							'previewshare'
-						),
-						__(
-							'Simplified content type selection with autosaving checkboxes and kept the selected settings tab after refresh.',
-							'previewshare'
-						),
-						__(
-							'Made release notes easier to scan with version summaries, latest and installed-version labels, and expandable older entries.',
-							'previewshare'
-						),
-						__(
-							'Added expiring-link status and a fixed 24-hour extension action.',
-							'previewshare'
-						),
-						__(
-							'Added verified plugin cards in More plugins.',
-							'previewshare'
-						),
-						__(
-							'Added optional reviewer responses with approval tracking, retries that preserve edits, multilingual feedback limits, and 90-day retention.',
-							'previewshare'
-						),
-						__(
-							'Improved preview-link security by keeping concurrently generated links visible and revocable and avoiding temporary storage of generated Classic Editor and post-list URLs.',
-							'previewshare'
-						),
-						__(
-							'Kept preview sharing controls available when Classic Editor is selected for an individual post.',
-							'previewshare'
-						),
-					],
-				},
-				{
-					version: '1.0.2',
-					summary: __( 'WordPress compatibility', 'previewshare' ),
-					items: [
-						__(
-							'Validated preview-link editor and admin workflows with WordPress 7.1.',
-							'previewshare'
-						),
-						__(
-							'Prepared editor controls for the WordPress 7.1 component API.',
-							'previewshare'
-						),
-					],
-				},
-				{
-					version: '1.0.1',
-					summary: __(
-						'Diagnostics and maintenance',
-						'previewshare'
-					),
-					items: [
-						__(
-							'Improved diagnostics, dependency audit coverage, and release automation.',
-							'previewshare'
-						),
-						__(
-							'Refined WordPress.org metadata and plugin discoverability copy.',
-							'previewshare'
-						),
-					],
-				},
-				{
-					version: '1.0.0',
-					summary: __( 'First release', 'previewshare' ),
-					items: [
-						__(
-							'Added secure preview links for draft, pending, and scheduled content.',
-							'previewshare'
-						),
-						__(
-							'Added editor controls, multiple links, views, noindex directives, and revocation.',
-							'previewshare'
-						),
-						__(
-							'Added global settings and hashed token storage in post meta.',
-							'previewshare'
-						),
-					],
-				},
-			];
-			const installedVersion = localized.version;
-			const hasInstalledEntry = entries.some(
-				( entry ) => entry.version === installedVersion
-			);
-
-			return el(
-				'div',
-				{ className: 'previewshare-tab-content' },
-				renderTabIntro(
-					__( 'Changelog', 'previewshare' ),
-					__(
-						'Updates, improvements, and fixes in each version.',
-						'previewshare'
-					)
-				),
-				el(
-					'div',
-					{ className: 'previewshare-changelog' },
-					entries.map( ( entry, index ) =>
-						el(
-							'details',
-							{
-								className: 'previewshare-changelog-entry',
-								key: entry.version,
-								open:
-									entry.version === installedVersion ||
-									( ! hasInstalledEntry && index === 0 ),
-							},
-							el(
-								'summary',
-								null,
-								el(
-									'h3',
-									null,
-									el(
-										'span',
-										{
-											className:
-												'previewshare-release-heading',
-										},
-										el(
-											'span',
-											{
-												className:
-													'previewshare-release-version',
-											},
-											'v' + entry.version,
-											index === 0
-												? el(
-														'span',
-														{
-															className:
-																'previewshare-release-latest',
-														},
-														__(
-															'Latest',
-															'previewshare'
-														)
-												  )
-												: null,
-											entry.version === installedVersion
-												? el(
-														'span',
-														{
-															className:
-																'previewshare-release-installed',
-														},
-														__(
-															'Installed',
-															'previewshare'
-														)
-												  )
-												: null
-										),
-										el(
-											'span',
-											{
-												className:
-													'previewshare-release-summary',
-											},
-											entry.summary
-										)
-									),
-									el( Icon, {
-										icon: chevronDown,
-										size: 20,
-										className:
-											'previewshare-release-chevron',
-										'aria-hidden': true,
-									} )
-								)
-							),
-							el(
-								'ul',
-								null,
-								entry.items.map( ( item ) =>
-									el( 'li', { key: item }, item )
-								)
-							)
-						)
-					)
-				)
-			);
-		}
-
 		function renderTabPanel() {
 			let content = renderOverview();
 
@@ -3097,7 +2876,17 @@ if ( window.previewshare_settings && window.previewshare_settings.asset_base ) {
 			} else if ( activeTab === 'content-types' ) {
 				content = renderContentTypes();
 			} else if ( activeTab === 'changelog' ) {
-				content = renderChangelog();
+				content = el( Changelog, {
+					wp,
+					installedVersion: localized.version,
+					intro: renderTabIntro(
+						__( 'Changelog', 'previewshare' ),
+						__(
+							'Updates, improvements, and fixes in each version.',
+							'previewshare'
+						)
+					),
+				} );
 			} else if ( activeTab === 'more-plugins' ) {
 				content = renderMorePlugins();
 			}

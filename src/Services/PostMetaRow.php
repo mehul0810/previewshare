@@ -17,11 +17,83 @@ if ( ! defined( 'ABSPATH' ) ) {
  * @internal
  */
 final class PostMetaRow {
-	private const STATUS_MARKERS = [ 's:10:"created_by";', 's:10:"expires_at";', 's:7:"revoked";' ];
-	private const RECORD_PATTERN = '^a:(8|10):[{]s:4:"hash";s:[0-9]+:"[^"]*";s:5:"label";s:[0-9]+:".*";'
-		. 's:10:"created_at";i:[0-9]+;s:10:"created_by";i:[0-9]+;s:10:"expires_at";(N|i:[0-9]+);'
-		. 's:7:"revoked";i:[01];s:14:"last_viewed_at";(N|i:[0-9]+);s:10:"view_count";i:[0-9]+;'
+	private const INVENTORY_REVISION    = 'inventory_revision';
+	private const REVISION_CHUNKS       = 4;
+	private const REVISION_CHUNK_DIGITS = 8;
+	private const REVISION_DIGITS       = self::REVISION_CHUNKS * self::REVISION_CHUNK_DIGITS;
+	private const REVISION_MARKER       = 's:18:"' . self::INVENTORY_REVISION . '";s:' . self::REVISION_DIGITS . ':"';
+	private const STATUS_MARKERS        = [ 's:10:"created_by";', 's:10:"expires_at";', 's:7:"revoked";' ];
+	private const RECORD_PATTERN        = '^(a:(8|10):[{]|a:11:[{]' . self::REVISION_MARKER . '[0-9]{' . self::REVISION_DIGITS . '}";)'
+		. 's:4:"hash";s:[0-9]+:"[^"]*";s:5:"label";s:[0-9]+:".*";s:10:"created_at";i:[0-9]+;s:10:"created_by";i:[0-9]+;'
+		. 's:10:"expires_at";(N|i:[0-9]+);s:7:"revoked";i:[01];s:14:"last_viewed_at";(N|i:[0-9]+);s:10:"view_count";i:[0-9]+;'
 		. '(s:17:"responses_enabled";b:[01];s:17:"identity_required";b:[01];)?[}]$';
+
+	/**
+	 * Stamp a link value sent through WordPress' metadata API.
+	 *
+	 * @param int                 $post_id ID of the post that owns the link.
+	 * @param array<string,mixed> $value Normalized detail passed to WordPress.
+	 * @return array<string,mixed>
+	 */
+	public static function stamp_new_link( int $post_id, array $value ): array {
+		// update_post_meta() unslashes before storage; leave its input unchanged.
+		return [ self::INVENTORY_REVISION => self::configuration_revision( $post_id, wp_unslash( $value ) ) ] + $value;
+	}
+
+	/**
+	 * Build the authoritative detail value for a link edit or view.
+	 *
+	 * @param int                 $post_id ID of the post that owns the link.
+	 * @param array<string,mixed> $previous Raw detail the writer read.
+	 * @param array<string,mixed> $value Normalized detail to write.
+	 * @param bool                $edited Whether the write creates a link or changes its configuration.
+	 * @return array<string,mixed>
+	 */
+	public static function with_inventory_revision( int $post_id, array $previous, array $value, bool $edited ): array {
+		$revision = $previous[ self::INVENTORY_REVISION ] ?? '';
+		$revision = is_string( $revision ) && preg_match( '/^[0-9]{' . self::REVISION_DIGITS . '}$/D', $revision ) ? $revision : '';
+		if ( $edited ) {
+			$revision = self::configuration_revision( $post_id, $value );
+		}
+		return '' === $revision ? $value : [ self::INVENTORY_REVISION => $revision ] + $value;
+	}
+
+	/**
+	 * Fingerprint the post and normalized link configuration without the view fields.
+	 *
+	 * @param int                 $post_id ID of the post that owns the link.
+	 * @param array<string,mixed> $configuration Detail value as it will be stored.
+	 * @return string
+	 */
+	private static function configuration_revision( int $post_id, array $configuration ): string {
+		unset( $configuration['last_viewed_at'], $configuration['view_count'] );
+		$digest   = hash( 'sha256', maybe_serialize( [ $post_id, $configuration ] ) );
+		$revision = '';
+		for ( $chunk = 0; $chunk < self::REVISION_CHUNKS; ++$chunk ) {
+			// Four separate 26-bit values preserve 104 bits and keep SQLite's integer sums in range.
+			$number    = (int) hexdec( substr( $digest, $chunk * 7, 7 ) ) & 0x3ffffff;
+			$revision .= sprintf( '%0' . self::REVISION_CHUNK_DIGITS . 'd', $number );
+		}
+		return $revision;
+	}
+
+	/**
+	 * Sum each revision chunk using the fixed-width ASCII prefix of the detail.
+	 * Older detail rows contribute zero, including after a telemetry-only update.
+	 *
+	 * @return array{string,list<string>} Fixed SQL aggregate with its marker arguments.
+	 */
+	public static function inventory_revision_sums(): array {
+		$digits        = self::REVISION_CHUNK_DIGITS;
+		$marker        = 'a:11:{' . self::REVISION_MARKER;
+		$marker_length = strlen( $marker );
+		$sums          = [];
+		for ( $chunk = 0; $chunk < self::REVISION_CHUNKS; ++$chunk ) {
+			$offset = $marker_length + 1 + ( $chunk * $digits );
+			$sums[] = "COALESCE(SUM(CASE WHEN SUBSTRING(pm.meta_value, 1, $marker_length) = %s THEN CAST(SUBSTRING(pm.meta_value, $offset, $digits) AS UNSIGNED) ELSE 0 END), 0)";
+		}
+		return [ 'CONCAT(' . implode( ", ':', ", $sums ) . ')', array_fill( 0, self::REVISION_CHUNKS, $marker ) ];
+	}
 
 	/**
 	 * Disable sharing only if no active detail row exists at the time of the write.

@@ -302,7 +302,7 @@ msgid "Sending your response…"
 msgstr ""
 
 #: src/Includes/ReviewForm.php:66
-msgid "Your response could not be sent. Please try again."
+msgid "We could not confirm whether your response was saved."
 msgstr ""
 
 #: src/Includes/ReviewForm.php:143
@@ -311,6 +311,10 @@ msgstr ""
 
 #: src/Includes/ReviewForm.php:144
 msgid "Try again to check the earlier response before sending your edits."
+msgstr ""
+
+#: src/Includes/ReviewForm.php:145
+msgid "Retry earlier response"
 msgstr ""
 
 #: src/Includes/ReviewForm.php:145

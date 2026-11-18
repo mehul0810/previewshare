@@ -40,8 +40,8 @@ final class LinkStatusInventory {
 		);
 		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared -- Check for incompatible layouts before using SQL's serialized-field shortcut.
-		$unknown = $wpdb->get_var( $sql );
-		if ( null === $unknown && empty( $wpdb->last_error ) ) {
+		$probe_result = $wpdb->query( $sql );
+		if ( 0 === $probe_result ) {
 			return null;
 		}
 
@@ -49,22 +49,23 @@ final class LinkStatusInventory {
 		$total  = 0;
 		$before = PHP_INT_MAX;
 		do {
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Keyset batches bound memory while PHP applies the authoritative status logic.
-			$rows = $wpdb->get_results(
-				$wpdb->prepare(
-					"SELECT pm.meta_id, pm.post_id, pm.meta_key, pm.meta_value FROM {$wpdb->postmeta} pm
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Keyset batches bound memory while PHP applies the authoritative status logic.
+			$batch_sql = $wpdb->prepare(
+				"SELECT pm.meta_id, pm.post_id, pm.meta_key, pm.meta_value FROM {$wpdb->postmeta} pm
 				INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
 				WHERE pm.meta_key LIKE %s AND p.post_type <> %s AND pm.meta_id < %d ORDER BY pm.meta_id DESC LIMIT %d",
-					$like,
-					'revision',
-					$before,
-					200
-				),
-				ARRAY_A
+				$like,
+				'revision',
+				$before,
+				200
 			);
-			if ( ! is_array( $rows ) || ! empty( $wpdb->last_error ) ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.NotPrepared -- Bounded fallback page is read only after query execution succeeds.
+			$batch_result = $wpdb->query( $batch_sql );
+			$object_rows  = $wpdb->last_result ?? null;
+			if ( false === $batch_result || ! is_array( $object_rows ) || count( $object_rows ) !== $batch_result ) {
 				return new \WP_Error( 'previewshare_inventory_unavailable', __( 'Preview links could not be loaded. Please try again.', 'previewshare' ), [ 'status' => 503 ] );
 			}
+			$rows = array_map( static fn( $row ): array => (array) $row, $object_rows );
 			if ( empty( $rows ) ) {
 				break;
 			}

@@ -65,7 +65,7 @@ class ReviewRateLimitWpdb {
 	public $recent_timestamps = [];
 
 	public function prepare( string $sql, ...$args ): ReviewRateLimitPreparedQuery {
-		return new ReviewRateLimitPreparedQuery( $sql, $args );
+		return new ReviewRateLimitPreparedQuery( $sql, is_array( $args[0] ) ? $args[0] : $args );
 	}
 
 	public function esc_like( string $text ): string {
@@ -115,9 +115,6 @@ class ReviewRateLimitWpdb {
 				return false;
 			}
 			list( $value, $name, $expected ) = $query->args;
-			if ( 0 === strpos( $name, 'previewshare_review_request_' ) ) {
-				$expected = '0';
-			}
 			if ( $this->update_conflicts > 0 ) {
 				--$this->update_conflicts;
 				$entries               = json_decode( substr( $expected, 11 ), true );
@@ -218,6 +215,7 @@ class ReviewControllerTest extends TestCase {
 		);
 		Functions\when( 'add_action' )->justReturn( null );
 		Functions\when( 'wp_cache_delete' )->justReturn( true );
+		Functions\when( 'wp_cache_get' )->justReturn( false );
 		Functions\when( 'get_transient' )->justReturn( 0 );
 		Functions\when( 'set_transient' )->justReturn( true );
 		Functions\when( 'wp_unslash' )->returnArg( 1 );

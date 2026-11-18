@@ -9,6 +9,7 @@ namespace PreviewShare\Tests\Unit;
 
 use Brain\Monkey\Functions;
 use PreviewShare\Services\ReviewResponseService;
+use PreviewShare\Services\ReviewSubmissionStore;
 use WP_Error;
 
 class ReviewResponseServiceTest extends TestCase {
@@ -30,19 +31,24 @@ class ReviewResponseServiceTest extends TestCase {
 			public $release_fails = false;
 			public $review_exists = true;
 			public $parent_exists = true;
+			public $review_metadata_complete = true;
 			public $insert_id = 1;
 			public $marker_row_id = 1;
 			public $orphaned_metadata = [];
 			public $fail_orphan_metadata = false;
 			public $queued_metadata = [];
 			public $restore_during_cleanup = false;
+			public $fail_transition_to = null;
+			public $lose_claim = false;
+			public $show_marker = false;
 			private $reservation;
+			private $option_name;
 			private $failure;
 			public function __construct( &$reservation, &$failure ) {
 				$this->reservation = &$reservation;
 				$this->failure = &$failure;
 			}
-			public function prepare( string $sql, ...$args ): array { return [ $sql, $args ]; }
+			public function prepare( string $sql, ...$args ): array { return [ $sql, is_array( $args[0] ) ? $args[0] : $args ]; }
 
 			public function query( array $prepared ) {
 				[ $sql, $args ] = $prepared;
@@ -54,7 +60,7 @@ class ReviewResponseServiceTest extends TestCase {
 						$this->restore_during_cleanup = false;
 					}
 					if ( $this->review_exists ) { return 0; }
-					foreach ( array_slice( $args[0], 1, -1 ) as $key ) {
+					foreach ( array_slice( $args, 1, -1 ) as $key ) {
 						unset( $this->orphaned_metadata[ $key ] );
 					}
 					return 1;
@@ -62,39 +68,56 @@ class ReviewResponseServiceTest extends TestCase {
 				if ( 0 === strpos( $sql, 'DELETE' ) ) {
 					\PHPUnit\Framework\Assert::assertStringContainsString( 'option_id = %d', $sql );
 					\PHPUnit\Framework\Assert::assertStringContainsString( 'OR NOT EXISTS', $sql );
-					if ( $this->marker_row_id !== $args[0] || ( 0 !== $args[2] && $this->review_exists ) ) { return 0; }
-					\PHPUnit\Framework\Assert::assertStringContainsString( "option_value = '0'", $sql );
+					if ( $this->marker_row_id !== $args[0] || ( 0 !== $args[4] && $this->review_exists ) ) { return 0; }
+					\PHPUnit\Framework\Assert::assertStringContainsString( "option_value IN ('0', %s, %s)", $sql );
 					if ( $this->release_fails ) { return false; }
-					if ( '0' !== (string) $this->reservation ) { return 0; }
+					if ( ! in_array( (string) $this->reservation, [ '0', $args[2], $args[3] ], true ) ) { return 0; }
 					$this->reservation = null;
 					return 1;
 				}
 				if ( 0 === strpos( $sql, 'UPDATE' ) ) {
-					\PHPUnit\Framework\Assert::assertStringContainsString( "option_value = '0' AND EXISTS", $sql );
+					if ( 4 === count( $args ) ) {
+						\PHPUnit\Framework\Assert::assertStringContainsString( 'option_value = %s AND option_id = %d', $sql );
+						if ( $args[0] === $this->fail_transition_to ) { return false; }
+						if ( $this->lose_claim && 'ready' === $args[2] ) {
+							$this->reservation = '0';
+						}
+						if ( $this->marker_row_id !== $args[3] || $args[2] !== (string) $this->reservation ) { return 0; }
+						$this->reservation = $args[0];
+						return 1;
+					}
+					\PHPUnit\Framework\Assert::assertStringContainsString( 'option_value = %s AND (%d = 0 OR option_id = %d) AND EXISTS', $sql );
 					if ( $this->commit_fails ) { return false; }
 					\PHPUnit\Framework\Assert::assertStringContainsString( 'owners.ID = %d', $sql );
-					if ( ! $this->review_exists || ( 0 !== end( $args ) && ! $this->parent_exists ) || '0' !== (string) $this->reservation ) { return 0; }
+					if ( ! $this->review_exists || ( 0 !== $args[10] && ( ! $this->parent_exists || ! $this->review_metadata_complete ) ) || $args[2] !== (string) $this->reservation || ( $args[3] && $this->marker_row_id !== $args[3] ) ) { return 0; }
 					$this->reservation = $args[0];
 					return 1;
 				}
 				if ( $this->failure ) { return false; }
 				if ( null !== $this->reservation ) { return 0; }
-				$this->reservation = 0;
+				$this->option_name = $args[0];
+				$this->reservation = $args[1];
 				return 1;
 			}
 			public function get_var( array $prepared ) {
 				[ $sql, $args ] = $prepared;
+				if ( 0 === strpos( $sql, 'SELECT option_id FROM' ) ) {
+					return $args[1] === (string) $this->reservation ? (string) $this->marker_row_id : null;
+				}
 				if ( 0 === strpos( $sql, 'SELECT ID FROM' ) ) {
 					$exists = 42 === $args[0] ? $this->parent_exists : $this->review_exists;
 					return $exists ? (string) $args[0] : null;
 				}
-				if ( 0 === strpos( $sql, 'SELECT reviews.ID' ) && ( ! $this->review_exists || ( 0 !== end( $args ) && ! $this->parent_exists ) ) ) { return null; }
+				if ( false !== strpos( $sql, 'SELECT option_value FROM wp_options WHERE option_name = %s AND option_value = %s AND EXISTS' ) && ( ! $this->review_exists || ( 0 !== $args[7] && ( ! $this->parent_exists || ! $this->review_metadata_complete ) ) ) ) { return null; }
 				return $this->reservation;
 			}
 			public function esc_like( string $value ): string { return addcslashes( $value, '_%' ); }
 			public function get_col( array $prepared ): array { return []; }
 			public function get_results( array $prepared, string $format ): array {
 				$rows = [];
+				if ( $this->show_marker && null !== $this->reservation ) {
+					$rows[] = [ 'option_id' => $this->marker_row_id, 'option_name' => $this->option_name, 'option_value' => $this->reservation, 'existing_id' => null ];
+				}
 				foreach ( $this->queued_metadata as $name => $value ) {
 					$rows[] = [ 'option_name' => $name, 'option_value' => $value, 'existing_id' => null ];
 				}
@@ -102,6 +125,7 @@ class ReviewResponseServiceTest extends TestCase {
 			}
 		};
 		Functions\when( 'wp_cache_delete' )->justReturn( true );
+		Functions\when( 'wp_cache_get' )->justReturn( false );
 		Functions\when( 'get_posts' )->justReturn( [] );
 		Functions\when( '__' )->returnArg( 1 );
 		Functions\when( 'is_wp_error' )->alias(
@@ -153,7 +177,7 @@ class ReviewResponseServiceTest extends TestCase {
 		Functions\expect( 'wp_insert_post' )->once()->andReturnUsing( function () use ( $service ): int {
 			$retry = $service->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
 			self::assertSame( 'review_unconfirmed', $retry->get_error_code() );
-			self::assertSame( 0, $this->reservation );
+			self::assertSame( '0', $this->reservation );
 			return 77;
 		} );
 		Functions\expect( 'add_post_meta' )->times( 6 )->andReturn( true );
@@ -161,6 +185,84 @@ class ReviewResponseServiceTest extends TestCase {
 
 		self::assertSame( 77, $service->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' ) );
 		self::assertSame( '77', $this->reservation );
+	}
+
+	public function test_retry_claims_prepared_marker_after_failed_claim_and_invalidates_cached_options(): void {
+		$database = $GLOBALS['wpdb'];
+		$database->fail_transition_to = '0';
+		$cache_deletions = [];
+		Functions\when( 'wp_cache_delete' )->alias( static function ( $key, $group ) use ( &$cache_deletions ): bool {
+			$cache_deletions[] = [ $key, $group ];
+			return true;
+		} );
+		Functions\expect( 'current_time' )->once()->andReturn( '2026-09-25 18:00:00' );
+		Functions\expect( 'get_date_from_gmt' )->once()->andReturn( '2026-09-25 23:30:00' );
+		Functions\expect( 'wp_insert_post' )->once()->andReturn( 77 );
+		Functions\expect( 'add_post_meta' )->times( 6 )->andReturn( true );
+		Functions\expect( 'do_action' )->once();
+
+		$service = new ReviewResponseService();
+		$failed = $service->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
+		self::assertSame( 'review_unconfirmed', $failed->get_error_code() );
+		self::assertSame( 'ready', $this->reservation );
+		self::assertSame( [ [ ReviewSubmissionStore::PREFIX . 'request', 'options' ], [ 'notoptions', 'options' ] ], $cache_deletions );
+
+		$database->fail_transition_to = null;
+		self::assertSame( 77, $service->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' ) );
+		self::assertSame( '77', $this->reservation );
+		self::assertCount( 8, $cache_deletions );
+	}
+
+	public function test_lost_ready_claim_never_starts_a_second_writer(): void {
+		$GLOBALS['wpdb']->lose_claim = true;
+		Functions\expect( 'wp_insert_post' )->never();
+		Functions\expect( 'add_post_meta' )->never();
+		Functions\expect( 'do_action' )->never();
+
+		$result = ( new ReviewResponseService() )->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
+		self::assertSame( 'review_unconfirmed', $result->get_error_code() );
+		self::assertSame( '0', $this->reservation );
+	}
+
+	public function test_untracked_writer_rolls_back_without_writing_metadata(): void {
+		$database = $GLOBALS['wpdb'];
+		$database->fail_transition_to = 'pending:77';
+		Functions\expect( 'current_time' )->once()->andReturn( '2026-09-25 18:00:00' );
+		Functions\expect( 'get_date_from_gmt' )->once()->andReturn( '2026-09-25 23:30:00' );
+		Functions\expect( 'wp_insert_post' )->once()->andReturn( 77 );
+		Functions\expect( 'wp_delete_post' )->once()->with( 77, true )->andReturnUsing( static function () use ( $database ): bool {
+			$database->review_exists = false;
+			return true;
+		} );
+		Functions\expect( 'add_post_meta' )->never();
+		Functions\expect( 'do_action' )->never();
+
+		$result = ( new ReviewResponseService() )->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
+		self::assertSame( 'review_storage_failed', $result->get_error_code() );
+		self::assertNull( $this->reservation );
+	}
+
+	public function test_pending_marker_is_discoverable_after_crash_without_queued_job(): void {
+		$store = new ReviewSubmissionStore();
+		$marker = ReviewSubmissionStore::PREFIX . str_repeat( 'a', 64 );
+		$database = $GLOBALS['wpdb'];
+		$database->show_marker = true;
+		Functions\when( 'get_option' )->returnArg( 2 );
+		Functions\expect( 'add_option' )->never();
+		$reservation_id = $store->reserve( $marker );
+		self::assertTrue( $store->track_review( $marker, $reservation_id, 77 ) );
+		$database->review_exists = false;
+		$database->orphaned_metadata = [ '_previewshare_reviewer_email' => 'synthetic@example.test', 'other_metadata' => 'retain' ];
+
+		$database->fail_orphan_metadata = true;
+		self::assertNull( $store->purge_orphans( 10, 10 ) );
+		self::assertArrayHasKey( '_previewshare_reviewer_email', $database->orphaned_metadata );
+		$database->fail_orphan_metadata = false;
+		self::assertFalse( $store->purge_orphans( 10, 10 ) );
+		self::assertSame( [ 'other_metadata' => 'retain' ], $database->orphaned_metadata );
+		self::assertSame( 'pending:77', $this->reservation );
+		self::assertSame( [], $database->queued_metadata );
+		self::assertSame( 0, $store->reserve( $marker ) );
 	}
 
 	public function test_retry_repairs_a_failed_marker_commit_only_for_a_complete_matching_review(): void {
@@ -172,13 +274,7 @@ class ReviewResponseServiceTest extends TestCase {
 		Functions\expect( 'wp_insert_post' )->once()->andReturn( 77 );
 		Functions\expect( 'add_post_meta' )->times( 6 )->andReturn( true );
 		Functions\expect( 'do_action' )->never();
-		Functions\when( 'get_posts' )->alias( static function ( array $args ): array {
-			self::assertSame( 42, $args['post_parent'] );
-			self::assertSame( 2, $args['posts_per_page'] );
-			self::assertFalse( $args['cache_results'] );
-			self::assertSame( 'previewshare_review_request_request', $args['meta_value'] );
-			return [ 77 ];
-		} );
+		Functions\expect( 'get_posts' )->never();
 		Functions\when( 'get_post' )->justReturn( new \WP_Post( [ 'ID' => 77, 'post_type' => 'previewshare_review', 'post_status' => 'private', 'post_parent' => 42 ] ) );
 		Functions\when( 'get_post_meta' )->alias( static function ( int $id, string $key ): string {
 			return [ '_previewshare_link_hash' => 'link', '_previewshare_submission_option' => 'previewshare_review_request_request', '_previewshare_content_hash' => str_repeat( 'a', 64 ), '_previewshare_response_type' => 'approve' ][ $key ] ?? '';
@@ -187,12 +283,12 @@ class ReviewResponseServiceTest extends TestCase {
 
 		$failed = $service->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
 		self::assertSame( 'review_unconfirmed', $failed->get_error_code() );
-		self::assertSame( 0, $this->reservation );
+		self::assertSame( 'pending:77', $this->reservation );
 
 		$GLOBALS['wpdb']->commit_fails = false;
 		$partial = $service->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
 		self::assertSame( 'review_unconfirmed', $partial->get_error_code() );
-		self::assertSame( 0, $this->reservation );
+		self::assertSame( 'pending:77', $this->reservation );
 
 		$complete = true;
 		$recovered = $service->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
@@ -204,10 +300,11 @@ class ReviewResponseServiceTest extends TestCase {
 		Functions\expect( 'current_time' )->once()->andReturn( '2026-09-25 18:00:00' );
 		Functions\expect( 'get_date_from_gmt' )->once()->andReturn( '2026-09-25 23:30:00' );
 		Functions\expect( 'wp_insert_post' )->once()->andReturn( 77 );
-		Functions\expect( 'add_post_meta' )->times( 6 )->andReturnUsing( static function ( int $id, string $key ): bool {
+		Functions\expect( 'add_post_meta' )->times( 6 )->andReturnUsing( function ( int $id, string $key ): bool {
 			if ( '_previewshare_submission_option' === $key ) {
 				$GLOBALS['wpdb']->review_exists = false;
 				$GLOBALS['wpdb']->marker_row_id = 2;
+				$this->reservation = '0';
 			}
 			return true;
 		} );
@@ -215,7 +312,7 @@ class ReviewResponseServiceTest extends TestCase {
 
 		$result = ( new ReviewResponseService() )->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
 		self::assertSame( 'review_unconfirmed', $result->get_error_code() );
-		self::assertSame( 0, $this->reservation );
+		self::assertSame( '0', $this->reservation );
 	}
 
 	public function test_metadata_written_after_review_deletion_is_cleaned_without_releasing_a_replacement_marker(): void {
@@ -224,10 +321,11 @@ class ReviewResponseServiceTest extends TestCase {
 		Functions\expect( 'current_time' )->once()->andReturn( '2026-09-25 18:00:00' );
 		Functions\expect( 'get_date_from_gmt' )->once()->andReturn( '2026-09-25 23:30:00' );
 		Functions\expect( 'wp_insert_post' )->once()->andReturn( 77 );
-		Functions\expect( 'add_post_meta' )->times( 6 )->andReturnUsing( static function ( int $id, string $key, string $value ) use ( $database ): bool {
+		Functions\expect( 'add_post_meta' )->times( 6 )->andReturnUsing( function ( int $id, string $key, string $value ) use ( $database ): bool {
 			$database->parent_exists = false;
 			$database->review_exists = false;
 			$database->marker_row_id = 2;
+			$this->reservation = '0';
 			$database->orphaned_metadata[ $key ] = $value;
 			return true;
 		} );
@@ -237,7 +335,7 @@ class ReviewResponseServiceTest extends TestCase {
 		$result = ( new ReviewResponseService() )->create_response( 42, 'link', 'version', 'approve', 'Name', 'reviewer@example.test', '', 'request' );
 		self::assertSame( 'review_unconfirmed', $result->get_error_code() );
 		self::assertSame( [ 'unrelated_key' => 'retain' ], $database->orphaned_metadata );
-		self::assertSame( 0, $this->reservation );
+		self::assertSame( '0', $this->reservation );
 	}
 
 	/**
@@ -275,19 +373,20 @@ class ReviewResponseServiceTest extends TestCase {
 		self::assertSame( 'review_unconfirmed', $result->get_error_code() );
 		self::assertArrayHasKey( '_previewshare_reviewer_email', $database->orphaned_metadata );
 		self::assertArrayHasKey( $job, $database->queued_metadata );
-		self::assertSame( 0, $this->reservation );
+		self::assertSame( 'finished:77', $this->reservation );
 
 		$database->fail_orphan_metadata = false;
 		$database->review_exists = $restore_review;
 		$database->restore_during_cleanup = $restore_in_cleanup;
 		if ( $replace_marker ) {
 			$database->marker_row_id = 2;
+			$this->reservation = '0';
 		}
 		( new ReviewResponseService() )->purge_expired();
 
 		if ( $restore_in_cleanup ) {
 			self::assertArrayHasKey( $job, $database->queued_metadata );
-			self::assertSame( 0, $this->reservation );
+			self::assertSame( 'finished:77', $this->reservation );
 			( new ReviewResponseService() )->purge_expired();
 		}
 		self::assertSame( [], $database->queued_metadata );
@@ -296,7 +395,7 @@ class ReviewResponseServiceTest extends TestCase {
 		} else {
 			self::assertSame( [ 'other_metadata' => 'preserve' ], $database->orphaned_metadata );
 		}
-		self::assertSame( $replace_marker || $restore_review || $restore_in_cleanup ? 0 : null, $this->reservation );
+		self::assertSame( $replace_marker ? '0' : ( $restore_review || $restore_in_cleanup ? 'finished:77' : null ), $this->reservation );
 	}
 
 	public static function durable_metadata_retry_cases(): array {
@@ -354,7 +453,25 @@ class ReviewResponseServiceTest extends TestCase {
 
 		$result = ( new ReviewResponseService() )->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
 		self::assertSame( 'review_unconfirmed', $result->get_error_code() );
-		self::assertSame( 0, $this->reservation );
+		self::assertSame( 'pending:77', $this->reservation );
+	}
+
+	public function test_commit_cannot_accept_a_review_whose_metadata_was_deleted_while_writing(): void {
+		$database = $GLOBALS['wpdb'];
+		Functions\expect( 'current_time' )->once()->andReturn( '2026-09-25 18:00:00' );
+		Functions\expect( 'get_date_from_gmt' )->once()->andReturn( '2026-09-25 23:30:00' );
+		Functions\expect( 'wp_insert_post' )->once()->andReturn( 77 );
+		Functions\expect( 'add_post_meta' )->times( 6 )->andReturnUsing( static function ( int $id, string $key ) use ( $database ): bool {
+			if ( ReviewSubmissionStore::META_KEY === $key ) {
+				$database->review_metadata_complete = false;
+			}
+			return true;
+		} );
+		Functions\expect( 'do_action' )->never();
+
+		$result = ( new ReviewResponseService() )->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
+		self::assertSame( 'review_unconfirmed', $result->get_error_code() );
+		self::assertSame( 'pending:77', $this->reservation );
 	}
 
 	public function test_failed_parent_delete_keeps_child_reviews_until_wordpress_confirms_deletion(): void {
@@ -538,10 +655,10 @@ class ReviewResponseServiceTest extends TestCase {
 		$service = new ReviewResponseService();
 		$error = $service->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
 		self::assertSame( 'review_unconfirmed', $error->get_error_code() );
-		self::assertSame( 0, $this->reservation );
+		self::assertSame( '0', $this->reservation );
 		$retry = $service->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
 		self::assertSame( 'review_unconfirmed', $retry->get_error_code() );
-		self::assertSame( 0, $this->reservation );
+		self::assertSame( '0', $this->reservation );
 	}
 
 	public function test_failed_rollback_keeps_reservation_and_blocks_a_duplicate(): void {
@@ -554,9 +671,96 @@ class ReviewResponseServiceTest extends TestCase {
 		$service = new ReviewResponseService();
 		$failed = $service->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
 		self::assertSame( 'review_unconfirmed', $failed->get_error_code() );
-		self::assertSame( 0, $this->reservation );
+		self::assertSame( 'finished:77', $this->reservation );
+		Functions\when( 'get_post' )->justReturn( null );
 		$retry = $service->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
 		self::assertSame( 'review_unconfirmed', $retry->get_error_code() );
+	}
+
+	/**
+	 * @dataProvider interrupted_rollback_cases
+	 */
+	public function test_interrupted_rollback_releases_only_after_the_review_is_missing( bool $deleted, bool $restored ): void {
+		$database = $GLOBALS['wpdb'];
+		$database->show_marker = true;
+		Functions\expect( 'current_time' )->once()->andReturn( '2026-09-25 18:00:00' );
+		Functions\expect( 'get_date_from_gmt' )->once()->andReturn( '2026-09-25 23:30:00' );
+		Functions\expect( 'wp_insert_post' )->once()->andReturn( 77 );
+		Functions\expect( 'add_post_meta' )->twice()->andReturn( true, false );
+		Functions\expect( 'do_action' )->never();
+		Functions\when( 'get_option' )->returnArg( 2 );
+		Functions\expect( 'wp_delete_post' )->once()->with( 77, true )->andReturnUsing(
+			function () use ( $database, $deleted ): void {
+				self::assertSame( 'finished:77', $this->reservation );
+				$database->review_exists = ! $deleted;
+				throw new \RuntimeException( 'Interrupted inside WordPress deletion.' );
+			}
+		);
+
+		try {
+			( new ReviewResponseService() )->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
+			self::fail( 'The writer should have been interrupted.' );
+		} catch ( \RuntimeException $failure ) {
+			self::assertSame( 'Interrupted inside WordPress deletion.', $failure->getMessage() );
+		}
+		self::assertSame( 'finished:77', $this->reservation );
+		$database->review_exists = ! $deleted || $restored;
+		$database->orphaned_metadata = [ '_previewshare_reviewer_email' => 'synthetic@example.test', 'other_key' => 'keep' ];
+		if ( ! $database->review_exists ) {
+			$database->fail_orphan_metadata = true;
+			self::assertNull( ( new ReviewSubmissionStore() )->purge_orphans( 10, 10 ) );
+			self::assertSame( 'finished:77', $this->reservation );
+			$database->fail_orphan_metadata = false;
+		}
+		self::assertFalse( ( new ReviewSubmissionStore() )->purge_orphans( 10, 10 ) );
+		self::assertSame( ! $deleted || $restored, $database->review_exists );
+		self::assertSame( $database->review_exists ? 'finished:77' : null, $this->reservation );
+		self::assertSame(
+			$database->review_exists ? [ '_previewshare_reviewer_email' => 'synthetic@example.test', 'other_key' => 'keep' ] : [ 'other_key' => 'keep' ],
+			$database->orphaned_metadata
+		);
+	}
+
+	public static function interrupted_rollback_cases(): array {
+		return [
+			'before post deletion' => [ false, false ],
+			'after post deletion' => [ true, false ],
+			'post ID reused after deletion' => [ true, true ],
+		];
+	}
+
+	public function test_rollback_does_not_remove_a_review_bound_by_a_concurrent_retry(): void {
+		Functions\expect( 'current_time' )->once()->andReturn( '2026-09-25 18:00:00' );
+		Functions\expect( 'get_date_from_gmt' )->once()->andReturn( '2026-09-25 23:30:00' );
+		Functions\expect( 'wp_insert_post' )->once()->andReturn( 77 );
+		Functions\expect( 'add_post_meta' )->times( 6 )->andReturnUsing( static function ( int $id, string $key ): bool {
+			if ( ReviewSubmissionStore::META_KEY !== $key ) {
+				return true;
+			}
+			self::assertTrue( ( new ReviewSubmissionStore() )->commit( ReviewSubmissionStore::PREFIX . 'request', 77, 42, 1 ) );
+			return false;
+		} );
+		Functions\expect( 'wp_delete_post' )->never();
+		Functions\expect( 'do_action' )->never();
+
+		$result = ( new ReviewResponseService() )->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
+		self::assertSame( 'review_unconfirmed', $result->get_error_code() );
+		self::assertSame( '77', $this->reservation );
+		self::assertTrue( $GLOBALS['wpdb']->review_exists );
+	}
+
+	public function test_failed_terminal_marker_write_does_not_delete_the_review(): void {
+		$GLOBALS['wpdb']->fail_transition_to = 'finished:77';
+		Functions\expect( 'current_time' )->once()->andReturn( '2026-09-25 18:00:00' );
+		Functions\expect( 'get_date_from_gmt' )->once()->andReturn( '2026-09-25 23:30:00' );
+		Functions\expect( 'wp_insert_post' )->once()->andReturn( 77 );
+		Functions\expect( 'add_post_meta' )->twice()->andReturn( true, false );
+		Functions\expect( 'wp_delete_post' )->never();
+		Functions\expect( 'do_action' )->never();
+
+		$result = ( new ReviewResponseService() )->create_response( 42, 'link', 'version', 'approve', '', '', '', 'request' );
+		self::assertSame( 'review_unconfirmed', $result->get_error_code() );
+		self::assertSame( 'pending:77', $this->reservation );
 	}
 
 	public function test_inventory_loads_latest_responses_in_one_bounded_query(): void {
@@ -875,6 +1079,32 @@ class ReviewResponseServiceTest extends TestCase {
 		self::assertArrayNotHasKey( 'previewshare_cleanup_review_markers_cursor', $options );
 	}
 
+	public function test_numeric_marker_remains_until_late_orphaned_metadata_is_removed(): void {
+		$records = [];
+		$database = $GLOBALS['wpdb'] = $this->review_database( $records );
+		$marker = ReviewSubmissionStore::PREFIX . str_repeat( 'a', 64 );
+		$database->markers[ $marker ] = '77';
+		$database->orphaned_metadata[77] = [ '_previewshare_reviewer_email' => 'synthetic@example.test', 'unrelated_metadata' => 'keep' ];
+		$database->fail_orphan_cleanup = true;
+		Functions\when( 'get_option' )->returnArg( 2 );
+		$store = new ReviewSubmissionStore();
+
+		self::assertNull( $store->purge_orphans( 10, 10 ) );
+		self::assertSame( '77', $database->markers[ $marker ] );
+		self::assertArrayHasKey( '_previewshare_reviewer_email', $database->orphaned_metadata[77] );
+
+		$database->fail_orphan_cleanup = false;
+		$database->restore_during_orphan_cleanup = true;
+		self::assertFalse( $store->remove_orphan( $marker, 77 ) );
+		self::assertSame( '77', $database->markers[ $marker ] );
+		self::assertArrayHasKey( '_previewshare_reviewer_email', $database->orphaned_metadata[77] );
+
+		unset( $records[77] );
+		self::assertFalse( $store->purge_orphans( 10, 10 ) );
+		self::assertArrayNotHasKey( $marker, $database->markers );
+		self::assertSame( [ 'unrelated_metadata' => 'keep' ], $database->orphaned_metadata[77] );
+	}
+
 	public function test_privacy_eraser_moves_past_failed_first_hundred_and_removes_the_101st_record(): void {
 		$records = $this->review_records( 101, 'reviewer@example.test' );
 		$previous_db = $GLOBALS['wpdb'] ?? null;
@@ -996,6 +1226,209 @@ class ReviewResponseServiceTest extends TestCase {
 		self::assertSame( 'review_eraser_query_failed', $result->get_error_code() );
 	}
 
+	public function test_privacy_export_query_failure_returns_error_instead_of_empty_completed_export(): void {
+		$previous_db = $GLOBALS['wpdb'] ?? null;
+		$GLOBALS['wpdb'] = $this->export_database( [], false );
+		Functions\when( 'sanitize_email' )->returnArg();
+		try {
+			$result = ( new ReviewResponseService() )->export_by_email( 'reviewer@example.test' );
+		} finally {
+			$GLOBALS['wpdb'] = $previous_db;
+		}
+		self::assertInstanceOf( WP_Error::class, $result );
+		self::assertSame( 'review_export_query_failed', $result->get_error_code() );
+		self::assertSame( 'Reviewer responses could not be retrieved for export.', $result->get_error_message() );
+	}
+
+	public function test_privacy_export_success_uses_exact_email_and_keeps_wordpress_export_shape_with_stale_db_error(): void {
+		$previous_db = $GLOBALS['wpdb'] ?? null;
+		$row = (object) [
+			'ID' => 77,
+			'post_parent' => 42,
+			'post_content' => 'Private response text',
+			'post_date_gmt' => '2026-01-02 03:04:05',
+			'response_type' => 'approve',
+			'reviewer_name' => 'Reviewer',
+			'reviewer_email' => 'reviewer@example.test',
+		];
+		$database = $this->export_database( [ $row ], true, 'unrelated stale error' );
+		$GLOBALS['wpdb'] = $database;
+		Functions\when( 'sanitize_email' )->returnArg();
+		Functions\when( 'get_post_time' )->justReturn( 123 );
+		try {
+			$result = ( new ReviewResponseService() )->export_by_email( 'reviewer@example.test' );
+		} finally {
+			$GLOBALS['wpdb'] = $previous_db;
+		}
+		self::assertSame( false, is_wp_error( $result ) );
+		self::assertTrue( $result['done'] );
+		self::assertSame( 'previewshare-review-77', $result['data'][0]['item_id'] );
+		self::assertSame( 'Private response text', $result['data'][0]['data'][4]['value'] );
+		self::assertStringContainsString( 'EXISTS (SELECT 1 FROM wp_postmeta AS email_meta', $database->last_sql );
+		self::assertStringContainsString( 'CAST(meta_key AS BINARY) = CAST(%s AS BINARY)', $database->last_sql );
+	}
+
+	public function test_privacy_export_maps_zero_and_empty_gmt_dates_to_epoch(): void {
+		$previous_db = $GLOBALS['wpdb'] ?? null;
+		$rows = [];
+		foreach ( [ '0000-00-00 00:00:00', '' ] as $index => $date ) {
+			$rows[] = (object) [
+				'ID' => 80 + $index,
+				'post_parent' => 42,
+				'post_content' => 'Private response',
+				'post_date_gmt' => $date,
+				'response_type' => 'approve',
+				'reviewer_name' => 'Reviewer',
+				'reviewer_email' => 'reviewer@example.test',
+			];
+		}
+	$GLOBALS['wpdb'] = $this->export_database( $rows, true );
+		Functions\when( 'sanitize_email' )->returnArg();
+		Functions\when( 'get_post_time' )->alias(
+			static function( string $format, bool $gmt, \WP_Post $post ) {
+				self::assertSame( 'U', $format );
+				self::assertTrue( $gmt );
+				self::assertSame( 'raw', $post->filter );
+				$date = $post->post_date_gmt;
+				if ( '' === $date || '0000-00-00 00:00:00' === $date ) {
+					return false;
+				}
+				return strtotime( $date . ' UTC' );
+			}
+		);
+		try {
+			$result = ( new ReviewResponseService() )->export_by_email( 'reviewer@example.test' );
+		} finally {
+			$GLOBALS['wpdb'] = $previous_db;
+		}
+		$dates = array_map( static fn( array $item ): string => $item['data'][5]['value'], $result['data'] );
+		self::assertSame( [ gmdate( 'c', 0 ), gmdate( 'c', 0 ) ], $dates );
+	}
+
+	public function test_privacy_export_returns_empty_completed_page_after_successful_empty_query(): void {
+		$previous_db = $GLOBALS['wpdb'] ?? null;
+		$GLOBALS['wpdb'] = $this->export_database( [], true );
+		Functions\when( 'sanitize_email' )->returnArg();
+		try {
+			$result = ( new ReviewResponseService() )->export_by_email( 'reviewer@example.test' );
+		} finally {
+			$GLOBALS['wpdb'] = $previous_db;
+		}
+		self::assertSame( [ 'data' => [], 'done' => true ], $result );
+	}
+
+	public function test_privacy_export_respects_site_empty_query_short_circuit_and_removes_its_temporary_hook(): void {
+		$previous_db = $GLOBALS['wpdb'] ?? null;
+		$database    = $this->export_database( [], true );
+		$GLOBALS['wpdb'] = $database;
+		$site_filter = static function( $posts, $query ) {
+			if ( '_previewshare_reviewer_email' === $query->get( 'meta_key' ) ) {
+				return [];
+			}
+			return $posts;
+		};
+		\WP_Query::$test_filters['posts_pre_query'][] = [ 'callback' => $site_filter, 'priority' => 10, 'args' => 2 ];
+		Functions\when( 'sanitize_email' )->returnArg();
+		try {
+			$result = ( new ReviewResponseService() )->export_by_email( 'reviewer@example.test' );
+		} finally {
+			$GLOBALS['wpdb'] = $previous_db;
+		}
+		self::assertSame( [ 'data' => [], 'done' => true ], $result );
+		self::assertSame( '', $database->last_sql );
+		self::assertCount( 1, \WP_Query::$test_filters['posts_pre_query'] );
+		self::assertSame( $site_filter, \WP_Query::$test_filters['posts_pre_query'][0]['callback'] );
+	}
+
+	public function test_privacy_export_preserves_site_selected_ids_and_runs_nested_query_without_leaking_hook(): void {
+		$previous_db = $GLOBALS['wpdb'] ?? null;
+		$row         = (object) [ 'ID' => 92, 'post_parent' => 42, 'post_content' => 'Selected response', 'post_date_gmt' => '2026-01-02 03:04:05', 'response_type' => 'approve', 'reviewer_name' => 'Reviewer', 'reviewer_email' => 'reviewer@example.test' ];
+		$database    = $this->export_database( [ $row ], true );
+		$GLOBALS['wpdb'] = $database;
+		$site_filter = static function( $posts, $query ) {
+			if ( '_previewshare_reviewer_email' === $query->get( 'meta_key' ) ) {
+				new \WP_Query( [ 'post_type' => 'post' ] );
+				return [ new \WP_Post( (object) [ 'ID' => 92 ] ) ];
+			}
+			return $posts;
+		};
+		\WP_Query::$test_filters['posts_pre_query'][] = [ 'callback' => $site_filter, 'priority' => 10, 'args' => 2 ];
+		Functions\when( 'sanitize_email' )->returnArg();
+		Functions\when( 'get_post_time' )->justReturn( 123 );
+		try {
+			$result = ( new ReviewResponseService() )->export_by_email( 'reviewer@example.test' );
+		} finally {
+			$GLOBALS['wpdb'] = $previous_db;
+		}
+		self::assertSame( 'previewshare-review-92', $result['data'][0]['item_id'] );
+		self::assertStringContainsString( 'reviews.ID IN (%d)', $database->last_sql );
+		self::assertCount( 1, \WP_Query::$test_filters['posts_pre_query'] );
+		self::assertSame( $site_filter, \WP_Query::$test_filters['posts_pre_query'][0]['callback'] );
+	}
+
+	public function test_privacy_export_honors_metadata_defaults_redaction_falsey_values_and_time_filters(): void {
+		$previous_db = $GLOBALS['wpdb'] ?? null;
+		$rows = [
+			(object) [ 'ID' => 91, 'post_parent' => 42, 'post_content' => 'Response', 'post_date_gmt' => '2026-01-02 03:04:05', 'response_type' => 'approve', 'reviewer_name' => 'Stored Name', 'reviewer_email' => null ],
+			(object) [ 'ID' => 92, 'post_parent' => 42, 'post_content' => 'Second response', 'post_date_gmt' => '0000-00-00 00:00:00', 'response_type' => 'reject', 'reviewer_name' => 'Another stored name', 'reviewer_email' => 'stored@example.test' ],
+			(object) [ 'ID' => 93, 'post_parent' => 42, 'post_content' => 'Epoch response', 'post_date_gmt' => '1970-01-01 00:00:00', 'response_type' => 'approve', 'reviewer_name' => 'Epoch Reviewer', 'reviewer_email' => 'epoch@example.test' ],
+		];
+	$GLOBALS['wpdb'] = $this->export_database( $rows, true );
+		$metadata_calls = [];
+		$time_filter_calls = 0;
+		Functions\when( 'sanitize_email' )->returnArg();
+		Functions\when( 'apply_filters' )->alias(
+			static function( string $hook, $value, ...$args ) use ( &$metadata_calls, &$time_filter_calls ) {
+				if ( 'get_post_metadata' === $hook ) {
+					[ $post_id, $meta_key, $single, $meta_type ] = $args;
+					$metadata_calls[] = [ $post_id, $meta_key, $single, $meta_type ];
+					if ( 91 === $post_id && '_previewshare_reviewer_name' === $meta_key ) { return [ 'Site Redaction' ]; }
+					if ( 91 === $post_id && '_previewshare_response_type' === $meta_key ) { return false; }
+					if ( 92 === $post_id && '_previewshare_reviewer_name' === $meta_key ) { return [ false ]; }
+					return null;
+				}
+				if ( 'default_post_metadata' === $hook && '_previewshare_reviewer_email' === $args[1] ) {
+					return 'privacy-default@example.test';
+				}
+				if ( 'get_post_time' === $hook ) {
+					++$time_filter_calls;
+					return 1767323105;
+				}
+				return $value;
+			}
+		);
+		Functions\when( 'get_metadata_default' )->alias(
+			static function( string $meta_type, int $post_id, string $meta_key, bool $single ) {
+				return apply_filters( "default_{$meta_type}_metadata", $single ? '' : [], $post_id, $meta_key, $single, $meta_type );
+			}
+		);
+		Functions\when( 'get_post_time' )->alias(
+			static function( string $format, bool $gmt, \WP_Post $post ) {
+				self::assertSame( 'U', $format );
+				self::assertTrue( $gmt );
+				self::assertSame( 'raw', $post->filter );
+				$date = $post->post_date_gmt;
+				if ( '' === $date || '0000-00-00 00:00:00' === $date ) { return false; }
+				return apply_filters( 'get_post_time', strtotime( $date . ' UTC' ), $format, $gmt );
+			}
+		);
+		try {
+			$result = ( new ReviewResponseService() )->export_by_email( 'reviewer@example.test' );
+		} finally {
+			$GLOBALS['wpdb'] = $previous_db;
+		}
+		self::assertSame( '', $result['data'][0]['data'][1]['value'] );
+		self::assertSame( 'Site Redaction', $result['data'][0]['data'][2]['value'] );
+		self::assertSame( 'privacy-default@example.test', $result['data'][0]['data'][3]['value'] );
+		self::assertNotContains( 'Stored Name', array_column( $result['data'][0]['data'], 'value' ) );
+		self::assertSame( gmdate( 'c', 1767323105 ), $result['data'][0]['data'][5]['value'] );
+		self::assertSame( '', $result['data'][1]['data'][2]['value'] );
+		self::assertSame( gmdate( 'c', 0 ), $result['data'][1]['data'][5]['value'] );
+		self::assertSame( gmdate( 'c', 1767323105 ), $result['data'][2]['data'][5]['value'] );
+		self::assertSame( 2, $time_filter_calls );
+		self::assertContains( [ 91, '_previewshare_reviewer_name', true, 'post' ], $metadata_calls );
+	}
+
 	public function test_privacy_eraser_fails_closed_when_cursor_cannot_be_saved_or_resumed(): void {
 		$records = $this->review_records( 101, 'reviewer@example.test' );
 		$previous_db = $GLOBALS['wpdb'] ?? null;
@@ -1040,6 +1473,64 @@ class ReviewResponseServiceTest extends TestCase {
 	 * @param ?array<int,string> $deleted_options Deleted idempotency option names.
 	 * @return object
 	 */
+	private function export_database( array $rows, bool $succeed = true, string $last_error = '' ) {
+		\WP_Query::$test_filters = [];
+		Functions\when( 'add_filter' )->alias(
+			static function( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): bool {
+				\WP_Query::$test_filters[ $hook ][] = [ 'callback' => $callback, 'priority' => $priority, 'args' => $accepted_args ];
+				return true;
+			}
+		);
+		Functions\when( 'remove_filter' )->alias(
+			static function( string $hook, callable $callback, int $priority = 10 ): bool {
+				foreach ( \WP_Query::$test_filters[ $hook ] ?? [] as $index => $filter ) {
+					if ( $filter['callback'] === $callback && $filter['priority'] === $priority ) {
+						unset( \WP_Query::$test_filters[ $hook ][ $index ] );
+					}
+				}
+				return true;
+			}
+		);
+		return new class( $rows, $succeed, $last_error ) {
+			public $posts = 'wp_posts';
+			public $postmeta = 'wp_postmeta';
+			public $last_error;
+			public $last_result = [];
+			public $last_sql = '';
+			private $rows;
+			private $succeed;
+
+			public function __construct( array $rows, bool $succeed, string $last_error ) {
+				$this->rows = $rows;
+				$this->succeed = $succeed;
+				$this->last_error = $last_error;
+			}
+
+			public function prepare( string $sql, ...$args ): array {
+				return [ $sql, $args ];
+			}
+
+			public function query( $prepared ) {
+				if ( is_string( $prepared ) ) {
+					$this->last_sql = $prepared;
+					if ( ! $this->succeed ) {
+						$this->last_result = [];
+						return false;
+					}
+					$this->last_result = $this->rows;
+					return count( $this->rows );
+				}
+				[ $this->last_sql ] = $prepared;
+				if ( ! $this->succeed ) {
+					$this->last_result = [];
+					return false;
+				}
+				$this->last_result = $this->rows;
+				return count( $this->rows );
+			}
+		};
+	}
+
 	private function review_database( array &$records, ?array &$deleted_options = null ) {
 		return new class( $records, $deleted_options ) {
 			public $options = 'wp_options';
@@ -1049,6 +1540,9 @@ class ReviewResponseServiceTest extends TestCase {
 			public $query_count = 0;
 			public $fail_query_at = [];
 			public $fail_marker_delete = false;
+			public $fail_orphan_cleanup = false;
+			public $restore_during_orphan_cleanup = false;
+			public $orphaned_metadata = [];
 			public $replace_before_delete = [];
 			public $markers = [];
 			public $marker_limits = [];
@@ -1074,6 +1568,23 @@ class ReviewResponseServiceTest extends TestCase {
 			public function query( array $prepared ) {
 				[ $sql, $args ] = $prepared;
 				$this->last_error = '';
+				if ( 0 === strpos( $sql, 'DELETE FROM wp_postmeta' ) ) {
+					$id = $args[0];
+					\PHPUnit\Framework\Assert::assertStringContainsString( 'AND NOT EXISTS (SELECT 1 FROM wp_posts WHERE ID = %d)', $sql );
+					if ( $this->fail_orphan_cleanup ) {
+						$this->last_error = 'simulated metadata delete error';
+						return false;
+					}
+					if ( $this->restore_during_orphan_cleanup ) {
+						$this->records[ $id ] = [];
+						$this->restore_during_orphan_cleanup = false;
+					}
+					if ( isset( $this->records[ $id ] ) ) { return 0; }
+					foreach ( array_slice( $args, 1, -1 ) as $key ) {
+						unset( $this->orphaned_metadata[ $id ][ $key ] );
+					}
+					return 1;
+				}
 				if ( 0 === strpos( $sql, 'UPDATE' ) ) {
 					[ $id, $name ] = $args;
 					if ( '0' !== ( $this->markers[ $name ] ?? null ) || ! isset( $this->records[ (int) $id ] ) ) { return 0; }
@@ -1090,7 +1601,8 @@ class ReviewResponseServiceTest extends TestCase {
 					$this->markers[ $name ] = $this->replace_before_delete[ $name ];
 					unset( $this->replace_before_delete[ $name ] );
 				}
-				if ( $expected !== ( $this->markers[ $name ] ?? null ) || isset( $this->records[ $id ] ) ) { return 0; }
+				\PHPUnit\Framework\Assert::assertStringContainsString( 'AND NOT EXISTS (SELECT 1 FROM wp_postmeta', $sql );
+				if ( $expected !== ( $this->markers[ $name ] ?? null ) || isset( $this->records[ $id ] ) || array_intersect( array_slice( $args, 4 ), array_keys( $this->orphaned_metadata[ $id ] ?? [] ) ) ) { return 0; }
 				unset( $this->markers[ $name ] );
 				$this->deleted_options[] = $name;
 				return 1;
